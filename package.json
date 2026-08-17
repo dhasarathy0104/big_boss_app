@@ -1,0 +1,10 @@
+{
+  "name": "desklog-clone",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Self-hosted time tracking / activity monitoring prototype",
+  "workspaces": [
+    "backend",
+    "dashboard"
+  ]
+}

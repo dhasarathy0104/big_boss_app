@@ -1,0 +1,9 @@
+{
+  "name": "desklog-agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node agent.js"
+  }
+}

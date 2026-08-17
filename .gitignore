@@ -1,0 +1,8 @@
+node_modules/
+dist/
+**/data/
+**/screenshots/
+**/queue.json
+**/.agent-config.json
+.env
+*.log
