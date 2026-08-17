@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Desklog Tracker",
+  "version": "0.1.0",
+  "description": "Reports the active tab's domain to your local Desklog agent for accurate time classification. Sends only the domain (never the full URL, page content, or browsing history), and only to the tracking agent already running on this same machine.",
+  "permissions": ["tabs", "windows"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

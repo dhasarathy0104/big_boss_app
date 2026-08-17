@@ -4,9 +4,15 @@
 //
 // If DESKLOG_INVITE_TOKEN is set on first run, enrollment automatically attaches this
 // employee to whichever manager generated that invite link — no manual manager lookup.
+//
+// Also runs a tiny local HTTP listener the browser extension posts the active tab's
+// domain to (see ../browser-extension). Window titles alone don't give you a real URL —
+// this is what makes "chrome" time classifiable as github.com vs youtube.com instead of
+// a blanket guess.
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -18,10 +24,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_URL = process.env.DESKLOG_BACKEND_URL || 'http://localhost:4000';
 const AGENT_NAME = process.env.DESKLOG_AGENT_NAME || os.userInfo().username;
 const INVITE_TOKEN = process.env.DESKLOG_INVITE_TOKEN || null;
+const LOCAL_PORT = Number(process.env.DESKLOG_LOCAL_PORT || 34909);
 const POLL_INTERVAL_MS = 10_000;
 const FLUSH_INTERVAL_MS = 30_000;
 const SCREENSHOT_INTERVAL_MS = 5 * 60_000;
 const IDLE_THRESHOLD_SECONDS = 120;
+const DOMAIN_FRESHNESS_MS = 20_000; // extension reports on tab/window change, not every poll
+const BROWSER_APPS = new Set(['chrome', 'msedge', 'firefox', 'brave', 'opera']);
 
 const configPath = path.join(__dirname, '.agent-config.json');
 const queuePath = path.join(__dirname, 'queue.json');
@@ -67,7 +76,73 @@ function saveQueue(queue) {
   fs.writeFileSync(queuePath, JSON.stringify(queue));
 }
 
+let lastDomainEvent = null; // { domain, receivedAt } — domain can be null (e.g. internal browser page)
+let enrolledName = null;
+
+// The extension only posts on tab/window change, so the domain itself is sticky
+// until the next real navigation — no time-based expiry here, or a quiet page
+// would spuriously "go stale" and break the activity segment every few seconds.
+function getCurrentDomain() {
+  return lastDomainEvent ? lastDomainEvent.domain : null;
+}
+
+// Separate from the above: only for the extension's /status connectivity check,
+// so the popup can tell "installed but quiet" apart from "never connected".
+function isExtensionRecentlyActive() {
+  return !!lastDomainEvent && (Date.now() - lastDomainEvent.receivedAt) < DOMAIN_FRESHNESS_MS * 15;
+}
+
+function startLocalServer() {
+  const server = http.createServer((req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type');
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (req.method === 'GET' && req.url === '/status') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ connected: true, enrolledAs: enrolledName, receivingDomains: isExtensionRecentlyActive() }));
+      return;
+    }
+
+    if (req.method === 'POST' && req.url === '/url-event') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          // domain may be explicitly null (internal page, lost focus) — still record it
+          // so a stale domain from the previous page doesn't linger.
+          lastDomainEvent = { domain: parsed.domain ?? null, receivedAt: Date.now() };
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        } catch {
+          res.writeHead(400, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: 'invalid body' }));
+        }
+      });
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+
+  server.listen(LOCAL_PORT, '127.0.0.1', () => {
+    console.log(`Local listener for the browser extension on http://127.0.0.1:${LOCAL_PORT}`);
+  });
+  server.on('error', (err) => {
+    console.error(`Local listener failed to start (port ${LOCAL_PORT} busy?):`, err.message);
+  });
+}
+
 async function enroll() {
+  enrolledName = AGENT_NAME;
   const existing = loadConfig();
   if (existing) return existing;
 
@@ -97,6 +172,7 @@ function closeSegment() {
       clientEventId: `${currentSegment.startedAt}_${Math.random().toString(36).slice(2, 8)}`,
       appName: currentSegment.appName,
       windowTitle: currentSegment.windowTitle,
+      domain: currentSegment.domain,
       startedAt: currentSegment.startedAt,
       endedAt: currentSegment.endedAt,
       inputCount: currentSegment.inputCount,
@@ -111,17 +187,21 @@ async function poll() {
     const ctx = await getContext();
     const now = new Date().toISOString();
     const isIdle = ctx.idleSeconds >= IDLE_THRESHOLD_SECONDS;
+    const isBrowser = BROWSER_APPS.has((ctx.process || '').toLowerCase());
+    const domain = isBrowser ? getCurrentDomain() : null;
 
     if (
       !currentSegment ||
       currentSegment.appName !== ctx.process ||
       currentSegment.windowTitle !== ctx.title ||
-      currentSegment.isIdle !== isIdle
+      currentSegment.isIdle !== isIdle ||
+      currentSegment.domain !== domain
     ) {
       closeSegment();
       currentSegment = {
         appName: ctx.process || '(unknown)',
         windowTitle: ctx.title || '',
+        domain,
         startedAt: now,
         endedAt: now,
         inputCount: isIdle ? 0 : 1,
@@ -180,6 +260,7 @@ async function screenshotTick(cfg) {
 
 async function main() {
   const cfg = await enroll();
+  startLocalServer();
   console.log(`Agent running. Polling every ${POLL_INTERVAL_MS / 1000}s, flushing every ${FLUSH_INTERVAL_MS / 1000}s, screenshot every ${SCREENSHOT_INTERVAL_MS / 60000}min.`);
 
   setInterval(poll, POLL_INTERVAL_MS);

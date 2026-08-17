@@ -12,7 +12,7 @@ import { projectsRouter } from './routes/projects.js';
 import { tasksRouter } from './routes/tasks.js';
 import { timeEntriesRouter } from './routes/timeEntries.js';
 import { categoryRulesRouter } from './routes/categoryRules.js';
-import { buildOverrideMap, computeProductivity } from './productivity.js';
+import { buildOverrideMaps, computeProductivity } from './productivity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const screenshotsDir = path.join(__dirname, '..', 'data', 'screenshots');
@@ -65,8 +65,8 @@ app.post('/api/ingest/activity', authUser, (req, res) => {
 
   const insert = db.prepare(`
     INSERT OR IGNORE INTO activity_events
-      (user_id, client_event_id, app_name, window_title, started_at, ended_at, input_count, is_idle)
-    VALUES (@user_id, @client_event_id, @app_name, @window_title, @started_at, @ended_at, @input_count, @is_idle)
+      (user_id, client_event_id, app_name, window_title, domain, started_at, ended_at, input_count, is_idle)
+    VALUES (@user_id, @client_event_id, @app_name, @window_title, @domain, @started_at, @ended_at, @input_count, @is_idle)
   `);
   db.exec('BEGIN');
   try {
@@ -76,6 +76,7 @@ app.post('/api/ingest/activity', authUser, (req, res) => {
         client_event_id: e.clientEventId,
         app_name: e.appName ?? null,
         window_title: e.windowTitle ?? null,
+        domain: e.domain ?? null,
         started_at: e.startedAt,
         ended_at: e.endedAt,
         input_count: e.inputCount ?? 0,
@@ -136,9 +137,9 @@ app.get('/api/users/:id/productivity', (req, res) => {
   const rules = user.manager_id
     ? db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(user.manager_id)
     : [];
-  const overrideMap = buildOverrideMap(rules);
+  const overrides = buildOverrideMaps(rules);
 
-  res.json(computeProductivity(events, overrideMap));
+  res.json(computeProductivity(events, overrides));
 });
 
 app.get('/api/users/:id/screenshots', (req, res) => {

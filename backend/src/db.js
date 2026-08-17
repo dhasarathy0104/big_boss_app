@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS activity_events (
   client_event_id TEXT NOT NULL,
   app_name TEXT,
   window_title TEXT,
+  domain TEXT,
   started_at TEXT NOT NULL,
   ended_at TEXT NOT NULL,
   input_count INTEGER NOT NULL DEFAULT 0,
@@ -108,10 +109,20 @@ CREATE TABLE IF NOT EXISTS category_rules (
   app_pattern TEXT NOT NULL,
   category TEXT NOT NULL,
   is_engaged_app INTEGER NOT NULL DEFAULT 0,
+  rule_type TEXT NOT NULL DEFAULT 'app',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(manager_id, app_pattern)
 );
 `);
+
+function ensureColumn(table, column, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  }
+}
+ensureColumn('activity_events', 'domain', 'domain TEXT');
+ensureColumn('category_rules', 'rule_type', "rule_type TEXT NOT NULL DEFAULT 'app'");
 
 export function randomToken(bytes = 12) {
   return crypto.randomBytes(bytes).toString('hex');

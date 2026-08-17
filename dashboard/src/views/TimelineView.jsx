@@ -96,7 +96,7 @@ export default function TimelineView({ selectedUserId, date, setDate }) {
                 <div
                   key={e.id}
                   className="segment"
-                  title={`${e.app_name} — ${e.window_title} · ${CATEGORY_LABEL[e.category]} (${fmtTime(e.started_at)}–${fmtTime(e.ended_at)})`}
+                  title={`${e.domain ? `${e.app_name} — ${e.domain}` : `${e.app_name} — ${e.window_title}`} · ${CATEGORY_LABEL[e.category]} (${fmtTime(e.started_at)}–${fmtTime(e.ended_at)})`}
                   style={{ width: `${widthPct}%`, background: CATEGORY_COLOR[e.category] }}
                 />
               );
