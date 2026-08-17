@@ -8,6 +8,7 @@ import ProjectsView from './ProjectsView.jsx';
 import TimesheetReviewView from './TimesheetReviewView.jsx';
 import CategoriesView from './CategoriesView.jsx';
 import AttendanceReviewView from './AttendanceReviewView.jsx';
+import BillingView from './BillingView.jsx';
 
 const TABS = [
   { key: 'live', label: 'Live' },
@@ -16,6 +17,7 @@ const TABS = [
   { key: 'projects', label: 'Projects' },
   { key: 'timesheet', label: 'Timesheet' },
   { key: 'attendance', label: 'Attendance' },
+  { key: 'billing', label: 'Billing' },
   { key: 'categories', label: 'Categories' },
   { key: 'team', label: 'Team & Invite' },
 ];
@@ -88,6 +90,7 @@ export default function ManagerDashboard({ managerId, managers, onManagerChange 
         {activeTab === 'projects' && <ProjectsView managerId={managerId} team={team} />}
         {activeTab === 'timesheet' && <TimesheetReviewView managerId={managerId} />}
         {activeTab === 'attendance' && <AttendanceReviewView managerId={managerId} />}
+        {activeTab === 'billing' && <BillingView managerId={managerId} />}
         {activeTab === 'categories' && <CategoriesView managerId={managerId} />}
         {activeTab === 'team' && <TeamView managerId={managerId} team={team} />}
       </main>

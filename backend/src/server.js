@@ -15,6 +15,7 @@ import { categoryRulesRouter } from './routes/categoryRules.js';
 import { liveStatusRouter } from './routes/liveStatus.js';
 import { attendanceRouter } from './routes/attendance.js';
 import { leaveRequestsRouter } from './routes/leaveRequests.js';
+import { billingRouter } from './routes/billing.js';
 import { buildOverrideMaps, computeProductivity } from './productivity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -167,6 +168,7 @@ app.use('/api/category-rules', categoryRulesRouter);
 app.use('/api/managers', liveStatusRouter);
 app.use('/api/attendance', attendanceRouter);
 app.use('/api/leave-requests', leaveRequestsRouter);
+app.use('/api', billingRouter);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`desklog backend listening on http://localhost:${PORT}`));
