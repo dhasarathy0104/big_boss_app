@@ -254,3 +254,124 @@ button {
 .code-block button {
   flex-shrink: 0;
 }
+
+.identity-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.role-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.role-toggle button {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.role-toggle button.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.chip-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.chip.selected {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.kanban {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.kanban-col {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  min-height: 120px;
+}
+
+.kanban-col h3 {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
+.kanban-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  cursor: grab;
+}
+
+.btn-small {
+  padding: 3px 8px;
+  font-size: 11px;
+  margin-right: 4px;
+}
+
+.btn-danger {
+  background: #c94f4f;
+  border-color: #c94f4f;
+}
+
+.status-badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.status-pending { background: #4a4020; color: #e0c060; }
+.status-approved { background: #1f3d2a; color: var(--active); }
+.status-rejected { background: #4a2020; color: #e07070; }
+
+.stacked-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}

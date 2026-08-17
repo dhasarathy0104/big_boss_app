@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { db } from './db.js';
 import { managersRouter } from './routes/managers.js';
 import { invitesPublicRouter } from './routes/invites.js';
+import { employeesRouter } from './routes/employees.js';
+import { projectsRouter } from './routes/projects.js';
+import { tasksRouter } from './routes/tasks.js';
+import { timeEntriesRouter } from './routes/timeEntries.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const screenshotsDir = path.join(__dirname, '..', 'data', 'screenshots');
@@ -129,6 +133,10 @@ app.get('/api/users/:id/screenshots', (req, res) => {
 app.use('/screenshots', express.static(screenshotsDir));
 app.use('/api/managers', managersRouter);
 app.use('/api/invites', invitesPublicRouter);
+app.use('/api/employees', employeesRouter);
+app.use('/api/projects', projectsRouter);
+app.use('/api/tasks', tasksRouter);
+app.use('/api/time-entries', timeEntriesRouter);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`desklog backend listening on http://localhost:${PORT}`));

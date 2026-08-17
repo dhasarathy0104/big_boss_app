@@ -1,42 +1,28 @@
 import { useEffect, useState } from 'react';
-import { todayStr } from './format.js';
-import TimelineView from './views/TimelineView.jsx';
-import TeamView from './views/TeamView.jsx';
 import JoinPage from './views/JoinPage.jsx';
+import ManagerDashboard from './views/ManagerDashboard.jsx';
+import EmployeeDashboard from './views/EmployeeDashboard.jsx';
 
-const TABS = [
-  { key: 'timeline', label: 'Timeline' },
-  { key: 'team', label: 'Team & Invite' },
-];
-
-function ManagerDashboard() {
+function Shell() {
+  const [kind, setKind] = useState('manager'); // 'manager' | 'employee' — not real auth, see project notes
   const [managers, setManagers] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [managerId, setManagerId] = useState(null);
+  const [employeeId, setEmployeeId] = useState(null);
   const [newManagerName, setNewManagerName] = useState('');
-  const [team, setTeam] = useState([]);
-  const [selectedUserId, setSelectedUserId] = useState(null);
-  const [date, setDate] = useState(todayStr());
-  const [activeTab, setActiveTab] = useState('timeline');
 
-  function loadManagers() {
+  function loadAll() {
     fetch('/api/managers').then((r) => r.json()).then((data) => {
       setManagers(data);
-      if (data.length && !managerId) setManagerId(data[0].id);
+      setManagerId((prev) => prev ?? data[0]?.id ?? null);
+    });
+    fetch('/api/employees').then((r) => r.json()).then((data) => {
+      setEmployees(data);
+      setEmployeeId((prev) => prev ?? data[0]?.id ?? null);
     });
   }
 
-  useEffect(loadManagers, []);
-
-  useEffect(() => {
-    if (!managerId) return;
-    fetch(`/api/managers/${managerId}/team`).then((r) => r.json()).then((data) => {
-      setTeam(data);
-      if (data.length && !data.some((u) => u.id === selectedUserId)) {
-        setSelectedUserId(data[0].id);
-      }
-      if (data.length === 0) setSelectedUserId(null);
-    });
-  }, [managerId, activeTab]);
+  useEffect(loadAll, []);
 
   async function createManager(e) {
     e.preventDefault();
@@ -72,44 +58,38 @@ function ManagerDashboard() {
   }
 
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <h1>Signed in as</h1>
-        <select value={managerId ?? ''} onChange={(e) => setManagerId(Number(e.target.value))} style={{ width: '100%', marginBottom: 20 }}>
-          {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
-
-        <h1>Team</h1>
-        {team.length === 0 && <div className="empty">Nobody has joined yet — see the Team &amp; Invite tab.</div>}
-        {team.map((u) => (
-          <div
-            key={u.id}
-            className={`user-item ${u.id === selectedUserId ? 'selected' : ''}`}
-            onClick={() => setSelectedUserId(u.id)}
-          >
-            {u.name}
-          </div>
-        ))}
-      </aside>
-
-      <main className="main">
-        <div className="tabs">
-          {TABS.map((t) => (
-            <div
-              key={t.key}
-              className={`tab ${activeTab === t.key ? 'active' : ''}`}
-              onClick={() => setActiveTab(t.key)}
-            >
-              {t.label}
-            </div>
-          ))}
+    <div>
+      <div className="identity-bar">
+        <span>I am a:</span>
+        <div className="role-toggle" style={{ width: 220 }}>
+          <button className={kind === 'manager' ? 'active' : ''} onClick={() => setKind('manager')}>Manager</button>
+          <button className={kind === 'employee' ? 'active' : ''} onClick={() => setKind('employee')}>Employee</button>
         </div>
+      </div>
 
-        {activeTab === 'timeline' && (
-          <TimelineView selectedUserId={selectedUserId} date={date} setDate={setDate} />
-        )}
-        {activeTab === 'team' && <TeamView managerId={managerId} team={team} />}
-      </main>
+      {kind === 'manager' && (
+        <ManagerDashboard managerId={managerId} managers={managers} onManagerChange={setManagerId} />
+      )}
+
+      {kind === 'employee' && (
+        employees.length === 0 ? (
+          <div className="join-page">
+            <div className="join-card">
+              <h1>No employees yet</h1>
+              <p className="join-sub">
+                Employees join by opening an invite link generated from a manager's "Team & Invite" tab and
+                running the agent — there's no separate employee sign-up here.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <EmployeeDashboard
+            employee={employees.find((e) => e.id === employeeId)}
+            employees={employees}
+            onEmployeeChange={setEmployeeId}
+          />
+        )
+      )}
     </div>
   );
 }
@@ -122,5 +102,5 @@ export default function App() {
     return <JoinPage token={joinMatch[1]} />;
   }
 
-  return <ManagerDashboard />;
+  return <Shell />;
 }

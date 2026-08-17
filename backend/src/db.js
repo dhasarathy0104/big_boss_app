@@ -55,6 +55,51 @@ CREATE TABLE IF NOT EXISTS screenshots (
   window_title TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_screenshots_user_time ON screenshots(user_id, captured_at);
+
+CREATE TABLE IF NOT EXISTS projects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  manager_id INTEGER NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL,
+  client_name TEXT,
+  is_billable INTEGER NOT NULL DEFAULT 0,
+  hourly_rate REAL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_projects_manager ON projects(manager_id);
+
+CREATE TABLE IF NOT EXISTS project_members (
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  PRIMARY KEY (project_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'todo',
+  assignee_user_id INTEGER REFERENCES users(id),
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+
+CREATE TABLE IF NOT EXISTS time_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  task_id INTEGER REFERENCES tasks(id),
+  started_at TEXT NOT NULL,
+  ended_at TEXT NOT NULL,
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  reviewed_at TEXT,
+  reviewed_by INTEGER REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_time_entries_user ON time_entries(user_id);
+CREATE INDEX IF NOT EXISTS idx_time_entries_project ON time_entries(project_id);
 `);
 
 export function randomToken(bytes = 12) {
