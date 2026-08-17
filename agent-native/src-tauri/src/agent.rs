@@ -1,0 +1,239 @@
+use crate::backend::{ActivityEvent, AgentConfig, BackendClient};
+use crate::context::get_context;
+use crate::local_server::{self, SharedDomain};
+use crate::screenshot::capture_primary_as_base64_jpeg;
+use chrono::Utc;
+use std::fs;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+const POLL_INTERVAL_SECS: u64 = 10;
+const FLUSH_INTERVAL_SECS: u64 = 30;
+const SCREENSHOT_INTERVAL_SECS: u64 = 5 * 60;
+const IDLE_THRESHOLD_SECS: u32 = 120;
+const LOCAL_PORT: u16 = 34909;
+const BROWSER_APPS: [&str; 5] = ["chrome", "msedge", "firefox", "brave", "opera"];
+
+fn config_dir() -> PathBuf {
+    let dir = dirs::data_local_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("DesklogAgent");
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
+fn config_path() -> PathBuf {
+    config_dir().join("agent-config.json")
+}
+
+fn queue_path() -> PathBuf {
+    config_dir().join("queue.json")
+}
+
+fn load_config() -> Option<AgentConfig> {
+    let data = fs::read_to_string(config_path()).ok()?;
+    serde_json::from_str(&data).ok()
+}
+
+fn save_config(cfg: &AgentConfig) {
+    if let Ok(data) = serde_json::to_string_pretty(cfg) {
+        let _ = fs::write(config_path(), data);
+    }
+}
+
+fn load_queue() -> Vec<ActivityEvent> {
+    fs::read_to_string(queue_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_queue(queue: &[ActivityEvent]) {
+    if let Ok(data) = serde_json::to_string(queue) {
+        let _ = fs::write(queue_path(), data);
+    }
+}
+
+#[derive(Clone)]
+struct Segment {
+    app_name: String,
+    window_title: String,
+    domain: Option<String>,
+    started_at: String,
+    ended_at: String,
+    input_count: u32,
+    is_idle: bool,
+}
+
+pub async fn run<F: Fn(String) + Send + Sync + 'static>(status_cb: F) {
+    let backend_url = std::env::var("DESKLOG_BACKEND_URL").unwrap_or_else(|_| "http://localhost:4000".to_string());
+    let agent_name = std::env::var("DESKLOG_AGENT_NAME")
+        .unwrap_or_else(|_| whoami_fallback());
+    let invite_token = std::env::var("DESKLOG_INVITE_TOKEN").ok();
+
+    let client = BackendClient::new(backend_url);
+
+    status_cb("Enrolling…".to_string());
+    let cfg = match load_config() {
+        Some(existing) => existing,
+        None => match client.enroll(&agent_name, invite_token).await {
+            Ok(cfg) => {
+                save_config(&cfg);
+                cfg
+            }
+            Err(e) => {
+                status_cb(format!("Enroll failed: {e}"));
+                return;
+            }
+        },
+    };
+
+    let enrolled_label = match &cfg.manager_name {
+        Some(name) => format!("Tracking — {name}'s team"),
+        None => "Tracking — no manager assigned".to_string(),
+    };
+    status_cb(enrolled_label);
+
+    let domain_state: SharedDomain = Arc::new(Mutex::new(None));
+    let enrolled_name = Arc::new(Mutex::new(Some(agent_name.clone())));
+
+    // Local listener for the browser extension runs on its own OS thread —
+    // tiny_http's blocking loop doesn't play well inside the async runtime.
+    {
+        let domain_state = domain_state.clone();
+        let enrolled_name = enrolled_name.clone();
+        std::thread::spawn(move || {
+            local_server::run(LOCAL_PORT, domain_state, enrolled_name);
+        });
+    }
+
+    let current_segment: Arc<Mutex<Option<Segment>>> = Arc::new(Mutex::new(None));
+    let queue: Arc<Mutex<Vec<ActivityEvent>>> = Arc::new(Mutex::new(load_queue()));
+
+    let poll_segment = current_segment.clone();
+    let poll_queue = queue.clone();
+    let poll_domain_state = domain_state.clone();
+    tokio::spawn(async move {
+        loop {
+            poll_once(&poll_segment, &poll_queue, &poll_domain_state);
+            tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
+        }
+    });
+
+    let flush_segment = current_segment.clone();
+    let flush_queue = queue.clone();
+    let flush_cfg = cfg.clone();
+    let flush_client_url_base = client;
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(FLUSH_INTERVAL_SECS)).await;
+            close_segment(&flush_segment, &flush_queue);
+            let events: Vec<ActivityEvent> = { flush_queue.lock().unwrap().clone() };
+            if events.is_empty() {
+                continue;
+            }
+            match flush_client_url_base.ingest_activity(&flush_cfg.agent_key, &events).await {
+                Ok(_) => {
+                    flush_queue.lock().unwrap().clear();
+                    save_queue(&[]);
+                }
+                Err(e) => eprintln!("flush failed, will retry next cycle: {e}"),
+            }
+        }
+    });
+
+    let shot_cfg = cfg.clone();
+    let shot_backend_url = std::env::var("DESKLOG_BACKEND_URL").unwrap_or_else(|_| "http://localhost:4000".to_string());
+    tokio::spawn(async move {
+        let shot_client = BackendClient::new(shot_backend_url);
+        loop {
+            tokio::time::sleep(Duration::from_secs(SCREENSHOT_INTERVAL_SECS)).await;
+            let ctx = get_context();
+            match capture_primary_as_base64_jpeg() {
+                Ok(b64) => {
+                    if let Err(e) = shot_client
+                        .ingest_screenshot(&shot_cfg.agent_key, &ctx.process, &ctx.title, &b64)
+                        .await
+                    {
+                        eprintln!("screenshot upload failed: {e}");
+                    }
+                }
+                Err(e) => eprintln!("screenshot capture failed: {e}"),
+            }
+        }
+    });
+
+    // Keep this task alive; the spawned loops above run for the process lifetime.
+    std::future::pending::<()>().await;
+}
+
+fn poll_once(current_segment: &Arc<Mutex<Option<Segment>>>, queue: &Arc<Mutex<Vec<ActivityEvent>>>, domain_state: &SharedDomain) {
+    let ctx = get_context();
+    let now = Utc::now().to_rfc3339();
+    let is_idle = ctx.idle_seconds >= IDLE_THRESHOLD_SECS;
+    let is_browser = BROWSER_APPS.contains(&ctx.process.as_str());
+    let domain = if is_browser { local_server::current_domain(domain_state) } else { None };
+
+    let mut seg_guard = current_segment.lock().unwrap();
+    let needs_new_segment = match seg_guard.as_ref() {
+        None => true,
+        Some(seg) => {
+            seg.app_name != ctx.process || seg.window_title != ctx.title || seg.is_idle != is_idle || seg.domain != domain
+        }
+    };
+
+    if needs_new_segment {
+        if let Some(old) = seg_guard.take() {
+            push_segment(queue, old);
+        }
+        *seg_guard = Some(Segment {
+            app_name: if ctx.process.is_empty() { "(unknown)".to_string() } else { ctx.process },
+            window_title: ctx.title,
+            domain,
+            started_at: now.clone(),
+            ended_at: now,
+            input_count: if is_idle { 0 } else { 1 },
+            is_idle,
+        });
+    } else if let Some(seg) = seg_guard.as_mut() {
+        seg.ended_at = now;
+        if !is_idle {
+            seg.input_count += 1;
+        }
+    }
+}
+
+fn close_segment(current_segment: &Arc<Mutex<Option<Segment>>>, queue: &Arc<Mutex<Vec<ActivityEvent>>>) {
+    let mut seg_guard = current_segment.lock().unwrap();
+    if let Some(seg) = seg_guard.take() {
+        push_segment(queue, seg);
+    }
+}
+
+fn push_segment(queue: &Arc<Mutex<Vec<ActivityEvent>>>, seg: Segment) {
+    let client_event_id = format!("{}_{:x}", seg.started_at, rand_suffix());
+    let event = ActivityEvent {
+        client_event_id,
+        app_name: seg.app_name,
+        window_title: seg.window_title,
+        domain: seg.domain,
+        started_at: seg.started_at,
+        ended_at: seg.ended_at,
+        input_count: seg.input_count,
+        is_idle: seg.is_idle,
+    };
+    let mut q = queue.lock().unwrap();
+    q.push(event);
+    save_queue(&q);
+}
+
+fn rand_suffix() -> u32 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().subsec_nanos();
+    nanos ^ 0x9E3779B9
+}
+
+fn whoami_fallback() -> String {
+    std::env::var("USERNAME").unwrap_or_else(|_| "employee".to_string())
+}
