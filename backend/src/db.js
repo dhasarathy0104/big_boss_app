@@ -113,6 +113,29 @@ CREATE TABLE IF NOT EXISTS category_rules (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(manager_id, app_pattern)
 );
+
+CREATE TABLE IF NOT EXISTS attendance_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  clock_in TEXT NOT NULL,
+  clock_out TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_attendance_user ON attendance_records(user_id, clock_in);
+
+CREATE TABLE IF NOT EXISTS leave_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  leave_type TEXT NOT NULL,
+  start_date TEXT NOT NULL,
+  end_date TEXT NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  reviewed_at TEXT,
+  reviewed_by INTEGER REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_leave_user ON leave_requests(user_id);
 `);
 
 function ensureColumn(table, column, ddl) {

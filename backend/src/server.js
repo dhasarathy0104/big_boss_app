@@ -12,6 +12,9 @@ import { projectsRouter } from './routes/projects.js';
 import { tasksRouter } from './routes/tasks.js';
 import { timeEntriesRouter } from './routes/timeEntries.js';
 import { categoryRulesRouter } from './routes/categoryRules.js';
+import { liveStatusRouter } from './routes/liveStatus.js';
+import { attendanceRouter } from './routes/attendance.js';
+import { leaveRequestsRouter } from './routes/leaveRequests.js';
 import { buildOverrideMaps, computeProductivity } from './productivity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -161,6 +164,9 @@ app.use('/api/projects', projectsRouter);
 app.use('/api/tasks', tasksRouter);
 app.use('/api/time-entries', timeEntriesRouter);
 app.use('/api/category-rules', categoryRulesRouter);
+app.use('/api/managers', liveStatusRouter);
+app.use('/api/attendance', attendanceRouter);
+app.use('/api/leave-requests', leaveRequestsRouter);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`desklog backend listening on http://localhost:${PORT}`));

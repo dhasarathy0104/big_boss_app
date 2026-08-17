@@ -19,20 +19,17 @@ const CATEGORY_LABEL = {
 
 export default function TimelineView({ selectedUserId, date, setDate }) {
   const [productivity, setProductivity] = useState(null);
-  const [shots, setShots] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!selectedUserId) return;
     setLoading(true);
-    Promise.all([
-      fetch(`/api/users/${selectedUserId}/productivity?date=${date}`).then((r) => r.json()),
-      fetch(`/api/users/${selectedUserId}/screenshots?date=${date}`).then((r) => r.json()),
-    ]).then(([prod, sh]) => {
-      setProductivity(prod);
-      setShots(sh);
-      setLoading(false);
-    });
+    fetch(`/api/users/${selectedUserId}/productivity?date=${date}`)
+      .then((r) => r.json())
+      .then((prod) => {
+        setProductivity(prod);
+        setLoading(false);
+      });
   }, [selectedUserId, date]);
 
   const dayStart = new Date(`${date}T00:00:00.000Z`).getTime();
@@ -122,22 +119,6 @@ export default function TimelineView({ selectedUserId, date, setDate }) {
               ))}
             </tbody>
           </table>
-        )}
-      </div>
-
-      <div className="panel">
-        <h2>Screenshots ({shots.length})</h2>
-        {shots.length === 0 ? (
-          <div className="empty">No screenshots for this day.</div>
-        ) : (
-          <div className="shots">
-            {shots.map((s) => (
-              <div key={s.id}>
-                <img src={`/screenshots/${s.file_path}`} alt={s.window_title} loading="lazy" />
-                <div className="shot-meta">{fmtTime(s.captured_at)} — {s.app_name}</div>
-              </div>
-            ))}
-          </div>
         )}
       </div>
     </>

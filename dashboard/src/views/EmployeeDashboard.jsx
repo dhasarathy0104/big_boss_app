@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { todayStr } from '../format.js';
 import TimelineView from './TimelineView.jsx';
 import LogTimeView from './LogTimeView.jsx';
+import AttendanceView from './AttendanceView.jsx';
 
 const TABS = [
   { key: 'timeline', label: 'My Timeline' },
   { key: 'logtime', label: 'Log Time' },
+  { key: 'attendance', label: 'Attendance & Leave' },
 ];
 
 export default function EmployeeDashboard({ employee, employees, onEmployeeChange }) {
@@ -47,6 +49,7 @@ export default function EmployeeDashboard({ employee, employees, onEmployeeChang
         {activeTab === 'logtime' && (
           <LogTimeView userId={employee?.id} managerId={employee?.managerId} />
         )}
+        {activeTab === 'attendance' && <AttendanceView userId={employee?.id} />}
       </main>
     </div>
   );

@@ -1,15 +1,21 @@
 import { useEffect, useState } from 'react';
 import { todayStr } from '../format.js';
+import LiveView from './LiveView.jsx';
 import TimelineView from './TimelineView.jsx';
+import ScreenshotsView from './ScreenshotsView.jsx';
 import TeamView from './TeamView.jsx';
 import ProjectsView from './ProjectsView.jsx';
 import TimesheetReviewView from './TimesheetReviewView.jsx';
 import CategoriesView from './CategoriesView.jsx';
+import AttendanceReviewView from './AttendanceReviewView.jsx';
 
 const TABS = [
+  { key: 'live', label: 'Live' },
   { key: 'timeline', label: 'Timeline' },
+  { key: 'screenshots', label: 'Screenshots' },
   { key: 'projects', label: 'Projects' },
   { key: 'timesheet', label: 'Timesheet' },
+  { key: 'attendance', label: 'Attendance' },
   { key: 'categories', label: 'Categories' },
   { key: 'team', label: 'Team & Invite' },
 ];
@@ -18,7 +24,7 @@ export default function ManagerDashboard({ managerId, managers, onManagerChange 
   const [team, setTeam] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [date, setDate] = useState(todayStr());
-  const [activeTab, setActiveTab] = useState('timeline');
+  const [activeTab, setActiveTab] = useState('live');
 
   useEffect(() => {
     if (!managerId) return;
@@ -69,11 +75,19 @@ export default function ManagerDashboard({ managerId, managers, onManagerChange 
           ))}
         </div>
 
+        {activeTab === 'live' && (
+          <LiveView
+            managerId={managerId}
+            onSelectMember={(id) => { setSelectedUserId(id); setActiveTab('timeline'); }}
+          />
+        )}
         {activeTab === 'timeline' && (
           <TimelineView selectedUserId={selectedUserId} date={date} setDate={setDate} />
         )}
+        {activeTab === 'screenshots' && <ScreenshotsView selectedUserId={selectedUserId} />}
         {activeTab === 'projects' && <ProjectsView managerId={managerId} team={team} />}
         {activeTab === 'timesheet' && <TimesheetReviewView managerId={managerId} />}
+        {activeTab === 'attendance' && <AttendanceReviewView managerId={managerId} />}
         {activeTab === 'categories' && <CategoriesView managerId={managerId} />}
         {activeTab === 'team' && <TeamView managerId={managerId} team={team} />}
       </main>
