@@ -4,11 +4,13 @@ import TimelineView from './TimelineView.jsx';
 import TeamView from './TeamView.jsx';
 import ProjectsView from './ProjectsView.jsx';
 import TimesheetReviewView from './TimesheetReviewView.jsx';
+import CategoriesView from './CategoriesView.jsx';
 
 const TABS = [
   { key: 'timeline', label: 'Timeline' },
   { key: 'projects', label: 'Projects' },
   { key: 'timesheet', label: 'Timesheet' },
+  { key: 'categories', label: 'Categories' },
   { key: 'team', label: 'Team & Invite' },
 ];
 
@@ -72,6 +74,7 @@ export default function ManagerDashboard({ managerId, managers, onManagerChange 
         )}
         {activeTab === 'projects' && <ProjectsView managerId={managerId} team={team} />}
         {activeTab === 'timesheet' && <TimesheetReviewView managerId={managerId} />}
+        {activeTab === 'categories' && <CategoriesView managerId={managerId} />}
         {activeTab === 'team' && <TeamView managerId={managerId} team={team} />}
       </main>
     </div>

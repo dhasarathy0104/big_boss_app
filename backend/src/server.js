@@ -11,6 +11,8 @@ import { employeesRouter } from './routes/employees.js';
 import { projectsRouter } from './routes/projects.js';
 import { tasksRouter } from './routes/tasks.js';
 import { timeEntriesRouter } from './routes/timeEntries.js';
+import { categoryRulesRouter } from './routes/categoryRules.js';
+import { buildOverrideMap, computeProductivity } from './productivity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const screenshotsDir = path.join(__dirname, '..', 'data', 'screenshots');
@@ -119,6 +121,26 @@ app.get('/api/users/:id/timeline', (req, res) => {
   res.json(events);
 });
 
+app.get('/api/users/:id/productivity', (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'user not found' });
+
+  const { date } = req.query;
+  const day = date || new Date().toISOString().slice(0, 10);
+  const events = db.prepare(`
+    SELECT * FROM activity_events
+    WHERE user_id = ? AND started_at >= ? AND started_at < ?
+    ORDER BY started_at
+  `).all(req.params.id, `${day}T00:00:00.000Z`, `${day}T23:59:59.999Z`);
+
+  const rules = user.manager_id
+    ? db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(user.manager_id)
+    : [];
+  const overrideMap = buildOverrideMap(rules);
+
+  res.json(computeProductivity(events, overrideMap));
+});
+
 app.get('/api/users/:id/screenshots', (req, res) => {
   const { date } = req.query;
   const day = date || new Date().toISOString().slice(0, 10);
@@ -137,6 +159,7 @@ app.use('/api/employees', employeesRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/tasks', tasksRouter);
 app.use('/api/time-entries', timeEntriesRouter);
+app.use('/api/category-rules', categoryRulesRouter);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`desklog backend listening on http://localhost:${PORT}`));

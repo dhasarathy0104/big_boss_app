@@ -100,6 +100,17 @@ CREATE TABLE IF NOT EXISTS time_entries (
 );
 CREATE INDEX IF NOT EXISTS idx_time_entries_user ON time_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_time_entries_project ON time_entries(project_id);
+
+-- Per-manager overrides on top of the built-in default classification (see productivity.js).
+CREATE TABLE IF NOT EXISTS category_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  manager_id INTEGER NOT NULL REFERENCES users(id),
+  app_pattern TEXT NOT NULL,
+  category TEXT NOT NULL,
+  is_engaged_app INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(manager_id, app_pattern)
+);
 `);
 
 export function randomToken(bytes = 12) {

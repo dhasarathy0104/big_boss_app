@@ -9,6 +9,10 @@
   --accent: #5b8cff;
   --idle: #3a3f4b;
   --active: #35c07a;
+  --productive: #35c07a;
+  --neutral: #5b8cff;
+  --unproductive: #e0685f;
+  --engaged: #a67bff;
 }
 
 * { box-sizing: border-box; }
@@ -375,3 +379,28 @@ button {
   font-size: 12px;
   color: var(--muted);
 }
+
+.score-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.score-number {
+  font-size: 28px;
+  font-weight: 700;
+  min-width: 70px;
+}
+
+.score-bar {
+  flex: 1;
+  display: flex;
+  height: 14px;
+  border-radius: 7px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.cat-productive { color: var(--productive); }
+.cat-neutral { color: var(--neutral); }
+.cat-unproductive { color: var(--unproductive); }
