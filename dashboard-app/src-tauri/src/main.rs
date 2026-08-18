@@ -67,7 +67,8 @@ fn main() {
             // already running (e.g. a dev server), leave it alone on exit.
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 let state = app_handle.state::<BackendProcess>();
-                if let Some(mut child) = state.0.lock().unwrap().take() {
+                let mut guard = state.0.lock().unwrap();
+                if let Some(mut child) = guard.take() {
                     let _ = child.kill();
                 }
             }
