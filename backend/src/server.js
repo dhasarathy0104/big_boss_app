@@ -16,6 +16,8 @@ import { liveStatusRouter } from './routes/liveStatus.js';
 import { attendanceRouter } from './routes/attendance.js';
 import { leaveRequestsRouter } from './routes/leaveRequests.js';
 import { billingRouter } from './routes/billing.js';
+import { authRouter } from './routes/auth.js';
+import { requireAuth, isSelfOrOwnEmployee } from './auth.js';
 import { buildOverrideMaps, computeProductivity } from './productivity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -124,8 +126,16 @@ app.get('/api/agent-settings', authUser, (req, res) => {
 });
 
 // --- Dashboard read endpoints ---
+// All scoped to: the user viewing their own data, or the manager who owns them.
 
-app.get('/api/users/:id/timeline', (req, res) => {
+function requireSelfOrOwnEmployee(req, res, next) {
+  if (!isSelfOrOwnEmployee(req.authUser, Number(req.params.id))) {
+    return res.status(403).json({ error: 'not authorized for this user' });
+  }
+  next();
+}
+
+app.get('/api/users/:id/timeline', requireAuth, requireSelfOrOwnEmployee, (req, res) => {
   const { date } = req.query; // YYYY-MM-DD
   const day = date || new Date().toISOString().slice(0, 10);
   const events = db.prepare(`
@@ -136,7 +146,7 @@ app.get('/api/users/:id/timeline', (req, res) => {
   res.json(events);
 });
 
-app.get('/api/users/:id/productivity', (req, res) => {
+app.get('/api/users/:id/productivity', requireAuth, requireSelfOrOwnEmployee, (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'user not found' });
 
@@ -156,7 +166,7 @@ app.get('/api/users/:id/productivity', (req, res) => {
   res.json(computeProductivity(events, overrides));
 });
 
-app.get('/api/users/:id/screenshots', (req, res) => {
+app.get('/api/users/:id/screenshots', requireAuth, requireSelfOrOwnEmployee, (req, res) => {
   const { date } = req.query;
   const day = date || new Date().toISOString().slice(0, 10);
   const shots = db.prepare(`
@@ -167,7 +177,18 @@ app.get('/api/users/:id/screenshots', (req, res) => {
   res.json(shots);
 });
 
-app.use('/screenshots', express.static(screenshotsDir));
+// Screenshot images themselves — was a blanket express.static mount with zero
+// auth (anyone who guessed/knew a filename could view anyone's screen
+// captures). Now resolved through the DB so the same ownership check applies,
+// with a ?token= fallback since <img src> can't set an Authorization header.
+app.get('/api/screenshots/:filename', requireAuth, (req, res) => {
+  const shot = db.prepare('SELECT * FROM screenshots WHERE file_path = ?').get(req.params.filename);
+  if (!shot) return res.status(404).end();
+  if (!isSelfOrOwnEmployee(req.authUser, shot.user_id)) return res.status(403).end();
+  res.sendFile(path.join(screenshotsDir, shot.file_path));
+});
+
+app.use('/api/auth', authRouter);
 app.use('/api/managers', managersRouter);
 app.use('/api/invites', invitesPublicRouter);
 app.use('/api/employees', employeesRouter);

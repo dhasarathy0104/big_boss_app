@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { todayStr } from '../format.js';
+import { getToken } from '../api.js';
 
 export default function BillingView({ managerId }) {
   const [projects, setProjects] = useState([]);
@@ -31,7 +32,9 @@ export default function BillingView({ managerId }) {
     setInvoice(await res.json());
   }
 
-  const pdfUrl = projectId ? `/api/projects/${projectId}/invoice.pdf?startDate=${startDate}&endDate=${endDate}` : null;
+  const pdfUrl = projectId
+    ? `/api/projects/${projectId}/invoice.pdf?startDate=${startDate}&endDate=${endDate}&token=${getToken()}`
+    : null;
 
   return (
     <>

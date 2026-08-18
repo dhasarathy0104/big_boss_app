@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { db } from '../db.js';
+import { requireManager } from '../auth.js';
 
 export const billingRouter = Router();
 
@@ -43,18 +44,25 @@ function computeInvoice(projectId, startDate, endDate) {
   };
 }
 
-billingRouter.get('/projects/:id/invoice', (req, res) => {
+function ownsProject(authUser, projectId) {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+  return project && project.manager_id === authUser.id;
+}
+
+billingRouter.get('/projects/:id/invoice', requireManager, (req, res) => {
   const { startDate, endDate } = req.query;
   if (!startDate || !endDate) return res.status(400).json({ error: 'startDate and endDate required' });
+  if (!ownsProject(req.authUser, req.params.id)) return res.status(403).json({ error: 'not your project' });
 
   const result = computeInvoice(req.params.id, startDate, endDate);
   if (result.error) return res.status(result.status).json({ error: result.error });
   res.json(result);
 });
 
-billingRouter.get('/projects/:id/invoice.pdf', async (req, res) => {
+billingRouter.get('/projects/:id/invoice.pdf', requireManager, async (req, res) => {
   const { startDate, endDate } = req.query;
   if (!startDate || !endDate) return res.status(400).json({ error: 'startDate and endDate required' });
+  if (!ownsProject(req.authUser, req.params.id)) return res.status(403).json({ error: 'not your project' });
 
   const invoice = computeInvoice(req.params.id, startDate, endDate);
   if (invoice.error) return res.status(invoice.status).json({ error: invoice.error });

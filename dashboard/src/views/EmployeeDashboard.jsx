@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Clock, PlayCircle, CalendarCheck } from 'lucide-react';
+import { Clock, PlayCircle, CalendarCheck, LogOut } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
 import TimelineView from './TimelineView.jsx';
@@ -12,7 +12,7 @@ const TABS = [
   { key: 'attendance', label: 'Attendance & Leave', icon: CalendarCheck },
 ];
 
-export default function EmployeeDashboard({ employee, employees, onEmployeeChange }) {
+export default function EmployeeDashboard({ employee, onLogout }) {
   const [date, setDate] = useState(todayStr());
   const [activeTab, setActiveTab] = useState('timeline');
 
@@ -27,21 +27,12 @@ export default function EmployeeDashboard({ employee, employees, onEmployeeChang
         <div className="sidebar-section">
           <h1>Signed in as</h1>
           <div className="user-item selected" style={{ cursor: 'default', marginBottom: 8 }}>
-            <Avatar name={employee?.name} size={26} />
-            {employee?.name ?? '—'}
+            <Avatar name={employee.name} size={26} />
+            {employee.name}
           </div>
-          <select
-            value={employee?.id ?? ''}
-            onChange={(e) => onEmployeeChange(Number(e.target.value))}
-            style={{ width: '100%' }}
-          >
-            {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-          </select>
-        </div>
-
-        <div className="sidebar-section">
-          <h1>Manager</h1>
-          <div className="empty">{employee?.managerName ?? 'Unassigned'}</div>
+          <button className="btn-small" onClick={onLogout} style={{ width: '100%' }}>
+            <LogOut size={12} style={{ marginRight: 4, verticalAlign: -1 }} />Log out
+          </button>
         </div>
       </aside>
 
@@ -60,12 +51,12 @@ export default function EmployeeDashboard({ employee, employees, onEmployeeChang
         </div>
 
         {activeTab === 'timeline' && (
-          <TimelineView selectedUserId={employee?.id} date={date} setDate={setDate} />
+          <TimelineView selectedUserId={employee.id} date={date} setDate={setDate} />
         )}
         {activeTab === 'logtime' && (
-          <LogTimeView userId={employee?.id} managerId={employee?.managerId} />
+          <LogTimeView userId={employee.id} managerId={employee.managerId} />
         )}
-        {activeTab === 'attendance' && <AttendanceView userId={employee?.id} />}
+        {activeTab === 'attendance' && <AttendanceView userId={employee.id} />}
       </main>
     </div>
   );

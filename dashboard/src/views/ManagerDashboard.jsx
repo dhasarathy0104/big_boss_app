@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Activity, Camera, KanbanSquare, Clock, CalendarCheck, Receipt, Tags, UserPlus,
+  Activity, Camera, KanbanSquare, Clock, CalendarCheck, Receipt, Tags, UserPlus, LogOut,
 } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
@@ -26,14 +26,14 @@ const TABS = [
   { key: 'team', label: 'Team & Invite', icon: UserPlus },
 ];
 
-export default function ManagerDashboard({ managerId, managers, onManagerChange }) {
+export default function ManagerDashboard({ manager, onLogout }) {
+  const managerId = manager.id;
   const [team, setTeam] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [date, setDate] = useState(todayStr());
   const [activeTab, setActiveTab] = useState('live');
 
   useEffect(() => {
-    if (!managerId) return;
     fetch(`/api/managers/${managerId}/team`).then((r) => r.json()).then((data) => {
       setTeam(data);
       if (data.length && !data.some((u) => u.id === selectedUserId)) {
@@ -53,13 +53,12 @@ export default function ManagerDashboard({ managerId, managers, onManagerChange 
 
         <div className="sidebar-section">
           <h1>Signed in as</h1>
-          <select
-            value={managerId ?? ''}
-            onChange={(e) => onManagerChange(Number(e.target.value))}
-            style={{ width: '100%' }}
-          >
-            {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
+          <div className="inline-form" style={{ justifyContent: 'space-between' }}>
+            <strong>{manager.name}</strong>
+            <button className="btn-small" onClick={onLogout}>
+              <LogOut size={12} style={{ marginRight: 4, verticalAlign: -1 }} />Log out
+            </button>
+          </div>
         </div>
 
         <div className="sidebar-section">

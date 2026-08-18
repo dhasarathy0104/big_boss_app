@@ -1,20 +1,23 @@
 import { Router } from 'express';
 import { db } from '../db.js';
+import { requireAuth, authorizeScopedQuery } from '../auth.js';
 
 export const attendanceRouter = Router();
 
-attendanceRouter.get('/status', (req, res) => {
+attendanceRouter.get('/status', requireAuth, (req, res) => {
   const { userId } = req.query;
   if (!userId) return res.status(400).json({ error: 'userId required' });
+  if (!authorizeScopedQuery(req, res)) return;
   const open = db.prepare(`
     SELECT * FROM attendance_records WHERE user_id = ? AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1
   `).get(userId);
   res.json({ clockedIn: !!open, record: open ?? null });
 });
 
-attendanceRouter.post('/clock-in', (req, res) => {
+attendanceRouter.post('/clock-in', requireAuth, (req, res) => {
   const { userId } = req.body;
   if (!userId) return res.status(400).json({ error: 'userId required' });
+  if (Number(userId) !== req.authUser.id) return res.status(403).json({ error: 'can only clock yourself in' });
   const open = db.prepare('SELECT * FROM attendance_records WHERE user_id = ? AND clock_out IS NULL').get(userId);
   if (open) return res.status(409).json({ error: 'already clocked in' });
 
@@ -24,9 +27,10 @@ attendanceRouter.post('/clock-in', (req, res) => {
   res.json(db.prepare('SELECT * FROM attendance_records WHERE id = ?').get(info.lastInsertRowid));
 });
 
-attendanceRouter.post('/clock-out', (req, res) => {
+attendanceRouter.post('/clock-out', requireAuth, (req, res) => {
   const { userId } = req.body;
   if (!userId) return res.status(400).json({ error: 'userId required' });
+  if (Number(userId) !== req.authUser.id) return res.status(403).json({ error: 'can only clock yourself out' });
   const open = db.prepare('SELECT * FROM attendance_records WHERE user_id = ? AND clock_out IS NULL').get(userId);
   if (!open) return res.status(409).json({ error: 'not clocked in' });
 
@@ -34,9 +38,10 @@ attendanceRouter.post('/clock-out', (req, res) => {
   res.json(db.prepare('SELECT * FROM attendance_records WHERE id = ?').get(open.id));
 });
 
-attendanceRouter.get('/', (req, res) => {
+attendanceRouter.get('/', requireAuth, (req, res) => {
   const { userId, managerId, date } = req.query;
   if (!userId && !managerId) return res.status(400).json({ error: 'userId or managerId required' });
+  if (!authorizeScopedQuery(req, res)) return;
 
   if (userId) {
     const records = db.prepare(`

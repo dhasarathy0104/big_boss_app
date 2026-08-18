@@ -136,6 +136,15 @@ CREATE TABLE IF NOT EXISTS leave_requests (
   reviewed_by INTEGER REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS idx_leave_user ON leave_requests(user_id);
+
+-- Real login sessions (see auth.js) — replaces the old "pick any name from a
+-- dropdown" prototype identity switcher.
+CREATE TABLE IF NOT EXISTS sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT UNIQUE NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 function ensureColumn(table, column, ddl) {
@@ -147,6 +156,8 @@ function ensureColumn(table, column, ddl) {
 ensureColumn('activity_events', 'domain', 'domain TEXT');
 ensureColumn('category_rules', 'rule_type', "rule_type TEXT NOT NULL DEFAULT 'app'");
 ensureColumn('users', 'screenshot_interval_minutes', 'screenshot_interval_minutes INTEGER NOT NULL DEFAULT 5');
+ensureColumn('users', 'password_hash', 'password_hash TEXT');
+ensureColumn('users', 'claim_token', 'claim_token TEXT');
 
 export function randomToken(bytes = 12) {
   return crypto.randomBytes(bytes).toString('hex');

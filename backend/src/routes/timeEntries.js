@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { db } from '../db.js';
+import { requireAuth, authorizeScopedQuery } from '../auth.js';
 
 export const timeEntriesRouter = Router();
 
-timeEntriesRouter.get('/', (req, res) => {
+timeEntriesRouter.get('/', requireAuth, (req, res) => {
   const { userId, managerId } = req.query;
   if (!userId && !managerId) return res.status(400).json({ error: 'userId or managerId required' });
+  if (!authorizeScopedQuery(req, res)) return;
 
   let sql = `
     SELECT te.*, u.name AS user_name, p.name AS project_name, t.title AS task_title
@@ -22,11 +24,12 @@ timeEntriesRouter.get('/', (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
-timeEntriesRouter.post('/', (req, res) => {
+timeEntriesRouter.post('/', requireAuth, (req, res) => {
   const { userId, projectId, taskId, startedAt, endedAt, note } = req.body;
   if (!userId || !projectId || !startedAt || !endedAt) {
     return res.status(400).json({ error: 'userId, projectId, startedAt, endedAt required' });
   }
+  if (Number(userId) !== req.authUser.id) return res.status(403).json({ error: 'can only log your own time' });
   if (new Date(endedAt) <= new Date(startedAt)) {
     return res.status(400).json({ error: 'endedAt must be after startedAt' });
   }
@@ -45,19 +48,24 @@ timeEntriesRouter.post('/', (req, res) => {
   res.json(db.prepare('SELECT * FROM time_entries WHERE id = ?').get(info.lastInsertRowid));
 });
 
-timeEntriesRouter.patch('/:id/review', (req, res) => {
-  const { decision, reviewerUserId } = req.body;
+timeEntriesRouter.patch('/:id/review', requireAuth, (req, res) => {
+  const { decision } = req.body;
+  if (req.authUser.role !== 'manager') return res.status(403).json({ error: 'manager access required' });
   if (!['approved', 'rejected'].includes(decision)) {
     return res.status(400).json({ error: 'decision must be approved or rejected' });
   }
-  const entry = db.prepare('SELECT * FROM time_entries WHERE id = ?').get(req.params.id);
+  const entry = db.prepare(`
+    SELECT te.*, p.manager_id AS project_manager_id FROM time_entries te
+    JOIN projects p ON p.id = te.project_id WHERE te.id = ?
+  `).get(req.params.id);
   if (!entry) return res.status(404).json({ error: 'time entry not found' });
+  if (entry.project_manager_id !== req.authUser.id) return res.status(403).json({ error: 'not your team' });
   if (entry.status !== 'pending') return res.status(409).json({ error: `already ${entry.status}` });
 
   db.prepare(`
     UPDATE time_entries SET status = ?, reviewed_at = datetime('now'), reviewed_by = ?
     WHERE id = ?
-  `).run(decision, reviewerUserId ?? null, req.params.id);
+  `).run(decision, req.authUser.id, req.params.id);
 
   res.json(db.prepare('SELECT * FROM time_entries WHERE id = ?').get(req.params.id));
 });

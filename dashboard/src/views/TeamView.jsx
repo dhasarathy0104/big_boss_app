@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 export default function TeamView({ managerId, team }) {
   const [invites, setInvites] = useState([]);
   const [copied, setCopied] = useState(false);
+  const [claimLinks, setClaimLinks] = useState({}); // employeeId -> url
+  const [copiedClaimId, setCopiedClaimId] = useState(null);
 
   function loadInvites() {
     fetch(`/api/managers/${managerId}/invites`).then((r) => r.json()).then(setInvites);
@@ -27,6 +29,19 @@ export default function TeamView({ managerId, team }) {
     setTimeout(() => setCopied(false), 1500);
   }
 
+  async function getDashboardLink(employeeId) {
+    const res = await fetch(`/api/managers/${managerId}/team/${employeeId}/claim-link`, { method: 'POST' });
+    const { claimToken } = await res.json();
+    const url = `${window.location.origin}/claim/${claimToken}`;
+    setClaimLinks((prev) => ({ ...prev, [employeeId]: url }));
+  }
+
+  function copyClaimLink(employeeId) {
+    navigator.clipboard.writeText(claimLinks[employeeId]);
+    setCopiedClaimId(employeeId);
+    setTimeout(() => setCopiedClaimId(null), 1500);
+  }
+
   return (
     <>
       <div className="panel">
@@ -45,7 +60,8 @@ export default function TeamView({ managerId, team }) {
             </div>
             <div className="shot-meta" style={{ marginTop: 8 }}>
               Used {activeInvite.use_count} time{activeInvite.use_count === 1 ? '' : 's'}. Anyone who opens this link and
-              runs the agent automatically joins your team — no manual approval needed.
+              runs the agent automatically joins your team — no manual approval needed. This only connects their
+              background tracking agent — it does not give them dashboard access (see below for that).
             </div>
           </>
         )}
@@ -69,16 +85,44 @@ export default function TeamView({ managerId, team }) {
 
       <div className="panel">
         <h2>Team ({team.length})</h2>
+        <p className="join-sub" style={{ marginTop: 0 }}>
+          Each employee needs their own private link to set a password and view their own dashboard
+          (their own timeline, log time, attendance/leave) — separate from the invite link above.
+          Nobody can see another employee's data or your manager view with this link.
+        </p>
         {team.length === 0 ? (
           <div className="empty">Nobody has joined yet. Share the invite link above.</div>
         ) : (
           <table>
-            <thead><tr><th>Name</th><th>Joined</th></tr></thead>
+            <thead><tr><th>Name</th><th>Joined</th><th>Dashboard access</th><th></th></tr></thead>
             <tbody>
               {team.map((u) => (
                 <tr key={u.id}>
                   <td>{u.name}</td>
                   <td>{new Date(u.created_at).toLocaleDateString()}</td>
+                  <td>
+                    {u.hasDashboardLogin ? (
+                      <span className="status-badge status-approved">Set up</span>
+                    ) : u.hasPendingClaim ? (
+                      <span className="status-badge status-pending">Link sent, not used yet</span>
+                    ) : (
+                      <span className="status-badge status-rejected">Not set up</span>
+                    )}
+                  </td>
+                  <td>
+                    {claimLinks[u.id] ? (
+                      <div className="inline-form" style={{ gap: 6 }}>
+                        <input readOnly value={claimLinks[u.id]} style={{ minWidth: 260 }} />
+                        <button className="btn-small" onClick={() => copyClaimLink(u.id)}>
+                          {copiedClaimId === u.id ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button className="btn-small" onClick={() => getDashboardLink(u.id)}>
+                        {u.hasDashboardLogin ? 'Reset password link' : 'Get dashboard link'}
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

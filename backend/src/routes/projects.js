@@ -1,21 +1,33 @@
 import { Router } from 'express';
 import { db } from '../db.js';
+import { requireAuth } from '../auth.js';
 
 export const projectsRouter = Router();
 
-// Projects are owned by a manager — only that manager's dashboard should see them.
-projectsRouter.get('/', (req, res) => {
+// Read by both a manager (their own projects) and their employees (to pick a
+// project to log time against) — same permission shape as isSelfOrOwnEmployee,
+// just checking a managerId instead of a userId.
+function canSeeManagersProjects(authUser, managerId) {
+  if (authUser.role === 'manager') return authUser.id === managerId;
+  return authUser.manager_id === managerId;
+}
+
+projectsRouter.get('/', requireAuth, (req, res) => {
   const { managerId } = req.query;
   if (!managerId) return res.status(400).json({ error: 'managerId required' });
+  if (!canSeeManagersProjects(req.authUser, Number(managerId))) {
+    return res.status(403).json({ error: 'not your team' });
+  }
   const projects = db.prepare('SELECT * FROM projects WHERE manager_id = ? ORDER BY created_at DESC').all(managerId);
   res.json(projects);
 });
 
-projectsRouter.post('/', (req, res) => {
+projectsRouter.post('/', requireAuth, (req, res) => {
   const { managerId, name, clientName, isBillable, hourlyRate } = req.body;
   if (!managerId || !name?.trim()) return res.status(400).json({ error: 'managerId and name required' });
-  const manager = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(managerId);
-  if (!manager) return res.status(404).json({ error: 'manager not found' });
+  if (req.authUser.role !== 'manager' || req.authUser.id !== Number(managerId)) {
+    return res.status(403).json({ error: 'manager access required' });
+  }
 
   const info = db.prepare(`
     INSERT INTO projects (manager_id, name, client_name, is_billable, hourly_rate)

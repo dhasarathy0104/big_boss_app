@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { buildOverrideMaps, computeProductivity } from '../productivity.js';
+import { requireManager } from '../auth.js';
 
 export const liveStatusRouter = Router();
 
@@ -15,9 +16,8 @@ function statusFor(latestEvent) {
   return latestEvent.is_idle ? 'idle' : 'active';
 }
 
-liveStatusRouter.get('/:managerId/live-status', (req, res) => {
-  const manager = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(req.params.managerId);
-  if (!manager) return res.status(404).json({ error: 'manager not found' });
+liveStatusRouter.get('/:managerId/live-status', requireManager, (req, res) => {
+  if (Number(req.params.managerId) !== req.authUser.id) return res.status(403).json({ error: 'not your team' });
 
   const team = db.prepare(`
     SELECT id, name FROM users WHERE manager_id = ? AND role = 'employee' ORDER BY name

@@ -1,114 +1,127 @@
 import { useEffect, useState } from 'react';
-import { ShieldCheck, User } from 'lucide-react';
 import JoinPage from './views/JoinPage.jsx';
+import ClaimAccountPage from './views/ClaimAccountPage.jsx';
 import ManagerDashboard from './views/ManagerDashboard.jsx';
 import EmployeeDashboard from './views/EmployeeDashboard.jsx';
+import { getToken, setToken } from './api.js';
 
-function Shell() {
-  const [kind, setKind] = useState('manager'); // 'manager' | 'employee' — not real auth, see project notes
-  const [managers, setManagers] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [managerId, setManagerId] = useState(null);
-  const [employeeId, setEmployeeId] = useState(null);
-  const [newManagerName, setNewManagerName] = useState('');
+function AuthScreen({ onAuthed }) {
+  const [bootstrap, setBootstrap] = useState(null); // { state: 'register' | 'claim-manager' | 'login', managerName? }
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  function loadAll() {
-    fetch('/api/managers').then((r) => r.json()).then((data) => {
-      setManagers(data);
-      setManagerId((prev) => prev ?? data[0]?.id ?? null);
-    });
-    fetch('/api/employees').then((r) => r.json()).then((data) => {
-      setEmployees(data);
-      setEmployeeId((prev) => prev ?? data[0]?.id ?? null);
-    });
-  }
+  useEffect(() => {
+    fetch('/api/auth/bootstrap').then((r) => r.json()).then(setBootstrap);
+  }, []);
 
-  useEffect(loadAll, []);
-
-  async function createManager(e) {
+  async function submit(e) {
     e.preventDefault();
-    if (!newManagerName.trim()) return;
-    const res = await fetch('/api/managers', {
+    setError('');
+    if (bootstrap.state === 'register' && !name.trim()) { setError('Name required.'); return; }
+    if (password.length < (bootstrap.state === 'login' ? 1 : 8)) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    setSubmitting(true);
+    const path = bootstrap.state === 'register' ? 'register' : bootstrap.state === 'claim-manager' ? 'claim-manager' : 'login';
+    const body = bootstrap.state === 'login' ? { name, password } : bootstrap.state === 'register' ? { name, password } : { password };
+    const res = await fetch(`/api/auth/${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: newManagerName.trim() }),
+      body: JSON.stringify(body),
     });
-    const manager = await res.json();
-    setNewManagerName('');
-    setManagers((prev) => [...prev, manager]);
-    setManagerId(manager.id);
+    setSubmitting(false);
+    if (!res.ok) { setError((await res.json()).error); return; }
+    const data = await res.json();
+    setToken(data.token);
+    onAuthed(data.user);
   }
 
-  if (managers.length === 0) {
-    return (
-      <div className="join-page">
-        <div className="join-card">
-          <div className="brand" style={{ border: 'none', marginBottom: 20, paddingBottom: 0 }}>
-            <div className="brand-mark">D</div>
-            <div className="brand-name">Desklog</div>
-          </div>
-          <h1>Set up your manager account</h1>
-          <p className="join-sub">This is the identity your team will see activity reported under.</p>
-          <form className="stacked-form" onSubmit={createManager}>
-            <input
-              placeholder="Your name"
-              value={newManagerName}
-              onChange={(e) => setNewManagerName(e.target.value)}
-            />
-            <button type="submit" style={{ alignSelf: 'flex-start' }}>Create account</button>
-          </form>
-        </div>
-      </div>
-    );
-  }
+  if (!bootstrap) return null;
+
+  const heading = bootstrap.state === 'register'
+    ? 'Set up your manager account'
+    : bootstrap.state === 'claim-manager'
+      ? `Set a password for ${bootstrap.managerName}`
+      : 'Log in';
+  const sub = bootstrap.state === 'register'
+    ? 'This is the identity your team will see activity reported under.'
+    : bootstrap.state === 'claim-manager'
+      ? 'This account was created before login existed — set a password to secure it.'
+      : 'Enter your name and password.';
 
   return (
-    <div>
-      <div className="identity-bar">
-        <span>I am a:</span>
-        <div className="role-toggle" style={{ width: 240 }}>
-          <button className={kind === 'manager' ? 'active' : ''} onClick={() => setKind('manager')}>
-            <ShieldCheck size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Manager
-          </button>
-          <button className={kind === 'employee' ? 'active' : ''} onClick={() => setKind('employee')}>
-            <User size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Employee
-          </button>
+    <div className="join-page">
+      <div className="join-card">
+        <div className="brand" style={{ border: 'none', marginBottom: 20, paddingBottom: 0 }}>
+          <div className="brand-mark">D</div>
+          <div className="brand-name">Desklog</div>
         </div>
-      </div>
-
-      {kind === 'manager' && (
-        <ManagerDashboard managerId={managerId} managers={managers} onManagerChange={setManagerId} />
-      )}
-
-      {kind === 'employee' && (
-        employees.length === 0 ? (
-          <div className="join-page">
-            <div className="join-card">
-              <h1>No employees yet</h1>
-              <p className="join-sub">
-                Employees join by opening an invite link generated from a manager's "Team & Invite" tab and
-                running the agent — there's no separate employee sign-up here.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <EmployeeDashboard
-            employee={employees.find((e) => e.id === employeeId)}
-            employees={employees}
-            onEmployeeChange={setEmployeeId}
+        <h1>{heading}</h1>
+        <p className="join-sub">{sub}</p>
+        <form className="stacked-form" onSubmit={submit}>
+          {bootstrap.state !== 'claim-manager' && (
+            <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
+          )}
+          <input
+            type="password"
+            placeholder={bootstrap.state === 'login' ? 'Password' : 'Choose a password (8+ characters)'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
           />
-        )
-      )}
+          {error && <div style={{ color: '#e07070', fontSize: 12 }}>{error}</div>}
+          <button type="submit" disabled={submitting} style={{ alignSelf: 'flex-start' }}>
+            {submitting
+              ? 'Please wait…'
+              : bootstrap.state === 'login' ? 'Log in' : bootstrap.state === 'claim-manager' ? 'Set password' : 'Create account'}
+          </button>
+        </form>
+      </div>
     </div>
   );
+}
+
+function Shell() {
+  const [user, setUser] = useState(undefined); // undefined = checking, null = logged out
+
+  useEffect(() => {
+    if (!getToken()) { setUser(null); return; }
+    fetch('/api/auth/me')
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then(setUser)
+      .catch(() => { setToken(null); setUser(null); });
+  }, []);
+
+  function logout() {
+    fetch('/api/auth/logout', { method: 'POST' }).finally(() => {
+      setToken(null);
+      setUser(null);
+    });
+  }
+
+  if (user === undefined) return null;
+  if (!user) return <AuthScreen onAuthed={setUser} />;
+
+  return user.role === 'manager'
+    ? <ManagerDashboard manager={user} onLogout={logout} />
+    : <EmployeeDashboard employee={user} onLogout={logout} />;
 }
 
 export default function App() {
   const path = window.location.pathname;
   const joinMatch = path.match(/^\/join\/([^/]+)/);
+  const claimMatch = path.match(/^\/claim\/([^/]+)/);
 
-  if (joinMatch) {
-    return <JoinPage token={joinMatch[1]} />;
+  if (joinMatch) return <JoinPage token={joinMatch[1]} />;
+  if (claimMatch) {
+    return (
+      <ClaimAccountPage
+        token={claimMatch[1]}
+        onClaimed={() => { window.location.pathname = '/'; }}
+      />
+    );
   }
 
   return <Shell />;

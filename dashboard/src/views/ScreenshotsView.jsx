@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
 import { todayStr, fmtTime } from '../format.js';
+import { getToken } from '../api.js';
+
+function shotUrl(filePath) {
+  return `/api/screenshots/${filePath}?token=${getToken()}`;
+}
 
 const INTERVAL_OPTIONS = [
   { value: 0, label: 'Off' },
@@ -108,7 +113,7 @@ export default function ScreenshotsView({ selectedUserId, managerId }) {
               <div className="screenshot-grid">
                 {shots.map((s, i) => (
                   <div key={s.id} className="screenshot-card" onClick={() => setLightboxIndex(i)}>
-                    <img src={`/screenshots/${s.file_path}`} alt={s.window_title} loading="lazy" />
+                    <img src={shotUrl(s.file_path)} alt={s.window_title} loading="lazy" />
                     <div className="shot-meta">{fmtTime(s.captured_at)} — {s.app_name}</div>
                   </div>
                 ))}
@@ -120,7 +125,7 @@ export default function ScreenshotsView({ selectedUserId, managerId }) {
 
       {active && (
         <div className="lightbox" onClick={() => setLightboxIndex(null)}>
-          <img src={`/screenshots/${active.file_path}`} alt={active.window_title} onClick={(e) => e.stopPropagation()} />
+          <img src={shotUrl(active.file_path)} alt={active.window_title} onClick={(e) => e.stopPropagation()} />
           <div className="lightbox-caption">
             {fmtTime(active.captured_at)} — {active.app_name}
             {active.window_title ? ` — ${active.window_title}` : ''}
