@@ -79,6 +79,13 @@ fn main() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running desklog agent");
+        .build(tauri::generate_context!())
+        .expect("error while building desklog agent")
+        .run(|_app_handle, event| {
+            // This app lives in the tray — closing the setup window (or any
+            // window) must never quit it. Only the tray menu's "Quit" does that.
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                api.prevent_exit();
+            }
+        });
 }
