@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fmtTime, fmtMinutes } from '../format.js';
+import ProgressRing from '../components/ProgressRing.jsx';
 
 const CATEGORY_COLOR = {
   productive: 'var(--productive)',
@@ -59,21 +60,23 @@ export default function TimelineView({ selectedUserId, date, setDate }) {
         ) : (
           <>
             <div className="score-row">
-              <div className="score-number">{score}%</div>
-              <div className="score-bar">
-                {Object.entries(totals).filter(([, mins]) => mins > 0).map(([cat, mins]) => (
-                  <div
-                    key={cat}
-                    style={{ width: `${(mins / Object.values(totals).reduce((a, b) => a + b, 0)) * 100}%`, background: CATEGORY_COLOR[cat] }}
-                    title={`${CATEGORY_LABEL[cat]}: ${fmtMinutes(mins)}`}
-                  />
-                ))}
+              <ProgressRing value={score} color={score >= 60 ? 'var(--productive)' : score >= 35 ? 'var(--status-warning)' : 'var(--unproductive)'} />
+              <div style={{ flex: 1 }}>
+                <div className="score-bar">
+                  {Object.entries(totals).filter(([, mins]) => mins > 0).map(([cat, mins]) => (
+                    <div
+                      key={cat}
+                      style={{ width: `${(mins / Object.values(totals).reduce((a, b) => a + b, 0)) * 100}%`, background: CATEGORY_COLOR[cat] }}
+                      title={`${CATEGORY_LABEL[cat]}: ${fmtMinutes(mins)}`}
+                    />
+                  ))}
+                </div>
+                <div className="legend">
+                  {Object.entries(totals).filter(([, mins]) => mins > 0).map(([cat, mins]) => (
+                    <span key={cat}><span className="legend-dot" style={{ background: CATEGORY_COLOR[cat] }} />{CATEGORY_LABEL[cat]} — {fmtMinutes(mins)}</span>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="legend">
-              {Object.entries(totals).filter(([, mins]) => mins > 0).map(([cat, mins]) => (
-                <span key={cat}><span className="legend-dot" style={{ background: CATEGORY_COLOR[cat] }} />{CATEGORY_LABEL[cat]} — {fmtMinutes(mins)}</span>
-              ))}
             </div>
           </>
         )}

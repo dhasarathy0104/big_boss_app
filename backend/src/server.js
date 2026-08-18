@@ -170,5 +170,16 @@ app.use('/api/attendance', attendanceRouter);
 app.use('/api/leave-requests', leaveRequestsRouter);
 app.use('/api', billingRouter);
 
+// Serve the built dashboard from the same origin as the API — no separate dev
+// server needed, and no CORS/proxy juggling for the desktop app wrapper.
+const dashboardDist = path.join(__dirname, '..', '..', 'dashboard', 'dist');
+if (fs.existsSync(dashboardDist)) {
+  app.use(express.static(dashboardDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/screenshots')) return next();
+    res.sendFile(path.join(dashboardDist, 'index.html'));
+  });
+}
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`desklog backend listening on http://localhost:${PORT}`));

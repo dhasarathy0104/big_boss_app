@@ -1,13 +1,15 @@
 import { useState } from 'react';
+import { Clock, PlayCircle, CalendarCheck } from 'lucide-react';
 import { todayStr } from '../format.js';
+import Avatar from '../components/Avatar.jsx';
 import TimelineView from './TimelineView.jsx';
 import LogTimeView from './LogTimeView.jsx';
 import AttendanceView from './AttendanceView.jsx';
 
 const TABS = [
-  { key: 'timeline', label: 'My Timeline' },
-  { key: 'logtime', label: 'Log Time' },
-  { key: 'attendance', label: 'Attendance & Leave' },
+  { key: 'timeline', label: 'My Timeline', icon: Clock },
+  { key: 'logtime', label: 'Log Time', icon: PlayCircle },
+  { key: 'attendance', label: 'Attendance & Leave', icon: CalendarCheck },
 ];
 
 export default function EmployeeDashboard({ employee, employees, onEmployeeChange }) {
@@ -17,17 +19,30 @@ export default function EmployeeDashboard({ employee, employees, onEmployeeChang
   return (
     <div className="app">
       <aside className="sidebar">
-        <h1>Signed in as</h1>
-        <select
-          value={employee?.id ?? ''}
-          onChange={(e) => onEmployeeChange(Number(e.target.value))}
-          style={{ width: '100%', marginBottom: 20 }}
-        >
-          {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-        </select>
+        <div className="brand">
+          <div className="brand-mark">D</div>
+          <div className="brand-name">Desklog</div>
+        </div>
 
-        <h1>Manager</h1>
-        <div className="empty">{employee?.managerName ?? 'Unassigned'}</div>
+        <div className="sidebar-section">
+          <h1>Signed in as</h1>
+          <div className="user-item selected" style={{ cursor: 'default', marginBottom: 8 }}>
+            <Avatar name={employee?.name} size={26} />
+            {employee?.name ?? '—'}
+          </div>
+          <select
+            value={employee?.id ?? ''}
+            onChange={(e) => onEmployeeChange(Number(e.target.value))}
+            style={{ width: '100%' }}
+          >
+            {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+          </select>
+        </div>
+
+        <div className="sidebar-section">
+          <h1>Manager</h1>
+          <div className="empty">{employee?.managerName ?? 'Unassigned'}</div>
+        </div>
       </aside>
 
       <main className="main">
@@ -38,6 +53,7 @@ export default function EmployeeDashboard({ employee, employees, onEmployeeChang
               className={`tab ${activeTab === t.key ? 'active' : ''}`}
               onClick={() => setActiveTab(t.key)}
             >
+              <t.icon size={15} />
               {t.label}
             </div>
           ))}

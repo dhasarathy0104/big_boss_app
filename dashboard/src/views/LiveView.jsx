@@ -1,8 +1,16 @@
 import { useEffect, useState } from 'react';
+import { Zap, Coffee, MoonStar, Users } from 'lucide-react';
 import { fmtMinutes } from '../format.js';
+import Avatar from '../components/Avatar.jsx';
 
 const STATUS_LABEL = { active: 'Active', idle: 'Idle', offline: 'Offline' };
 const REFRESH_MS = 15_000;
+
+const STAT_TILES = [
+  { key: 'active', label: 'Active now', icon: Zap, color: 'var(--status-good)' },
+  { key: 'idle', label: 'Idle', icon: Coffee, color: 'var(--status-warning)' },
+  { key: 'offline', label: 'Offline', icon: MoonStar, color: 'var(--idle)' },
+];
 
 export default function LiveView({ managerId, onSelectMember }) {
   const [members, setMembers] = useState([]);
@@ -30,38 +38,62 @@ export default function LiveView({ managerId, onSelectMember }) {
   );
 
   return (
-    <div className="panel">
-      <h2>Right now</h2>
-      <div className="live-summary">
-        <span><span className="status-dot status-dot-active" /> {counts.active} active</span>
-        <span><span className="status-dot status-dot-idle" /> {counts.idle} idle</span>
-        <span><span className="status-dot status-dot-offline" /> {counts.offline} offline</span>
+    <>
+      <div className="stat-row">
+        <div className="stat-tile">
+          <div className="stat-tile-icon" style={{ background: 'rgba(57,135,229,0.15)' }}>
+            <Users size={18} color="var(--brand)" />
+          </div>
+          <div>
+            <div className="stat-tile-value">{members.length}</div>
+            <div className="stat-tile-label">Team members</div>
+          </div>
+        </div>
+        {STAT_TILES.map((t) => (
+          <div className="stat-tile" key={t.key}>
+            <div className="stat-tile-icon" style={{ background: `color-mix(in srgb, ${t.color} 15%, transparent)` }}>
+              <t.icon size={18} color={t.color} />
+            </div>
+            <div>
+              <div className="stat-tile-value">{counts[t.key]}</div>
+              <div className="stat-tile-label">{t.label}</div>
+            </div>
+          </div>
+        ))}
       </div>
 
-      {members.length === 0 ? (
-        <div className="empty">{loading ? 'Loading…' : 'Nobody on your team yet.'}</div>
-      ) : (
-        <div className="live-grid">
-          {members.map((m) => (
-            <div key={m.id} className="live-card" onClick={() => onSelectMember?.(m.id)}>
-              <div className="live-card-top">
-                <span className={`status-dot status-dot-${m.status}`} />
-                <strong>{m.name}</strong>
-              </div>
-              <div className="shot-meta">{STATUS_LABEL[m.status]}</div>
-              {m.status !== 'offline' && (
-                <div className="shot-meta">
-                  {m.currentDomain ? `${m.currentApp} · ${m.currentDomain}` : m.currentApp || '—'}
+      <div className="panel">
+        <h2>Right now</h2>
+        {members.length === 0 ? (
+          <div className="empty">{loading ? 'Loading…' : 'Nobody on your team yet.'}</div>
+        ) : (
+          <div className="live-grid">
+            {members.map((m) => (
+              <div key={m.id} className="live-card" onClick={() => onSelectMember?.(m.id)}>
+                <div className="live-card-top">
+                  <Avatar name={m.name} size={30} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</div>
+                    <div className="shot-meta" style={{ display: 'flex', alignItems: 'center' }}>
+                      <span className={`status-dot status-dot-${m.status}`} />
+                      {STATUS_LABEL[m.status]}
+                    </div>
+                  </div>
                 </div>
-              )}
-              <div className="live-card-stats">
-                <span>{m.todayScore}% today</span>
-                <span>{fmtMinutes(m.todayActiveMinutes)} tracked</span>
+                {m.status !== 'offline' && (
+                  <div className="shot-meta" style={{ marginBottom: 4 }}>
+                    {m.currentDomain ? `${m.currentApp} · ${m.currentDomain}` : m.currentApp || '—'}
+                  </div>
+                )}
+                <div className="live-card-stats">
+                  <span>{m.todayScore}% today</span>
+                  <span>{fmtMinutes(m.todayActiveMinutes)} tracked</span>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   );
 }

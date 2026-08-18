@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
+import {
+  Activity, Camera, KanbanSquare, Clock, CalendarCheck, Receipt, Tags, UserPlus,
+} from 'lucide-react';
 import { todayStr } from '../format.js';
+import Avatar from '../components/Avatar.jsx';
 import LiveView from './LiveView.jsx';
 import TimelineView from './TimelineView.jsx';
 import ScreenshotsView from './ScreenshotsView.jsx';
@@ -11,15 +15,15 @@ import AttendanceReviewView from './AttendanceReviewView.jsx';
 import BillingView from './BillingView.jsx';
 
 const TABS = [
-  { key: 'live', label: 'Live' },
-  { key: 'timeline', label: 'Timeline' },
-  { key: 'screenshots', label: 'Screenshots' },
-  { key: 'projects', label: 'Projects' },
-  { key: 'timesheet', label: 'Timesheet' },
-  { key: 'attendance', label: 'Attendance' },
-  { key: 'billing', label: 'Billing' },
-  { key: 'categories', label: 'Categories' },
-  { key: 'team', label: 'Team & Invite' },
+  { key: 'live', label: 'Live', icon: Activity },
+  { key: 'timeline', label: 'Timeline', icon: Clock },
+  { key: 'screenshots', label: 'Screenshots', icon: Camera },
+  { key: 'projects', label: 'Projects', icon: KanbanSquare },
+  { key: 'timesheet', label: 'Timesheet', icon: Clock },
+  { key: 'attendance', label: 'Attendance', icon: CalendarCheck },
+  { key: 'billing', label: 'Billing', icon: Receipt },
+  { key: 'categories', label: 'Categories', icon: Tags },
+  { key: 'team', label: 'Team & Invite', icon: UserPlus },
 ];
 
 export default function ManagerDashboard({ managerId, managers, onManagerChange }) {
@@ -42,26 +46,36 @@ export default function ManagerDashboard({ managerId, managers, onManagerChange 
   return (
     <div className="app">
       <aside className="sidebar">
-        <h1>Signed in as</h1>
-        <select
-          value={managerId ?? ''}
-          onChange={(e) => onManagerChange(Number(e.target.value))}
-          style={{ width: '100%', marginBottom: 20 }}
-        >
-          {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
+        <div className="brand">
+          <div className="brand-mark">D</div>
+          <div className="brand-name">Desklog</div>
+        </div>
 
-        <h1>Team</h1>
-        {team.length === 0 && <div className="empty">Nobody has joined yet — see the Team &amp; Invite tab.</div>}
-        {team.map((u) => (
-          <div
-            key={u.id}
-            className={`user-item ${u.id === selectedUserId ? 'selected' : ''}`}
-            onClick={() => setSelectedUserId(u.id)}
+        <div className="sidebar-section">
+          <h1>Signed in as</h1>
+          <select
+            value={managerId ?? ''}
+            onChange={(e) => onManagerChange(Number(e.target.value))}
+            style={{ width: '100%' }}
           >
-            {u.name}
-          </div>
-        ))}
+            {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        </div>
+
+        <div className="sidebar-section">
+          <h1>Team ({team.length})</h1>
+          {team.length === 0 && <div className="empty">Nobody has joined yet — see the Team &amp; Invite tab.</div>}
+          {team.map((u) => (
+            <div
+              key={u.id}
+              className={`user-item ${u.id === selectedUserId ? 'selected' : ''}`}
+              onClick={() => setSelectedUserId(u.id)}
+            >
+              <Avatar name={u.name} size={26} />
+              {u.name}
+            </div>
+          ))}
+        </div>
       </aside>
 
       <main className="main">
@@ -72,6 +86,7 @@ export default function ManagerDashboard({ managerId, managers, onManagerChange 
               className={`tab ${activeTab === t.key ? 'active' : ''}`}
               onClick={() => setActiveTab(t.key)}
             >
+              <t.icon size={15} />
               {t.label}
             </div>
           ))}

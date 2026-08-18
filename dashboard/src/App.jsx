@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ShieldCheck, User } from 'lucide-react';
 import JoinPage from './views/JoinPage.jsx';
 import ManagerDashboard from './views/ManagerDashboard.jsx';
 import EmployeeDashboard from './views/EmployeeDashboard.jsx';
@@ -42,6 +43,10 @@ function Shell() {
     return (
       <div className="join-page">
         <div className="join-card">
+          <div className="brand" style={{ border: 'none', marginBottom: 20, paddingBottom: 0 }}>
+            <div className="brand-mark">D</div>
+            <div className="brand-name">Desklog</div>
+          </div>
           <h1>Set up your manager account</h1>
           <p className="join-sub">This is the identity your team will see activity reported under.</p>
           <form className="stacked-form" onSubmit={createManager}>
@@ -61,9 +66,13 @@ function Shell() {
     <div>
       <div className="identity-bar">
         <span>I am a:</span>
-        <div className="role-toggle" style={{ width: 220 }}>
-          <button className={kind === 'manager' ? 'active' : ''} onClick={() => setKind('manager')}>Manager</button>
-          <button className={kind === 'employee' ? 'active' : ''} onClick={() => setKind('employee')}>Employee</button>
+        <div className="role-toggle" style={{ width: 240 }}>
+          <button className={kind === 'manager' ? 'active' : ''} onClick={() => setKind('manager')}>
+            <ShieldCheck size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Manager
+          </button>
+          <button className={kind === 'employee' ? 'active' : ''} onClick={() => setKind('employee')}>
+            <User size={13} style={{ marginRight: 5, verticalAlign: -2 }} />Employee
+          </button>
         </div>
       </div>
 

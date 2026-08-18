@@ -36,6 +36,11 @@ export default function JoinPage({ token }) {
   return (
     <div className="join-page">
       <div className="join-card">
+        <div className="brand" style={{ border: 'none', marginBottom: 20, paddingBottom: 0 }}>
+          <div className="brand-mark">D</div>
+          <div className="brand-name">Desklog</div>
+        </div>
+
         {status === 'loading' && <div className="empty">Checking invite…</div>}
 
         {status === 'invalid' && (
