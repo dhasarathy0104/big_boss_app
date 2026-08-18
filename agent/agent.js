@@ -27,7 +27,8 @@ const INVITE_TOKEN = process.env.DESKLOG_INVITE_TOKEN || null;
 const LOCAL_PORT = Number(process.env.DESKLOG_LOCAL_PORT || 34909);
 const POLL_INTERVAL_MS = 10_000;
 const FLUSH_INTERVAL_MS = 30_000;
-const SCREENSHOT_INTERVAL_MS = 5 * 60_000;
+const DEFAULT_SCREENSHOT_INTERVAL_MIN = 5;
+const SETTINGS_RECHECK_MS = 60_000; // how often we re-check the manager's configured interval
 const IDLE_THRESHOLD_SECONDS = 120;
 const DOMAIN_FRESHNESS_MS = 20_000; // extension reports on tab/window change, not every poll
 const BROWSER_APPS = new Set(['chrome', 'msedge', 'firefox', 'brave', 'opera']);
@@ -236,6 +237,37 @@ async function flush(cfg) {
   }
 }
 
+// The manager can change this anytime from the dashboard's Screenshots tab —
+// re-checking each cycle means an employee's agent never needs a restart to
+// pick up the new cadence. 0 means screenshots are turned off entirely.
+async function fetchScreenshotIntervalMinutes(cfg) {
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/agent-settings`, {
+      headers: { 'x-agent-key': cfg.agentKey },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.screenshotIntervalMinutes;
+  } catch {
+    return null;
+  }
+}
+
+async function screenshotLoop(cfg) {
+  let intervalMinutes = DEFAULT_SCREENSHOT_INTERVAL_MIN;
+  for (;;) {
+    const fetched = await fetchScreenshotIntervalMinutes(cfg);
+    if (fetched !== null) intervalMinutes = fetched;
+
+    if (intervalMinutes > 0) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMinutes * 60_000));
+      await screenshotTick(cfg);
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, SETTINGS_RECHECK_MS));
+    }
+  }
+}
+
 async function screenshotTick(cfg) {
   try {
     const ctx = await getContext();
@@ -261,11 +293,11 @@ async function screenshotTick(cfg) {
 async function main() {
   const cfg = await enroll();
   startLocalServer();
-  console.log(`Agent running. Polling every ${POLL_INTERVAL_MS / 1000}s, flushing every ${FLUSH_INTERVAL_MS / 1000}s, screenshot every ${SCREENSHOT_INTERVAL_MS / 60000}min.`);
+  console.log(`Agent running. Polling every ${POLL_INTERVAL_MS / 1000}s, flushing every ${FLUSH_INTERVAL_MS / 1000}s, screenshot interval set by manager (currently ~${DEFAULT_SCREENSHOT_INTERVAL_MIN}min default).`);
 
   setInterval(poll, POLL_INTERVAL_MS);
   setInterval(() => flush(cfg), FLUSH_INTERVAL_MS);
-  setInterval(() => screenshotTick(cfg), SCREENSHOT_INTERVAL_MS);
+  screenshotLoop(cfg);
 
   await poll();
 }

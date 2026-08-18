@@ -113,6 +113,16 @@ app.post('/api/ingest/screenshot', authUser, (req, res) => {
   res.json({ ok: true });
 });
 
+// Agent checks this periodically so a manager's interval change takes effect
+// without the employee needing to restart their agent.
+app.get('/api/agent-settings', authUser, (req, res) => {
+  const managerId = req.user.manager_id;
+  const manager = managerId
+    ? db.prepare('SELECT screenshot_interval_minutes FROM users WHERE id = ?').get(managerId)
+    : null;
+  res.json({ screenshotIntervalMinutes: manager?.screenshot_interval_minutes ?? 5 });
+});
+
 // --- Dashboard read endpoints ---
 
 app.get('/api/users/:id/timeline', (req, res) => {

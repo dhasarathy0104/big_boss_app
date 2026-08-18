@@ -47,3 +47,22 @@ managersRouter.post('/invites/:inviteId/revoke', (req, res) => {
   db.prepare('UPDATE invite_links SET revoked = 1 WHERE id = ?').run(req.params.inviteId);
   res.json({ ok: true });
 });
+
+managersRouter.get('/:id/settings', (req, res) => {
+  const manager = db.prepare("SELECT screenshot_interval_minutes FROM users WHERE id = ? AND role = 'manager'").get(req.params.id);
+  if (!manager) return res.status(404).json({ error: 'manager not found' });
+  res.json({ screenshotIntervalMinutes: manager.screenshot_interval_minutes });
+});
+
+managersRouter.patch('/:id/settings', (req, res) => {
+  const { screenshotIntervalMinutes } = req.body;
+  const minutes = Number(screenshotIntervalMinutes);
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > 240) {
+    return res.status(400).json({ error: 'screenshotIntervalMinutes must be an integer between 0 (off) and 240' });
+  }
+  const manager = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(req.params.id);
+  if (!manager) return res.status(404).json({ error: 'manager not found' });
+
+  db.prepare('UPDATE users SET screenshot_interval_minutes = ? WHERE id = ?').run(minutes, req.params.id);
+  res.json({ screenshotIntervalMinutes: minutes });
+});

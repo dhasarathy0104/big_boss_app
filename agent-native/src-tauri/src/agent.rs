@@ -10,7 +10,8 @@ use std::time::Duration;
 
 const POLL_INTERVAL_SECS: u64 = 10;
 const FLUSH_INTERVAL_SECS: u64 = 30;
-const SCREENSHOT_INTERVAL_SECS: u64 = 5 * 60;
+const DEFAULT_SCREENSHOT_INTERVAL_MIN: u32 = 5;
+const SETTINGS_RECHECK_SECS: u64 = 60;
 const IDLE_THRESHOLD_SECS: u32 = 120;
 const LOCAL_PORT: u16 = 34909;
 const BROWSER_APPS: [&str; 5] = ["chrome", "msedge", "firefox", "brave", "opera"];
@@ -149,8 +150,20 @@ pub async fn start_tracking<F: Fn(String) + Send + Sync + 'static>(
     let shot_cfg = cfg.clone();
     tokio::spawn(async move {
         let shot_client = BackendClient::new(backend_url);
+        let mut interval_minutes = DEFAULT_SCREENSHOT_INTERVAL_MIN;
         loop {
-            tokio::time::sleep(Duration::from_secs(SCREENSHOT_INTERVAL_SECS)).await;
+            // Re-check the manager's configured interval every cycle — a change (or
+            // turning screenshots off entirely) takes effect without an agent restart.
+            if let Ok(settings) = shot_client.agent_settings(&shot_cfg.agent_key).await {
+                interval_minutes = settings.screenshot_interval_minutes;
+            }
+
+            if interval_minutes == 0 {
+                tokio::time::sleep(Duration::from_secs(SETTINGS_RECHECK_SECS)).await;
+                continue;
+            }
+
+            tokio::time::sleep(Duration::from_secs(interval_minutes as u64 * 60)).await;
             let ctx = get_context();
             match capture_primary_as_base64_jpeg() {
                 Ok(b64) => {

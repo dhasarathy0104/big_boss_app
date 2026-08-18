@@ -101,7 +101,7 @@ export default function ManagerDashboard({ managerId, managers, onManagerChange 
         {activeTab === 'timeline' && (
           <TimelineView selectedUserId={selectedUserId} date={date} setDate={setDate} />
         )}
-        {activeTab === 'screenshots' && <ScreenshotsView selectedUserId={selectedUserId} />}
+        {activeTab === 'screenshots' && <ScreenshotsView selectedUserId={selectedUserId} managerId={managerId} />}
         {activeTab === 'projects' && <ProjectsView managerId={managerId} team={team} />}
         {activeTab === 'timesheet' && <TimesheetReviewView managerId={managerId} />}
         {activeTab === 'attendance' && <AttendanceReviewView managerId={managerId} />}

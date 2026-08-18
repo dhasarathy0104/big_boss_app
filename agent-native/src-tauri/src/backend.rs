@@ -122,4 +122,27 @@ impl BackendClient {
         }
         Ok(())
     }
+
+    // Checked periodically so a manager's interval change (or turning screenshots
+    // off entirely) takes effect without the employee restarting the agent.
+    pub async fn agent_settings(&self, agent_key: &str) -> Result<AgentSettings, String> {
+        let res = self
+            .http
+            .get(format!("{}/api/agent-settings", self.base_url))
+            .header("x-agent-key", agent_key)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !res.status().is_success() {
+            return Err(format!("settings fetch failed: {}", res.status()));
+        }
+        res.json::<AgentSettings>().await.map_err(|e| e.to_string())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AgentSettings {
+    #[serde(rename = "screenshotIntervalMinutes")]
+    pub screenshot_interval_minutes: u32,
 }

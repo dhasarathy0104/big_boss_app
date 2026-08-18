@@ -146,6 +146,7 @@ function ensureColumn(table, column, ddl) {
 }
 ensureColumn('activity_events', 'domain', 'domain TEXT');
 ensureColumn('category_rules', 'rule_type', "rule_type TEXT NOT NULL DEFAULT 'app'");
+ensureColumn('users', 'screenshot_interval_minutes', 'screenshot_interval_minutes INTEGER NOT NULL DEFAULT 5');
 
 export function randomToken(bytes = 12) {
   return crypto.randomBytes(bytes).toString('hex');
