@@ -31,7 +31,7 @@ fn queue_path() -> PathBuf {
     config_dir().join("queue.json")
 }
 
-fn load_config() -> Option<AgentConfig> {
+pub fn load_config() -> Option<AgentConfig> {
     let data = fs::read_to_string(config_path()).ok()?;
     serde_json::from_str(&data).ok()
 }
@@ -55,6 +55,23 @@ fn save_queue(queue: &[ActivityEvent]) {
     }
 }
 
+// Used by the first-run setup window (see main.rs's submit_setup command) and by
+// the env-var flow for anyone still scripting enrollment directly.
+pub async fn enroll_and_save(name: &str, invite_token: Option<String>, backend_url: &str) -> Result<AgentConfig, String> {
+    let client = BackendClient::new(backend_url.to_string());
+    let cfg = client.enroll(name, invite_token).await?;
+    save_config(&cfg);
+    Ok(cfg)
+}
+
+pub fn default_backend_url() -> String {
+    std::env::var("DESKLOG_BACKEND_URL").unwrap_or_else(|_| "http://localhost:4000".to_string())
+}
+
+pub fn default_agent_name() -> String {
+    std::env::var("DESKLOG_AGENT_NAME").unwrap_or_else(|_| whoami_fallback())
+}
+
 #[derive(Clone)]
 struct Segment {
     app_name: String,
@@ -66,29 +83,15 @@ struct Segment {
     is_idle: bool,
 }
 
-pub async fn run<F: Fn(String) + Send + Sync + 'static>(status_cb: F) {
-    let backend_url = std::env::var("DESKLOG_BACKEND_URL").unwrap_or_else(|_| "http://localhost:4000".to_string());
-    let agent_name = std::env::var("DESKLOG_AGENT_NAME")
-        .unwrap_or_else(|_| whoami_fallback());
-    let invite_token = std::env::var("DESKLOG_INVITE_TOKEN").ok();
-
-    let client = BackendClient::new(backend_url);
-
-    status_cb("Enrolling…".to_string());
-    let cfg = match load_config() {
-        Some(existing) => existing,
-        None => match client.enroll(&agent_name, invite_token).await {
-            Ok(cfg) => {
-                save_config(&cfg);
-                cfg
-            }
-            Err(e) => {
-                status_cb(format!("Enroll failed: {e}"));
-                return;
-            }
-        },
-    };
-
+/// Runs the tracking loops for an already-enrolled config. Called either at
+/// startup (existing config loaded from disk) or right after the first-run
+/// setup window successfully enrolls.
+pub async fn start_tracking<F: Fn(String) + Send + Sync + 'static>(
+    cfg: AgentConfig,
+    backend_url: String,
+    agent_name: String,
+    status_cb: F,
+) {
     let enrolled_label = match &cfg.manager_name {
         Some(name) => format!("Tracking — {name}'s team"),
         None => "Tracking — no manager assigned".to_string(),
@@ -96,7 +99,7 @@ pub async fn run<F: Fn(String) + Send + Sync + 'static>(status_cb: F) {
     status_cb(enrolled_label);
 
     let domain_state: SharedDomain = Arc::new(Mutex::new(None));
-    let enrolled_name = Arc::new(Mutex::new(Some(agent_name.clone())));
+    let enrolled_name = Arc::new(Mutex::new(Some(agent_name)));
 
     // Local listener for the browser extension runs on its own OS thread —
     // tiny_http's blocking loop doesn't play well inside the async runtime.
@@ -124,7 +127,7 @@ pub async fn run<F: Fn(String) + Send + Sync + 'static>(status_cb: F) {
     let flush_segment = current_segment.clone();
     let flush_queue = queue.clone();
     let flush_cfg = cfg.clone();
-    let flush_client_url_base = client;
+    let flush_client = BackendClient::new(backend_url.clone());
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(FLUSH_INTERVAL_SECS)).await;
@@ -133,7 +136,7 @@ pub async fn run<F: Fn(String) + Send + Sync + 'static>(status_cb: F) {
             if events.is_empty() {
                 continue;
             }
-            match flush_client_url_base.ingest_activity(&flush_cfg.agent_key, &events).await {
+            match flush_client.ingest_activity(&flush_cfg.agent_key, &events).await {
                 Ok(_) => {
                     flush_queue.lock().unwrap().clear();
                     save_queue(&[]);
@@ -144,9 +147,8 @@ pub async fn run<F: Fn(String) + Send + Sync + 'static>(status_cb: F) {
     });
 
     let shot_cfg = cfg.clone();
-    let shot_backend_url = std::env::var("DESKLOG_BACKEND_URL").unwrap_or_else(|_| "http://localhost:4000".to_string());
     tokio::spawn(async move {
-        let shot_client = BackendClient::new(shot_backend_url);
+        let shot_client = BackendClient::new(backend_url);
         loop {
             tokio::time::sleep(Duration::from_secs(SCREENSHOT_INTERVAL_SECS)).await;
             let ctx = get_context();
