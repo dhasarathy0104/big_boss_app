@@ -75,7 +75,14 @@ fn main() {
             let _ = app.autolaunch().enable();
 
             if let Some(cfg) = agent::load_config() {
-                start_tray_and_tracking(app.handle(), cfg, agent::default_backend_url(), agent::default_agent_name())?;
+                // Empty means this config was saved before backend_url existed —
+                // fall back to the old default rather than fail to start.
+                let backend_url = if cfg.backend_url.is_empty() {
+                    agent::default_backend_url()
+                } else {
+                    cfg.backend_url.clone()
+                };
+                start_tray_and_tracking(app.handle(), cfg, backend_url, agent::default_agent_name())?;
             } else {
                 WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("index.html".into()))
                     .title("Connect Desklog Agent")

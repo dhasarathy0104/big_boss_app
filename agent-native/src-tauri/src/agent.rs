@@ -60,7 +60,8 @@ fn save_queue(queue: &[ActivityEvent]) {
 // the env-var flow for anyone still scripting enrollment directly.
 pub async fn enroll_and_save(name: &str, invite_token: Option<String>, backend_url: &str) -> Result<AgentConfig, String> {
     let client = BackendClient::new(backend_url.to_string());
-    let cfg = client.enroll(name, invite_token).await?;
+    let mut cfg = client.enroll(name, invite_token).await?;
+    cfg.backend_url = backend_url.to_string();
     save_config(&cfg);
     Ok(cfg)
 }

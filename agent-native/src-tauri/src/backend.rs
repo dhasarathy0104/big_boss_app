@@ -10,6 +10,13 @@ pub struct AgentConfig {
     pub manager_id: Option<i64>,
     #[serde(rename = "managerName")]
     pub manager_name: Option<String>,
+    // Not part of the server's enroll response (the server doesn't know its own
+    // externally-reachable address) — filled in client-side from whatever URL
+    // was actually used to enroll, so restarts keep talking to the right
+    // machine instead of falling back to a localhost default. #[serde(default)]
+    // keeps old config files (saved before this field existed) loadable.
+    #[serde(rename = "backendUrl", default)]
+    pub backend_url: String,
 }
 
 #[derive(Serialize)]
