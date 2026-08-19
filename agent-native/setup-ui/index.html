@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Connect Desklog Agent</title>
+<title>Desklog</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -65,9 +65,34 @@
     cursor: pointer;
   }
   button:disabled { opacity: 0.6; cursor: default; }
+  .role-btn {
+    background: #171a21;
+    border: 1px solid #262b36;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 14px 14px;
+  }
+  .role-btn:hover { border-color: #3987e5; }
+  .role-btn .title { font-weight: 600; font-size: 13.5px; }
+  .role-btn .desc { font-weight: 400; font-size: 12px; color: #8b93a3; }
+  .back-link {
+    background: none;
+    color: #8b93a3;
+    font-size: 12px;
+    font-weight: 400;
+    margin-top: 14px;
+    padding: 0;
+    text-align: left;
+    text-decoration: underline;
+    width: auto;
+  }
   .status { margin-top: 14px; font-size: 12.5px; min-height: 18px; }
   .status.error { color: #e05a5a; }
   .status.ok { color: #17b86f; }
+  .screen { display: none; }
+  .screen.active { display: block; }
 </style>
 </head>
 <body>
@@ -76,25 +101,67 @@
       <div class="brand-mark">D</div>
       <div class="brand-name">Desklog</div>
     </div>
-    <h1>Connect this computer</h1>
-    <p class="sub">Paste the invite link your manager sent you, and enter your name.</p>
 
-    <label for="link">Invite link</label>
-    <input id="link" placeholder="http://.../join/abc123" />
+    <div id="screen-chooser" class="screen active">
+      <h1>I am a(n)…</h1>
+      <p class="sub">This decides what this computer does — pick the one that's you.</p>
+      <button class="role-btn" id="chooseEmployee">
+        <span class="title">Employee</span>
+        <span class="desc">Track my time in the background, using an invite link from my manager.</span>
+      </button>
+      <button class="role-btn" id="chooseAdmin" style="margin-top: 10px;">
+        <span class="title">Admin or Super Admin</span>
+        <span class="desc">View my team's dashboard — no background tracking on this computer.</span>
+      </button>
+    </div>
 
-    <label for="name">Your name</label>
-    <input id="name" placeholder="Jane Doe" />
+    <div id="screen-employee" class="screen">
+      <h1>Connect this computer</h1>
+      <p class="sub">Paste the invite link your manager sent you, and enter your name.</p>
 
-    <button id="submit">Connect</button>
-    <div class="status" id="status"></div>
+      <label for="link">Invite link</label>
+      <input id="link" placeholder="http://.../join/abc123" />
+
+      <label for="name">Your name</label>
+      <input id="name" placeholder="Jane Doe" />
+
+      <button id="submitEmployee">Connect</button>
+      <button class="back-link" data-back>&larr; Back</button>
+      <div class="status" id="statusEmployee"></div>
+    </div>
+
+    <div id="screen-admin" class="screen">
+      <h1>Open your dashboard</h1>
+      <p class="sub">Enter the address your manager or IT gave you for the Desklog server.</p>
+
+      <label for="serverUrl">Server address</label>
+      <input id="serverUrl" placeholder="http://192.168.1.23:4000" />
+
+      <button id="submitAdmin">Continue</button>
+      <button class="back-link" data-back>&larr; Back</button>
+      <div class="status" id="statusAdmin"></div>
+    </div>
   </div>
 
   <script>
     const { invoke } = window.__TAURI__.core;
+
+    function showScreen(id) {
+      document.querySelectorAll('.screen').forEach((el) => el.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+    }
+
+    document.getElementById('chooseEmployee').addEventListener('click', () => showScreen('screen-employee'));
+    document.getElementById('chooseAdmin').addEventListener('click', () => showScreen('screen-admin'));
+    document.querySelectorAll('[data-back]').forEach((btn) => {
+      btn.addEventListener('click', () => showScreen('screen-chooser'));
+    });
+
+    // --- Employee path ---
     const linkInput = document.getElementById('link');
     const nameInput = document.getElementById('name');
-    const submitBtn = document.getElementById('submit');
-    const statusEl = document.getElementById('status');
+    const submitEmployeeBtn = document.getElementById('submitEmployee');
+    const statusEmployeeEl = document.getElementById('statusEmployee');
 
     function parseInvite(raw) {
       try {
@@ -107,26 +174,26 @@
       }
     }
 
-    submitBtn.addEventListener('click', async () => {
-      statusEl.textContent = '';
-      statusEl.className = 'status';
+    submitEmployeeBtn.addEventListener('click', async () => {
+      statusEmployeeEl.textContent = '';
+      statusEmployeeEl.className = 'status';
 
       const parsed = parseInvite(linkInput.value);
       const name = nameInput.value.trim();
 
       if (!parsed) {
-        statusEl.textContent = 'That doesn\'t look like a valid invite link.';
-        statusEl.className = 'status error';
+        statusEmployeeEl.textContent = 'That doesn\'t look like a valid invite link.';
+        statusEmployeeEl.className = 'status error';
         return;
       }
       if (!name) {
-        statusEl.textContent = 'Enter your name.';
-        statusEl.className = 'status error';
+        statusEmployeeEl.textContent = 'Enter your name.';
+        statusEmployeeEl.className = 'status error';
         return;
       }
 
-      submitBtn.disabled = true;
-      statusEl.textContent = 'Connecting…';
+      submitEmployeeBtn.disabled = true;
+      statusEmployeeEl.textContent = 'Connecting…';
 
       try {
         const managerName = await invoke('submit_setup', {
@@ -134,12 +201,42 @@
           inviteToken: parsed.token,
           backendUrl: parsed.backendUrl,
         });
-        statusEl.textContent = `Connected — joined ${managerName}'s team. You can close this window.`;
-        statusEl.className = 'status ok';
+        statusEmployeeEl.textContent = `Connected — joined ${managerName}'s team. You can close this window.`;
+        statusEmployeeEl.className = 'status ok';
       } catch (err) {
-        statusEl.textContent = String(err);
-        statusEl.className = 'status error';
-        submitBtn.disabled = false;
+        statusEmployeeEl.textContent = String(err);
+        statusEmployeeEl.className = 'status error';
+        submitEmployeeBtn.disabled = false;
+      }
+    });
+
+    // --- Admin / super admin path ---
+    const serverUrlInput = document.getElementById('serverUrl');
+    const submitAdminBtn = document.getElementById('submitAdmin');
+    const statusAdminEl = document.getElementById('statusAdmin');
+
+    submitAdminBtn.addEventListener('click', async () => {
+      statusAdminEl.textContent = '';
+      statusAdminEl.className = 'status';
+
+      const raw = serverUrlInput.value.trim();
+      if (!raw) {
+        statusAdminEl.textContent = 'Enter a server address.';
+        statusAdminEl.className = 'status error';
+        return;
+      }
+
+      submitAdminBtn.disabled = true;
+      statusAdminEl.textContent = 'Connecting…';
+
+      try {
+        await invoke('submit_viewer_setup', { backendUrl: raw });
+        statusAdminEl.textContent = 'Connected — opening your dashboard…';
+        statusAdminEl.className = 'status ok';
+      } catch (err) {
+        statusAdminEl.textContent = String(err);
+        statusAdminEl.className = 'status error';
+        submitAdminBtn.disabled = false;
       }
     });
   </script>

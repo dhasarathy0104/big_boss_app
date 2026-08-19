@@ -28,6 +28,10 @@ fn config_path() -> PathBuf {
     config_dir().join("agent-config.json")
 }
 
+fn viewer_config_path() -> PathBuf {
+    config_dir().join("viewer-config.json")
+}
+
 fn queue_path() -> PathBuf {
     config_dir().join("queue.json")
 }
@@ -40,6 +44,27 @@ pub fn load_config() -> Option<AgentConfig> {
 fn save_config(cfg: &AgentConfig) {
     if let Ok(data) = serde_json::to_string_pretty(cfg) {
         let _ = fs::write(config_path(), data);
+    }
+}
+
+// Admin/super-admin path: no enrollment, no tracking — just remembers which
+// server address to point the dashboard window at.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ViewerConfig {
+    #[serde(rename = "backendUrl")]
+    backend_url: String,
+}
+
+pub fn load_viewer_config() -> Option<String> {
+    let data = fs::read_to_string(viewer_config_path()).ok()?;
+    let cfg: ViewerConfig = serde_json::from_str(&data).ok()?;
+    Some(cfg.backend_url)
+}
+
+pub fn save_viewer_config(backend_url: &str) {
+    let cfg = ViewerConfig { backend_url: backend_url.to_string() };
+    if let Ok(data) = serde_json::to_string_pretty(&cfg) {
+        let _ = fs::write(viewer_config_path(), data);
     }
 }
 
@@ -64,6 +89,14 @@ pub async fn enroll_and_save(name: &str, invite_token: Option<String>, backend_u
     cfg.backend_url = backend_url.to_string();
     save_config(&cfg);
     Ok(cfg)
+}
+
+// Sanity check before saving a viewer config — better to fail in the setup
+// window than silently save a broken address and open a blank window forever.
+pub async fn check_backend_reachable(backend_url: &str) -> Result<(), String> {
+    let url = format!("{}/api/auth/bootstrap", backend_url.trim_end_matches('/'));
+    reqwest::get(&url).await.map_err(|e| format!("couldn't reach {backend_url}: {e}"))?;
+    Ok(())
 }
 
 pub fn default_backend_url() -> String {
