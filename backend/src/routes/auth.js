@@ -63,6 +63,28 @@ authRouter.post('/claim-manager', (req, res) => {
   res.json({ token: createSession(user.id), user: publicUser(user) });
 });
 
+// Open self-service signup for manager/superadmin accounts — no invite link
+// or existing-manager approval required, by explicit request. Anyone who can
+// reach this server can create themselves privileged access this way.
+authRouter.post('/register-admin', (req, res) => {
+  const { name, password, role } = req.body;
+  if (!name?.trim() || !password || password.length < 8) {
+    return res.status(400).json({ error: 'name and a password of at least 8 characters are required' });
+  }
+  if (!['manager', 'superadmin'].includes(role)) {
+    return res.status(400).json({ error: "role must be 'manager' or 'superadmin'" });
+  }
+  const existing = db.prepare('SELECT 1 FROM users WHERE name = ? COLLATE NOCASE').get(name.trim());
+  if (existing) return res.status(409).json({ error: 'that name is already taken' });
+
+  const agentKey = crypto.randomBytes(16).toString('hex');
+  const info = db.prepare(`
+    INSERT INTO users (name, agent_key, role, manager_id, password_hash) VALUES (?, ?, ?, NULL, ?)
+  `).run(name.trim(), agentKey, role, hashPassword(password));
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
+  res.json({ token: createSession(user.id), user: publicUser(user) });
+});
+
 authRouter.post('/login', (req, res) => {
   const { name, password } = req.body;
   if (!name?.trim() || !password) return res.status(400).json({ error: 'name and password required' });

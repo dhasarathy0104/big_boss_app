@@ -160,6 +160,22 @@ async fn submit_login(app: AppHandle, backend_url: String, name: String, passwor
     Ok(())
 }
 
+// Open self-service manager/superadmin signup — no invite link required.
+// Otherwise identical to submit_login (a fresh admin account never carries
+// an agent_key, so this never starts tracking, only opens the dashboard).
+#[tauri::command]
+async fn submit_register_admin(app: AppHandle, backend_url: String, name: String, password: String, role: String) -> Result<(), String> {
+    let trimmed = backend_url.trim().trim_end_matches('/').to_string();
+    let outcome = agent::register_admin(&name, &password, &role, &trimmed).await?;
+
+    open_dashboard_window_with_token(&app, &trimmed, &outcome.token).map_err(|e| e.to_string())?;
+
+    if let Some(setup_window) = app.get_webview_window("setup") {
+        let _ = setup_window.close();
+    }
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         // Must be registered first. Without this, every reopen (or an
@@ -189,7 +205,7 @@ fn main() {
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .manage(StaysInTray(AtomicBool::new(false)))
-        .invoke_handler(tauri::generate_handler![submit_setup, submit_login])
+        .invoke_handler(tauri::generate_handler![submit_setup, submit_login, submit_register_admin])
         .setup(|app| {
             // Always ask "I am a(n) Employee / Admin or Super Admin" on every
             // launch, by explicit request — each role then logs in fresh via

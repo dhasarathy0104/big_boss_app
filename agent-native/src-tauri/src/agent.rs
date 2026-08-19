@@ -87,13 +87,7 @@ pub struct LoginOutcome {
     pub agent_config: Option<AgentConfig>,
 }
 
-// One name+password login, used by every role: an employee's account also
-// carries an agent_key, so this can start tracking directly — no separate
-// invite-link enrollment needed for someone who already has a password set.
-pub async fn login(name: &str, password: &str, backend_url: &str) -> Result<LoginOutcome, String> {
-    let client = BackendClient::new(backend_url.to_string());
-    let resp = client.login(name, password).await?;
-
+fn finish_login(resp: crate::backend::LoginResponse, backend_url: &str) -> LoginOutcome {
     let agent_config = if resp.user.role == "employee" {
         let cfg = AgentConfig {
             user_id: resp.user.id,
@@ -108,8 +102,26 @@ pub async fn login(name: &str, password: &str, backend_url: &str) -> Result<Logi
         save_viewer_config(backend_url);
         None
     };
+    LoginOutcome { token: resp.token, agent_config }
+}
 
-    Ok(LoginOutcome { token: resp.token, agent_config })
+// One name+password login, used by every role: an employee's account also
+// carries an agent_key, so this can start tracking directly — no separate
+// invite-link enrollment needed for someone who already has a password set.
+pub async fn login(name: &str, password: &str, backend_url: &str) -> Result<LoginOutcome, String> {
+    let client = BackendClient::new(backend_url.to_string());
+    let resp = client.login(name, password).await?;
+    Ok(finish_login(resp, backend_url))
+}
+
+// Open self-service manager/superadmin signup — no invite link required, by
+// explicit request. `role` must be "manager" or "superadmin"; the server
+// rejects anything else (including "employee" — that role only comes from
+// an invite-link enrollment or a manager-issued claim link).
+pub async fn register_admin(name: &str, password: &str, role: &str, backend_url: &str) -> Result<LoginOutcome, String> {
+    let client = BackendClient::new(backend_url.to_string());
+    let resp = client.register_admin(name, password, role).await?;
+    Ok(finish_login(resp, backend_url))
 }
 
 #[derive(Clone)]

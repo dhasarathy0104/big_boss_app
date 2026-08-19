@@ -32,6 +32,13 @@ struct LoginRequest<'a> {
     password: &'a str,
 }
 
+#[derive(Serialize)]
+struct RegisterAdminRequest<'a> {
+    name: &'a str,
+    password: &'a str,
+    role: &'a str,
+}
+
 #[derive(Deserialize)]
 pub struct LoginUser {
     pub id: i64,
@@ -105,12 +112,27 @@ impl BackendClient {
             .send()
             .await
             .map_err(|e| e.to_string())?;
+        Self::parse_login_response(res, "login failed").await
+    }
 
+    // Open self-service manager/superadmin signup — no invite link required.
+    pub async fn register_admin(&self, name: &str, password: &str, role: &str) -> Result<LoginResponse, String> {
+        let res = self
+            .http
+            .post(format!("{}/api/auth/register-admin", self.base_url))
+            .json(&RegisterAdminRequest { name, password, role })
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        Self::parse_login_response(res, "account creation failed").await
+    }
+
+    async fn parse_login_response(res: reqwest::Response, fallback_error: &str) -> Result<LoginResponse, String> {
         if !res.status().is_success() {
             #[derive(Deserialize)]
             struct ErrBody { error: Option<String> }
             let body: Option<ErrBody> = res.json().await.ok();
-            return Err(body.and_then(|b| b.error).unwrap_or_else(|| "login failed".to_string()));
+            return Err(body.and_then(|b| b.error).unwrap_or_else(|| fallback_error.to_string()));
         }
         res.json::<LoginResponse>().await.map_err(|e| e.to_string())
     }

@@ -6,8 +6,72 @@ import EmployeeDashboard from './views/EmployeeDashboard.jsx';
 import SuperAdminDashboard from './views/SuperAdminDashboard.jsx';
 import { getToken, setToken } from './api.js';
 
+function RegisterAdminForm({ onAuthed, onBack }) {
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState('manager');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setError('');
+    if (!name.trim()) { setError('Name required.'); return; }
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
+
+    setSubmitting(true);
+    const res = await fetch('/api/auth/register-admin', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), password, role }),
+    });
+    setSubmitting(false);
+    if (!res.ok) { setError((await res.json()).error); return; }
+    const data = await res.json();
+    setToken(data.token);
+    onAuthed(data.user);
+  }
+
+  return (
+    <div className="join-page">
+      <div className="join-card">
+        <div className="brand" style={{ border: 'none', marginBottom: 20, paddingBottom: 0 }}>
+          <div className="brand-mark">D</div>
+          <div className="brand-name">Desklog</div>
+        </div>
+        <h1>Create an account</h1>
+        <p className="join-sub">Open signup — anyone with this server's address can create a manager or super admin account here.</p>
+        <form className="stacked-form" onSubmit={submit}>
+          <select value={role} onChange={(e) => setRole(e.target.value)}>
+            <option value="manager">Manager / Admin</option>
+            <option value="superadmin">Super Admin</option>
+          </select>
+          <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
+          <input
+            type="password"
+            placeholder="Choose a password (8+ characters)"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          {error && <div style={{ color: '#e07070', fontSize: 12 }}>{error}</div>}
+          <button type="submit" disabled={submitting} style={{ alignSelf: 'flex-start' }}>
+            {submitting ? 'Please wait…' : 'Create account'}
+          </button>
+        </form>
+        <button
+          onClick={onBack}
+          style={{ background: 'none', color: '#8b93a3', fontSize: 12, marginTop: 14, padding: 0, textDecoration: 'underline', width: 'auto' }}
+        >
+          &larr; Back to login
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AuthScreen({ onAuthed }) {
   const [bootstrap, setBootstrap] = useState(null); // { state: 'register' | 'claim-manager' | 'login', managerName? }
+  const [showRegisterAdmin, setShowRegisterAdmin] = useState(false);
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -41,6 +105,7 @@ function AuthScreen({ onAuthed }) {
   }
 
   if (!bootstrap) return null;
+  if (showRegisterAdmin) return <RegisterAdminForm onAuthed={onAuthed} onBack={() => setShowRegisterAdmin(false)} />;
 
   const heading = bootstrap.state === 'register'
     ? 'Set up your manager account'
@@ -79,6 +144,14 @@ function AuthScreen({ onAuthed }) {
               : bootstrap.state === 'login' ? 'Log in' : bootstrap.state === 'claim-manager' ? 'Set password' : 'Create account'}
           </button>
         </form>
+        {bootstrap.state === 'login' && (
+          <button
+            onClick={() => setShowRegisterAdmin(true)}
+            style={{ background: 'none', color: '#8b93a3', fontSize: 12, marginTop: 14, padding: 0, textDecoration: 'underline', width: 'auto' }}
+          >
+            New here? Create a manager or super admin account
+          </button>
+        )}
       </div>
     </div>
   );

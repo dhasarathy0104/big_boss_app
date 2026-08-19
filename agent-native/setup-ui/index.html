@@ -42,7 +42,7 @@
   h1 { font-size: 18px; margin: 0 0 6px; }
   p.sub { color: #8b93a3; font-size: 13px; line-height: 1.5; margin: 0 0 20px; }
   label { display: block; font-size: 12px; color: #8b93a3; margin-bottom: 5px; margin-top: 14px; }
-  input {
+  input, select {
     width: 100%;
     font-size: 13px;
     background: #171a21;
@@ -51,7 +51,7 @@
     border-radius: 6px;
     padding: 9px 11px;
   }
-  input:focus { outline: none; border-color: #3987e5; }
+  input:focus, select:focus { outline: none; border-color: #3987e5; }
   button {
     width: 100%;
     margin-top: 20px;
@@ -164,8 +164,33 @@
       <input id="adminPassword" type="password" placeholder="Password" />
 
       <button id="submitAdmin">Log in</button>
+      <button class="text-link" id="goToAdminRegister">New here? Create a manager or super admin account</button>
       <button class="text-link" data-back>&larr; Back</button>
       <div class="status" id="statusAdmin"></div>
+    </div>
+
+    <div id="screen-admin-register" class="screen">
+      <h1>Create an account</h1>
+      <p class="sub">Open signup — anyone with this server's address can create a manager or super admin account here.</p>
+
+      <label for="registerServerUrl">Server address</label>
+      <input id="registerServerUrl" placeholder="http://192.168.1.23:4000" />
+
+      <label for="registerRole">Account type</label>
+      <select id="registerRole">
+        <option value="manager">Manager / Admin</option>
+        <option value="superadmin">Super Admin</option>
+      </select>
+
+      <label for="registerName">Your name</label>
+      <input id="registerName" placeholder="Jane Doe" />
+
+      <label for="registerPassword">Password</label>
+      <input id="registerPassword" type="password" placeholder="Choose a password (8+ characters)" />
+
+      <button id="submitRegisterAdmin">Create account</button>
+      <button class="text-link" id="backToAdminLogin">&larr; Back to login</button>
+      <div class="status" id="statusRegisterAdmin"></div>
     </div>
   </div>
 
@@ -181,6 +206,8 @@
     document.getElementById('chooseAdmin').addEventListener('click', () => showScreen('screen-admin'));
     document.getElementById('goToInvite').addEventListener('click', () => showScreen('screen-employee-invite'));
     document.getElementById('backToEmployeeLogin').addEventListener('click', () => showScreen('screen-employee'));
+    document.getElementById('goToAdminRegister').addEventListener('click', () => showScreen('screen-admin-register'));
+    document.getElementById('backToAdminLogin').addEventListener('click', () => showScreen('screen-admin'));
     document.querySelectorAll('[data-back]').forEach((btn) => {
       btn.addEventListener('click', () => showScreen('screen-chooser'));
     });
@@ -305,6 +332,48 @@
         statusAdminEl.textContent = String(err);
         statusAdminEl.className = 'status error';
         submitAdminBtn.disabled = false;
+      }
+    });
+
+    // --- Admin / super admin self-registration ---
+    const registerServerUrlInput = document.getElementById('registerServerUrl');
+    const registerRoleSelect = document.getElementById('registerRole');
+    const registerNameInput = document.getElementById('registerName');
+    const registerPasswordInput = document.getElementById('registerPassword');
+    const submitRegisterAdminBtn = document.getElementById('submitRegisterAdmin');
+    const statusRegisterAdminEl = document.getElementById('statusRegisterAdmin');
+
+    submitRegisterAdminBtn.addEventListener('click', async () => {
+      statusRegisterAdminEl.textContent = '';
+      statusRegisterAdminEl.className = 'status';
+
+      const backendUrl = registerServerUrlInput.value.trim();
+      const role = registerRoleSelect.value;
+      const name = registerNameInput.value.trim();
+      const password = registerPasswordInput.value;
+
+      if (!backendUrl || !name || !password) {
+        statusRegisterAdminEl.textContent = 'Fill in server address, name, and password.';
+        statusRegisterAdminEl.className = 'status error';
+        return;
+      }
+      if (password.length < 8) {
+        statusRegisterAdminEl.textContent = 'Password must be at least 8 characters.';
+        statusRegisterAdminEl.className = 'status error';
+        return;
+      }
+
+      submitRegisterAdminBtn.disabled = true;
+      statusRegisterAdminEl.textContent = 'Creating account…';
+
+      try {
+        await invoke('submit_register_admin', { backendUrl, name, password, role });
+        statusRegisterAdminEl.textContent = 'Account created — opening your dashboard…';
+        statusRegisterAdminEl.className = 'status ok';
+      } catch (err) {
+        statusRegisterAdminEl.textContent = String(err);
+        statusRegisterAdminEl.className = 'status error';
+        submitRegisterAdminBtn.disabled = false;
       }
     });
   </script>
