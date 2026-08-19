@@ -132,6 +132,21 @@ fn main() {
             if let Some(window) = app.get_webview_window("dashboard") {
                 let _ = window.show();
                 let _ = window.set_focus();
+                return;
+            }
+            // Already running silently (employee tray mode) with no window
+            // open — this callback only fires when someone deliberately tries
+            // to launch the app again (e.g. clicking the Start Menu icon), as
+            // opposed to the original silent auto-start-at-login launch. That
+            // deliberate click means "show me something", so open the
+            // dashboard instead of doing nothing.
+            if let Some(cfg) = agent::load_config() {
+                let backend_url = if cfg.backend_url.is_empty() {
+                    agent::default_backend_url()
+                } else {
+                    cfg.backend_url
+                };
+                let _ = open_dashboard_window(app, &backend_url);
             }
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
