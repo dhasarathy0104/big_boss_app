@@ -151,8 +151,24 @@
       document.getElementById(id).classList.add('active');
     }
 
-    document.getElementById('chooseEmployee').addEventListener('click', () => showScreen('screen-employee'));
-    document.getElementById('chooseAdmin').addEventListener('click', () => showScreen('screen-admin'));
+    const chooseEmployeeBtn = document.getElementById('chooseEmployee');
+    const chooseAdminBtn = document.getElementById('chooseAdmin');
+
+    // Try resuming an already-configured role first — picking the same
+    // answer as before should never require re-pasting the invite link or
+    // server address. Only show the form if there's genuinely nothing saved.
+    chooseEmployeeBtn.addEventListener('click', async () => {
+      chooseEmployeeBtn.disabled = true;
+      const resumed = await invoke('try_resume_employee');
+      chooseEmployeeBtn.disabled = false;
+      if (!resumed) showScreen('screen-employee');
+    });
+    chooseAdminBtn.addEventListener('click', async () => {
+      chooseAdminBtn.disabled = true;
+      const resumed = await invoke('try_resume_viewer');
+      chooseAdminBtn.disabled = false;
+      if (!resumed) showScreen('screen-admin');
+    });
     document.querySelectorAll('[data-back]').forEach((btn) => {
       btn.addEventListener('click', () => showScreen('screen-chooser'));
     });

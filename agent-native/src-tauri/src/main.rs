@@ -116,6 +116,42 @@ async fn submit_viewer_setup(app: AppHandle, backend_url: String) -> Result<(), 
     Ok(())
 }
 
+// The "I am a(n)" screen always shows on every launch — these two commands
+// let each button try to resume an already-configured role first, so
+// picking the same answer as before never requires re-pasting the invite
+// link or server address. Returns false only when there's genuinely nothing
+// saved yet, telling the UI to show that role's setup form instead.
+#[tauri::command]
+fn try_resume_employee(app: AppHandle) -> bool {
+    let Some(cfg) = agent::load_config() else { return false };
+    let backend_url = if cfg.backend_url.is_empty() {
+        agent::default_backend_url()
+    } else {
+        cfg.backend_url.clone()
+    };
+    if start_tray_and_tracking(&app, cfg, backend_url, agent::default_agent_name()).is_err() {
+        return false;
+    }
+    app.state::<StaysInTray>().0.store(true, Ordering::Relaxed);
+    let _ = app.autolaunch().enable();
+    if let Some(setup_window) = app.get_webview_window("setup") {
+        let _ = setup_window.close();
+    }
+    true
+}
+
+#[tauri::command]
+fn try_resume_viewer(app: AppHandle) -> bool {
+    let Some(backend_url) = agent::load_viewer_config() else { return false };
+    if open_dashboard_window(&app, &backend_url).is_err() {
+        return false;
+    }
+    if let Some(setup_window) = app.get_webview_window("setup") {
+        let _ = setup_window.close();
+    }
+    true
+}
+
 fn main() {
     tauri::Builder::default()
         // Must be registered first. Without this, every reopen (or an
@@ -151,35 +187,24 @@ fn main() {
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .manage(StaysInTray(AtomicBool::new(false)))
-        .invoke_handler(tauri::generate_handler![submit_setup, submit_viewer_setup])
+        .invoke_handler(tauri::generate_handler![
+            submit_setup,
+            submit_viewer_setup,
+            try_resume_employee,
+            try_resume_viewer
+        ])
         .setup(|app| {
-            if let Some(cfg) = agent::load_config() {
-                // Employee, already enrolled — auto-start makes sense here since
-                // tracking is meant to always be running.
-                let _ = app.autolaunch().enable();
-                app.state::<StaysInTray>().0.store(true, Ordering::Relaxed);
-
-                // Empty means this config was saved before backend_url existed —
-                // fall back to the old default rather than fail to start.
-                let backend_url = if cfg.backend_url.is_empty() {
-                    agent::default_backend_url()
-                } else {
-                    cfg.backend_url.clone()
-                };
-                start_tray_and_tracking(app.handle(), cfg, backend_url, agent::default_agent_name())?;
-            } else if let Some(backend_url) = agent::load_viewer_config() {
-                // Admin/super admin, already configured — no tracking, no
-                // autostart (they open this when they want to check in, not
-                // necessarily every login), just show their dashboard.
-                open_dashboard_window(app.handle(), &backend_url)?;
-            } else {
-                WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("index.html".into()))
-                    .title("Desklog")
-                    .inner_size(420.0, 520.0)
-                    .resizable(false)
-                    .center()
-                    .build()?;
-            }
+            // Always ask "I am a(n) Employee / Admin or Super Admin" on every
+            // launch, by explicit request — the chooser's buttons call
+            // try_resume_employee/try_resume_viewer first, so picking the
+            // same role as before resumes instantly without re-entering
+            // anything; only a genuinely new setup shows a form.
+            WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("index.html".into()))
+                .title("Desklog")
+                .inner_size(420.0, 520.0)
+                .resizable(false)
+                .center()
+                .build()?;
             Ok(())
         })
         .build(tauri::generate_context!())
