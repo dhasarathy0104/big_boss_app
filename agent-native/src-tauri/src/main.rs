@@ -49,6 +49,23 @@ fn open_dashboard_window(app: &AppHandle, backend_url: &str) -> tauri::Result<()
     Ok(())
 }
 
+// The "I am a(n)" chooser — shown on every launch (cold start or a
+// deliberate reopen while already running), per explicit request.
+fn open_setup_window(app: &AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window("setup") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+    WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("index.html".into()))
+        .title("Desklog")
+        .inner_size(420.0, 520.0)
+        .resizable(false)
+        .center()
+        .build()?;
+    Ok(())
+}
+
 /// Builds the tray icon and starts the tracking loops. Called either at
 /// startup (config already on disk) or right after the setup window enrolls.
 fn start_tray_and_tracking(app: &AppHandle, cfg: AgentConfig, backend_url: String, agent_name: String) -> tauri::Result<()> {
@@ -173,17 +190,11 @@ fn main() {
             // Already running silently (employee tray mode) with no window
             // open — this callback only fires when someone deliberately tries
             // to launch the app again (e.g. clicking the Start Menu icon), as
-            // opposed to the original silent auto-start-at-login launch. That
-            // deliberate click means "show me something", so open the
-            // dashboard instead of doing nothing.
-            if let Some(cfg) = agent::load_config() {
-                let backend_url = if cfg.backend_url.is_empty() {
-                    agent::default_backend_url()
-                } else {
-                    cfg.backend_url
-                };
-                let _ = open_dashboard_window(app, &backend_url);
-            }
+            // opposed to the original silent auto-start-at-login launch. Show
+            // the same "I am a(n)" chooser as any other launch, per explicit
+            // request that it always appears — not a shortcut straight to the
+            // dashboard, which would skip it.
+            let _ = open_setup_window(app);
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .manage(StaysInTray(AtomicBool::new(false)))
@@ -199,12 +210,7 @@ fn main() {
             // try_resume_employee/try_resume_viewer first, so picking the
             // same role as before resumes instantly without re-entering
             // anything; only a genuinely new setup shows a form.
-            WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("index.html".into()))
-                .title("Desklog")
-                .inner_size(420.0, 520.0)
-                .resizable(false)
-                .center()
-                .build()?;
+            open_setup_window(app.handle())?;
             Ok(())
         })
         .build(tauri::generate_context!())
