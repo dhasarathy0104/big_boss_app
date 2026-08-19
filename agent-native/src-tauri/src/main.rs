@@ -11,6 +11,7 @@ use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 fn tray_icon() -> Image<'static> {
     let icon_png = include_bytes!("../icons/32x32.png");
@@ -65,8 +66,14 @@ async fn submit_setup(app: AppHandle, name: String, invite_token: String, backen
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .invoke_handler(tauri::generate_handler![submit_setup])
         .setup(|app| {
+            // Best-effort: re-asserts the login-start registration on every launch,
+            // so it self-heals if a user ever removed it by hand. Never worth
+            // failing startup over.
+            let _ = app.autolaunch().enable();
+
             if let Some(cfg) = agent::load_config() {
                 start_tray_and_tracking(app.handle(), cfg, agent::default_backend_url(), agent::default_agent_name())?;
             } else {
