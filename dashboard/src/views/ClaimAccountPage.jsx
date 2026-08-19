@@ -58,7 +58,7 @@ export default function ClaimAccountPage({ token, onClaimed }) {
         {status === 'valid' && (
           <>
             <h1>Welcome, {name}</h1>
-            <p className="join-sub">Set a password to view your own timeline and productivity dashboard.</p>
+            <p className="join-sub">Set a password to access your Desklog dashboard.</p>
             <form className="stacked-form" onSubmit={submit}>
               <input
                 type="password"

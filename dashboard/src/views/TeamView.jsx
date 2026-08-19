@@ -1,17 +1,30 @@
 import { useEffect, useState } from 'react';
 
-export default function TeamView({ managerId, team }) {
+export default function TeamView({ managerId, team, onTeamChanged }) {
   const [invites, setInvites] = useState([]);
   const [copied, setCopied] = useState(false);
   const [claimLinks, setClaimLinks] = useState({}); // employeeId -> url
   const [copiedClaimId, setCopiedClaimId] = useState(null);
+  const [otherManagers, setOtherManagers] = useState([]);
+  const [transferTarget, setTransferTarget] = useState({}); // employeeId -> managerId
+  const [transferring, setTransferring] = useState(null); // employeeId currently in flight
+  const [transferError, setTransferError] = useState('');
+  const [confirmingId, setConfirmingId] = useState(null); // employeeId awaiting inline confirmation
+  const [newManagerName, setNewManagerName] = useState('');
+  const [newManagerLink, setNewManagerLink] = useState(null);
+  const [creatingManager, setCreatingManager] = useState(false);
+  const [copiedManagerLink, setCopiedManagerLink] = useState(false);
 
   function loadInvites() {
     fetch(`/api/managers/${managerId}/invites`).then((r) => r.json()).then(setInvites);
   }
 
+  function loadOtherManagers() {
+    fetch(`/api/managers/${managerId}/other-managers`).then((r) => r.json()).then(setOtherManagers);
+  }
+
   useEffect(() => {
-    if (managerId) loadInvites();
+    if (managerId) { loadInvites(); loadOtherManagers(); }
   }, [managerId]);
 
   async function generateInvite() {
@@ -40,6 +53,46 @@ export default function TeamView({ managerId, team }) {
     navigator.clipboard.writeText(claimLinks[employeeId]);
     setCopiedClaimId(employeeId);
     setTimeout(() => setCopiedClaimId(null), 1500);
+  }
+
+  async function confirmTransfer(employee) {
+    const targetManagerId = transferTarget[employee.id];
+    if (!targetManagerId) return;
+
+    setTransferError('');
+    setTransferring(employee.id);
+    const res = await fetch(`/api/managers/${managerId}/team/${employee.id}/transfer`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ targetManagerId }),
+    });
+    setTransferring(null);
+    setConfirmingId(null);
+    if (!res.ok) { setTransferError((await res.json()).error); return; }
+    onTeamChanged?.();
+  }
+
+  async function createPeerManager(e) {
+    e.preventDefault();
+    if (!newManagerName.trim()) return;
+    setCreatingManager(true);
+    const res = await fetch('/api/managers/create-peer', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: newManagerName.trim() }),
+    });
+    setCreatingManager(false);
+    if (!res.ok) return;
+    const data = await res.json();
+    setNewManagerLink(`${window.location.origin}/claim/${data.claimToken}`);
+    setNewManagerName('');
+    loadOtherManagers();
+  }
+
+  function copyManagerLink() {
+    navigator.clipboard.writeText(newManagerLink);
+    setCopiedManagerLink(true);
+    setTimeout(() => setCopiedManagerLink(false), 1500);
   }
 
   return (
@@ -84,17 +137,47 @@ export default function TeamView({ managerId, team }) {
       </div>
 
       <div className="panel">
+        <h2>Other managers ({otherManagers.length})</h2>
+        <p className="join-sub" style={{ marginTop: 0 }}>
+          Create another manager account to transfer employees to (e.g. a peer manager on another team).
+          They get a private link to set their own password, same as employees do.
+        </p>
+        {otherManagers.length > 0 && (
+          <ul style={{ margin: '0 0 12px', paddingLeft: 18 }}>
+            {otherManagers.map((m) => <li key={m.id} className="shot-meta">{m.name}</li>)}
+          </ul>
+        )}
+        {newManagerLink ? (
+          <div className="inline-form">
+            <input readOnly value={newManagerLink} style={{ flex: 1, minWidth: 320 }} />
+            <button onClick={copyManagerLink}>{copiedManagerLink ? 'Copied!' : 'Copy'}</button>
+            <button onClick={() => setNewManagerLink(null)}>Create another</button>
+          </div>
+        ) : (
+          <form className="inline-form" onSubmit={createPeerManager}>
+            <input
+              placeholder="New manager's name"
+              value={newManagerName}
+              onChange={(e) => setNewManagerName(e.target.value)}
+            />
+            <button type="submit" disabled={creatingManager}>{creatingManager ? 'Creating…' : 'Create manager account'}</button>
+          </form>
+        )}
+      </div>
+
+      <div className="panel">
         <h2>Team ({team.length})</h2>
         <p className="join-sub" style={{ marginTop: 0 }}>
           Each employee needs their own private link to set a password and view their own dashboard
           (their own timeline, log time, attendance/leave) — separate from the invite link above.
           Nobody can see another employee's data or your manager view with this link.
         </p>
+        {transferError && <div style={{ color: '#e07070', fontSize: 12, marginBottom: 8 }}>{transferError}</div>}
         {team.length === 0 ? (
           <div className="empty">Nobody has joined yet. Share the invite link above.</div>
         ) : (
           <table>
-            <thead><tr><th>Name</th><th>Joined</th><th>Dashboard access</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Joined</th><th>Dashboard access</th><th></th><th>Transfer to</th></tr></thead>
             <tbody>
               {team.map((u) => (
                 <tr key={u.id}>
@@ -121,6 +204,39 @@ export default function TeamView({ managerId, team }) {
                       <button className="btn-small" onClick={() => getDashboardLink(u.id)}>
                         {u.hasDashboardLogin ? 'Reset password link' : 'Get dashboard link'}
                       </button>
+                    )}
+                  </td>
+                  <td>
+                    {otherManagers.length === 0 ? (
+                      <span className="shot-meta">No other managers yet</span>
+                    ) : confirmingId === u.id ? (
+                      <div className="inline-form" style={{ gap: 6 }}>
+                        <span className="shot-meta">
+                          Move to {otherManagers.find((m) => m.id === Number(transferTarget[u.id]))?.name}?
+                          They'll gain full access (including past history); you'll lose it.
+                        </span>
+                        <button className="btn-small btn-danger" disabled={transferring === u.id} onClick={() => confirmTransfer(u)}>
+                          {transferring === u.id ? 'Transferring…' : 'Yes, transfer'}
+                        </button>
+                        <button className="btn-small" onClick={() => setConfirmingId(null)}>Cancel</button>
+                      </div>
+                    ) : (
+                      <div className="inline-form" style={{ gap: 6 }}>
+                        <select
+                          value={transferTarget[u.id] ?? ''}
+                          onChange={(e) => setTransferTarget((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                        >
+                          <option value="">Select manager…</option>
+                          {otherManagers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                        <button
+                          className="btn-small btn-danger"
+                          disabled={!transferTarget[u.id]}
+                          onClick={() => setConfirmingId(u.id)}
+                        >
+                          Transfer
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>

@@ -33,7 +33,7 @@ export default function ManagerDashboard({ manager, onLogout }) {
   const [date, setDate] = useState(todayStr());
   const [activeTab, setActiveTab] = useState('live');
 
-  useEffect(() => {
+  function loadTeam() {
     fetch(`/api/managers/${managerId}/team`).then((r) => r.json()).then((data) => {
       setTeam(data);
       if (data.length && !data.some((u) => u.id === selectedUserId)) {
@@ -41,7 +41,9 @@ export default function ManagerDashboard({ manager, onLogout }) {
       }
       if (data.length === 0) setSelectedUserId(null);
     });
-  }, [managerId, activeTab]);
+  }
+
+  useEffect(loadTeam, [managerId, activeTab]);
 
   return (
     <div className="app">
@@ -106,7 +108,7 @@ export default function ManagerDashboard({ manager, onLogout }) {
         {activeTab === 'attendance' && <AttendanceReviewView managerId={managerId} />}
         {activeTab === 'billing' && <BillingView managerId={managerId} />}
         {activeTab === 'categories' && <CategoriesView managerId={managerId} />}
-        {activeTab === 'team' && <TeamView managerId={managerId} team={team} />}
+        {activeTab === 'team' && <TeamView managerId={managerId} team={team} onTeamChanged={loadTeam} />}
       </main>
     </div>
   );
