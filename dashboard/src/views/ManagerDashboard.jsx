@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Activity, Camera, KanbanSquare, Clock, CalendarCheck, Receipt, Tags, UserPlus, LogOut,
+  Activity, Camera, KanbanSquare, Clock, CalendarCheck, Tags, UserPlus, LogOut,
 } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
@@ -12,7 +12,6 @@ import ProjectsView from './ProjectsView.jsx';
 import TimesheetReviewView from './TimesheetReviewView.jsx';
 import CategoriesView from './CategoriesView.jsx';
 import AttendanceReviewView from './AttendanceReviewView.jsx';
-import BillingView from './BillingView.jsx';
 
 const TABS = [
   { key: 'live', label: 'Live', icon: Activity },
@@ -21,7 +20,6 @@ const TABS = [
   { key: 'projects', label: 'Projects', icon: KanbanSquare },
   { key: 'timesheet', label: 'Timesheet', icon: Clock },
   { key: 'attendance', label: 'Attendance', icon: CalendarCheck },
-  { key: 'billing', label: 'Billing', icon: Receipt },
   { key: 'categories', label: 'Categories', icon: Tags },
   { key: 'team', label: 'Team & Invite', icon: UserPlus },
 ];
@@ -106,7 +104,6 @@ export default function ManagerDashboard({ manager, onLogout }) {
         {activeTab === 'projects' && <ProjectsView managerId={managerId} team={team} />}
         {activeTab === 'timesheet' && <TimesheetReviewView managerId={managerId} />}
         {activeTab === 'attendance' && <AttendanceReviewView managerId={managerId} />}
-        {activeTab === 'billing' && <BillingView managerId={managerId} />}
         {activeTab === 'categories' && <CategoriesView managerId={managerId} />}
         {activeTab === 'team' && <TeamView managerId={managerId} team={team} onTeamChanged={loadTeam} />}
       </main>

@@ -17,6 +17,7 @@ import { attendanceRouter } from './routes/attendance.js';
 import { leaveRequestsRouter } from './routes/leaveRequests.js';
 import { billingRouter } from './routes/billing.js';
 import { authRouter } from './routes/auth.js';
+import { superadminRouter } from './routes/superadmin.js';
 import { requireAuth, isSelfOrOwnEmployee } from './auth.js';
 import { buildOverrideMaps, computeProductivity } from './productivity.js';
 
@@ -206,6 +207,7 @@ app.get('/api/screenshots/:filename', requireAuth, (req, res) => {
 });
 
 app.use('/api/auth', authRouter);
+app.use('/api/superadmin', superadminRouter);
 app.use('/api/managers', managersRouter);
 app.use('/api/invites', invitesPublicRouter);
 app.use('/api/employees', employeesRouter);

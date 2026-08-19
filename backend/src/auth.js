@@ -53,6 +53,24 @@ export function requireManager(req, res, next) {
   });
 }
 
+// requireAuth + must be a super admin (org-wide oversight across all managers/employees).
+export function requireSuperAdmin(req, res, next) {
+  requireAuth(req, res, () => {
+    if (req.authUser.role !== 'superadmin') return res.status(403).json({ error: 'super admin access required' });
+    next();
+  });
+}
+
+// requireManager OR requireSuperAdmin.
+export function requireManagerOrSuperAdmin(req, res, next) {
+  requireAuth(req, res, () => {
+    if (req.authUser.role !== 'manager' && req.authUser.role !== 'superadmin') {
+      return res.status(403).json({ error: 'manager or super admin access required' });
+    }
+    next();
+  });
+}
+
 // requireManager + the :id route param must be their own id (can't act on another manager's account).
 export function requireManagerSelf(req, res, next) {
   requireManager(req, res, () => {
@@ -83,6 +101,7 @@ export function authorizeScopedQuery(req, res) {
 
 export function isSelfOrOwnEmployee(authUser, targetUserId) {
   if (authUser.id === targetUserId) return true;
+  if (authUser.role === 'superadmin') return true;
   if (authUser.role !== 'manager') return false;
   const target = db.prepare('SELECT manager_id FROM users WHERE id = ?').get(targetUserId);
   return target?.manager_id === authUser.id;

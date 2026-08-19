@@ -22,6 +22,21 @@ managersRouter.post('/create-peer', requireManager, (req, res) => {
   res.json({ id: info.lastInsertRowid, name: name.trim(), claimToken });
 });
 
+// Same idea, for the org-wide oversight role sitting above managers. Any
+// manager can create the first one (there's no separate super-admin
+// bootstrap flow) — same claim-link password setup as everyone else.
+managersRouter.post('/create-superadmin', requireManager, (req, res) => {
+  const { name } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+
+  const agentKey = crypto.randomBytes(16).toString('hex');
+  const claimToken = randomToken(16);
+  const info = db.prepare(`
+    INSERT INTO users (name, agent_key, role, manager_id, claim_token) VALUES (?, ?, 'superadmin', NULL, ?)
+  `).run(name.trim(), agentKey, claimToken);
+  res.json({ id: info.lastInsertRowid, name: name.trim(), claimToken });
+});
+
 managersRouter.get('/:id/team', requireManagerSelf, (req, res) => {
   const team = db.prepare(`
     SELECT id, name, created_at, (claim_token IS NOT NULL) AS hasPendingClaim, (password_hash IS NOT NULL) AS hasDashboardLogin

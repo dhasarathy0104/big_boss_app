@@ -8,6 +8,7 @@ export const projectsRouter = Router();
 // project to log time against) — same permission shape as isSelfOrOwnEmployee,
 // just checking a managerId instead of a userId.
 function canSeeManagersProjects(authUser, managerId) {
+  if (authUser.role === 'superadmin') return true;
   if (authUser.role === 'manager') return authUser.id === managerId;
   return authUser.manager_id === managerId;
 }
@@ -25,7 +26,11 @@ projectsRouter.get('/', requireAuth, (req, res) => {
 projectsRouter.post('/', requireAuth, (req, res) => {
   const { managerId, name, clientName, isBillable, hourlyRate } = req.body;
   if (!managerId || !name?.trim()) return res.status(400).json({ error: 'managerId and name required' });
-  if (req.authUser.role !== 'manager' || req.authUser.id !== Number(managerId)) {
+
+  const isOwnProject = req.authUser.role === 'manager' && req.authUser.id === Number(managerId);
+  const isSuperAdminAssigning = req.authUser.role === 'superadmin'
+    && db.prepare("SELECT 1 FROM users WHERE id = ? AND role = 'manager'").get(managerId);
+  if (!isOwnProject && !isSuperAdminAssigning) {
     return res.status(403).json({ error: 'manager access required' });
   }
 

@@ -3,6 +3,7 @@ import JoinPage from './views/JoinPage.jsx';
 import ClaimAccountPage from './views/ClaimAccountPage.jsx';
 import ManagerDashboard from './views/ManagerDashboard.jsx';
 import EmployeeDashboard from './views/EmployeeDashboard.jsx';
+import SuperAdminDashboard from './views/SuperAdminDashboard.jsx';
 import { getToken, setToken } from './api.js';
 
 function AuthScreen({ onAuthed }) {
@@ -104,6 +105,7 @@ function Shell() {
   if (user === undefined) return null;
   if (!user) return <AuthScreen onAuthed={setUser} />;
 
+  if (user.role === 'superadmin') return <SuperAdminDashboard user={user} onLogout={logout} />;
   return user.role === 'manager'
     ? <ManagerDashboard manager={user} onLogout={logout} />
     : <EmployeeDashboard employee={user} onLogout={logout} />;
