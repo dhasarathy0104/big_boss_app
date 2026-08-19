@@ -77,7 +77,7 @@
   .role-btn:hover { border-color: #3987e5; }
   .role-btn .title { font-weight: 600; font-size: 13.5px; }
   .role-btn .desc { font-weight: 400; font-size: 12px; color: #8b93a3; }
-  .back-link {
+  .text-link {
     background: none;
     color: #8b93a3;
     font-size: 12px;
@@ -87,6 +87,7 @@
     text-align: left;
     text-decoration: underline;
     width: auto;
+    cursor: pointer;
   }
   .status { margin-top: 14px; font-size: 12.5px; min-height: 18px; }
   .status.error { color: #e05a5a; }
@@ -107,17 +108,36 @@
       <p class="sub">This decides what this computer does — pick the one that's you.</p>
       <button class="role-btn" id="chooseEmployee">
         <span class="title">Employee</span>
-        <span class="desc">Track my time in the background, using an invite link from my manager.</span>
+        <span class="desc">Log in to track my time and see my own dashboard.</span>
       </button>
       <button class="role-btn" id="chooseAdmin" style="margin-top: 10px;">
         <span class="title">Admin or Super Admin</span>
-        <span class="desc">View my team's dashboard — no background tracking on this computer.</span>
+        <span class="desc">Log in to see my team's dashboard — no tracking on this computer.</span>
       </button>
     </div>
 
     <div id="screen-employee" class="screen">
+      <h1>Employee login</h1>
+      <p class="sub">Log in with your Desklog account. This starts tracking and opens your dashboard.</p>
+
+      <label for="employeeServerUrl">Server address</label>
+      <input id="employeeServerUrl" placeholder="http://192.168.1.23:4000" />
+
+      <label for="employeeName">Your name</label>
+      <input id="employeeName" placeholder="Jane Doe" />
+
+      <label for="employeePassword">Password</label>
+      <input id="employeePassword" type="password" placeholder="Password" />
+
+      <button id="submitEmployeeLogin">Log in</button>
+      <button class="text-link" id="goToInvite">New employee? Connect with an invite link instead</button>
+      <button class="text-link" data-back>&larr; Back</button>
+      <div class="status" id="statusEmployeeLogin"></div>
+    </div>
+
+    <div id="screen-employee-invite" class="screen">
       <h1>Connect this computer</h1>
-      <p class="sub">Paste the invite link your manager sent you, and enter your name.</p>
+      <p class="sub">No account yet? Paste the invite link your manager sent you, and enter your name.</p>
 
       <label for="link">Invite link</label>
       <input id="link" placeholder="http://.../join/abc123" />
@@ -126,19 +146,25 @@
       <input id="name" placeholder="Jane Doe" />
 
       <button id="submitEmployee">Connect</button>
-      <button class="back-link" data-back>&larr; Back</button>
+      <button class="text-link" id="backToEmployeeLogin">&larr; Back to login</button>
       <div class="status" id="statusEmployee"></div>
     </div>
 
     <div id="screen-admin" class="screen">
-      <h1>Open your dashboard</h1>
-      <p class="sub">Enter the address your manager or IT gave you for the Desklog server.</p>
+      <h1>Admin / Super Admin login</h1>
+      <p class="sub">Log in with your Desklog account to open your dashboard.</p>
 
       <label for="serverUrl">Server address</label>
       <input id="serverUrl" placeholder="http://192.168.1.23:4000" />
 
-      <button id="submitAdmin">Continue</button>
-      <button class="back-link" data-back>&larr; Back</button>
+      <label for="adminName">Your name</label>
+      <input id="adminName" placeholder="Jane Doe" />
+
+      <label for="adminPassword">Password</label>
+      <input id="adminPassword" type="password" placeholder="Password" />
+
+      <button id="submitAdmin">Log in</button>
+      <button class="text-link" data-back>&larr; Back</button>
       <div class="status" id="statusAdmin"></div>
     </div>
   </div>
@@ -151,29 +177,50 @@
       document.getElementById(id).classList.add('active');
     }
 
-    const chooseEmployeeBtn = document.getElementById('chooseEmployee');
-    const chooseAdminBtn = document.getElementById('chooseAdmin');
-
-    // Try resuming an already-configured role first — picking the same
-    // answer as before should never require re-pasting the invite link or
-    // server address. Only show the form if there's genuinely nothing saved.
-    chooseEmployeeBtn.addEventListener('click', async () => {
-      chooseEmployeeBtn.disabled = true;
-      const resumed = await invoke('try_resume_employee');
-      chooseEmployeeBtn.disabled = false;
-      if (!resumed) showScreen('screen-employee');
-    });
-    chooseAdminBtn.addEventListener('click', async () => {
-      chooseAdminBtn.disabled = true;
-      const resumed = await invoke('try_resume_viewer');
-      chooseAdminBtn.disabled = false;
-      if (!resumed) showScreen('screen-admin');
-    });
+    document.getElementById('chooseEmployee').addEventListener('click', () => showScreen('screen-employee'));
+    document.getElementById('chooseAdmin').addEventListener('click', () => showScreen('screen-admin'));
+    document.getElementById('goToInvite').addEventListener('click', () => showScreen('screen-employee-invite'));
+    document.getElementById('backToEmployeeLogin').addEventListener('click', () => showScreen('screen-employee'));
     document.querySelectorAll('[data-back]').forEach((btn) => {
       btn.addEventListener('click', () => showScreen('screen-chooser'));
     });
 
-    // --- Employee path ---
+    // --- Employee login (primary path) ---
+    const employeeServerUrlInput = document.getElementById('employeeServerUrl');
+    const employeeNameInput = document.getElementById('employeeName');
+    const employeePasswordInput = document.getElementById('employeePassword');
+    const submitEmployeeLoginBtn = document.getElementById('submitEmployeeLogin');
+    const statusEmployeeLoginEl = document.getElementById('statusEmployeeLogin');
+
+    submitEmployeeLoginBtn.addEventListener('click', async () => {
+      statusEmployeeLoginEl.textContent = '';
+      statusEmployeeLoginEl.className = 'status';
+
+      const backendUrl = employeeServerUrlInput.value.trim();
+      const name = employeeNameInput.value.trim();
+      const password = employeePasswordInput.value;
+
+      if (!backendUrl || !name || !password) {
+        statusEmployeeLoginEl.textContent = 'Fill in server address, name, and password.';
+        statusEmployeeLoginEl.className = 'status error';
+        return;
+      }
+
+      submitEmployeeLoginBtn.disabled = true;
+      statusEmployeeLoginEl.textContent = 'Logging in…';
+
+      try {
+        await invoke('submit_login', { backendUrl, name, password });
+        statusEmployeeLoginEl.textContent = 'Logged in — opening your dashboard…';
+        statusEmployeeLoginEl.className = 'status ok';
+      } catch (err) {
+        statusEmployeeLoginEl.textContent = String(err);
+        statusEmployeeLoginEl.className = 'status error';
+        submitEmployeeLoginBtn.disabled = false;
+      }
+    });
+
+    // --- Employee invite-link fallback (new employees with no account yet) ---
     const linkInput = document.getElementById('link');
     const nameInput = document.getElementById('name');
     const submitEmployeeBtn = document.getElementById('submitEmployee');
@@ -226,8 +273,10 @@
       }
     });
 
-    // --- Admin / super admin path ---
+    // --- Admin / super admin login ---
     const serverUrlInput = document.getElementById('serverUrl');
+    const adminNameInput = document.getElementById('adminName');
+    const adminPasswordInput = document.getElementById('adminPassword');
     const submitAdminBtn = document.getElementById('submitAdmin');
     const statusAdminEl = document.getElementById('statusAdmin');
 
@@ -235,19 +284,22 @@
       statusAdminEl.textContent = '';
       statusAdminEl.className = 'status';
 
-      const raw = serverUrlInput.value.trim();
-      if (!raw) {
-        statusAdminEl.textContent = 'Enter a server address.';
+      const backendUrl = serverUrlInput.value.trim();
+      const name = adminNameInput.value.trim();
+      const password = adminPasswordInput.value;
+
+      if (!backendUrl || !name || !password) {
+        statusAdminEl.textContent = 'Fill in server address, name, and password.';
         statusAdminEl.className = 'status error';
         return;
       }
 
       submitAdminBtn.disabled = true;
-      statusAdminEl.textContent = 'Connecting…';
+      statusAdminEl.textContent = 'Logging in…';
 
       try {
-        await invoke('submit_viewer_setup', { backendUrl: raw });
-        statusAdminEl.textContent = 'Connected — opening your dashboard…';
+        await invoke('submit_login', { backendUrl, name, password });
+        statusAdminEl.textContent = 'Logged in — opening your dashboard…';
         statusAdminEl.className = 'status ok';
       } catch (err) {
         statusAdminEl.textContent = String(err);

@@ -26,6 +26,30 @@ struct EnrollRequest {
     invite_token: Option<String>,
 }
 
+#[derive(Serialize)]
+struct LoginRequest<'a> {
+    name: &'a str,
+    password: &'a str,
+}
+
+#[derive(Deserialize)]
+pub struct LoginUser {
+    pub id: i64,
+    pub role: String,
+    #[serde(rename = "managerId")]
+    pub manager_id: Option<i64>,
+    #[serde(rename = "managerName")]
+    pub manager_name: Option<String>,
+    #[serde(rename = "agentKey")]
+    pub agent_key: String,
+}
+
+#[derive(Deserialize)]
+pub struct LoginResponse {
+    pub token: String,
+    pub user: LoginUser,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ActivityEvent {
     #[serde(rename = "clientEventId")]
@@ -68,6 +92,27 @@ impl BackendClient {
             return Err(format!("enroll failed: {}", res.status()));
         }
         res.json::<AgentConfig>().await.map_err(|e| e.to_string())
+    }
+
+    // Name+password login — same account used for dashboard access. Returns
+    // the same identity info /api/enroll would (plus a session token), so an
+    // already-set-up employee can skip the invite-link step entirely.
+    pub async fn login(&self, name: &str, password: &str) -> Result<LoginResponse, String> {
+        let res = self
+            .http
+            .post(format!("{}/api/auth/login", self.base_url))
+            .json(&LoginRequest { name, password })
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if !res.status().is_success() {
+            #[derive(Deserialize)]
+            struct ErrBody { error: Option<String> }
+            let body: Option<ErrBody> = res.json().await.ok();
+            return Err(body.and_then(|b| b.error).unwrap_or_else(|| "login failed".to_string()));
+        }
+        res.json::<LoginResponse>().await.map_err(|e| e.to_string())
     }
 
     pub async fn ingest_activity(&self, agent_key: &str, events: &[ActivityEvent]) -> Result<(), String> {

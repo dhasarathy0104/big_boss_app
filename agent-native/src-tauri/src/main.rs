@@ -49,6 +49,26 @@ fn open_dashboard_window(app: &AppHandle, backend_url: &str) -> tauri::Result<()
     Ok(())
 }
 
+// Same as above, but hands the dashboard an already-authenticated session via
+// a URL token — the dashboard's own App.jsx picks it up on load — so it opens
+// straight onto the right role's view instead of showing its login screen a
+// second time right after a native login form already collected the password.
+fn open_dashboard_window_with_token(app: &AppHandle, backend_url: &str, token: &str) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window("dashboard") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+    let url_str = format!("{backend_url}/?token={token}");
+    let url = Url::parse(&url_str).map_err(|e| tauri::Error::InvalidUrl(e))?;
+    WebviewWindowBuilder::new(app, "dashboard", WebviewUrl::External(url))
+        .title("Desklog")
+        .inner_size(1200.0, 800.0)
+        .min_inner_size(800.0, 600.0)
+        .build()?;
+    Ok(())
+}
+
 // The "I am a(n)" chooser — shown on every launch (cold start or a
 // deliberate reopen while already running), per explicit request.
 fn open_setup_window(app: &AppHandle) -> tauri::Result<()> {
@@ -116,57 +136,28 @@ async fn submit_setup(app: AppHandle, name: String, invite_token: String, backen
     Ok(manager_label)
 }
 
-// Admin / super admin path: no enrollment, no tracking — just remember the
-// server address and hand off to the dashboard website for everything else
-// (login, session, role-based view).
+// The one login used by every role after picking Employee or Admin/Super
+// Admin — same account as the dashboard website. An employee account also
+// carries an agent_key, so this both starts background tracking and opens
+// the dashboard; a manager/super admin account just opens the dashboard.
+// Always asked fresh on every launch, by explicit request — no "remember me".
 #[tauri::command]
-async fn submit_viewer_setup(app: AppHandle, backend_url: String) -> Result<(), String> {
+async fn submit_login(app: AppHandle, backend_url: String, name: String, password: String) -> Result<(), String> {
     let trimmed = backend_url.trim().trim_end_matches('/').to_string();
-    agent::check_backend_reachable(&trimmed).await?;
-    agent::save_viewer_config(&trimmed);
+    let outcome = agent::login(&name, &password, &trimmed).await?;
 
-    open_dashboard_window(&app, &trimmed).map_err(|e| e.to_string())?;
+    if let Some(cfg) = outcome.agent_config {
+        app.state::<StaysInTray>().0.store(true, Ordering::Relaxed);
+        let _ = app.autolaunch().enable();
+        start_tray_and_tracking(&app, cfg, trimmed.clone(), name).map_err(|e| e.to_string())?;
+    }
+
+    open_dashboard_window_with_token(&app, &trimmed, &outcome.token).map_err(|e| e.to_string())?;
 
     if let Some(setup_window) = app.get_webview_window("setup") {
         let _ = setup_window.close();
     }
     Ok(())
-}
-
-// The "I am a(n)" screen always shows on every launch — these two commands
-// let each button try to resume an already-configured role first, so
-// picking the same answer as before never requires re-pasting the invite
-// link or server address. Returns false only when there's genuinely nothing
-// saved yet, telling the UI to show that role's setup form instead.
-#[tauri::command]
-fn try_resume_employee(app: AppHandle) -> bool {
-    let Some(cfg) = agent::load_config() else { return false };
-    let backend_url = if cfg.backend_url.is_empty() {
-        agent::default_backend_url()
-    } else {
-        cfg.backend_url.clone()
-    };
-    if start_tray_and_tracking(&app, cfg, backend_url, agent::default_agent_name()).is_err() {
-        return false;
-    }
-    app.state::<StaysInTray>().0.store(true, Ordering::Relaxed);
-    let _ = app.autolaunch().enable();
-    if let Some(setup_window) = app.get_webview_window("setup") {
-        let _ = setup_window.close();
-    }
-    true
-}
-
-#[tauri::command]
-fn try_resume_viewer(app: AppHandle) -> bool {
-    let Some(backend_url) = agent::load_viewer_config() else { return false };
-    if open_dashboard_window(&app, &backend_url).is_err() {
-        return false;
-    }
-    if let Some(setup_window) = app.get_webview_window("setup") {
-        let _ = setup_window.close();
-    }
-    true
 }
 
 fn main() {
@@ -198,18 +189,12 @@ fn main() {
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .manage(StaysInTray(AtomicBool::new(false)))
-        .invoke_handler(tauri::generate_handler![
-            submit_setup,
-            submit_viewer_setup,
-            try_resume_employee,
-            try_resume_viewer
-        ])
+        .invoke_handler(tauri::generate_handler![submit_setup, submit_login])
         .setup(|app| {
             // Always ask "I am a(n) Employee / Admin or Super Admin" on every
-            // launch, by explicit request — the chooser's buttons call
-            // try_resume_employee/try_resume_viewer first, so picking the
-            // same role as before resumes instantly without re-entering
-            // anything; only a genuinely new setup shows a form.
+            // launch, by explicit request — each role then logs in fresh via
+            // submit_login (or, for a brand-new employee with no account yet,
+            // the invite-link fallback via submit_setup).
             open_setup_window(app.handle())?;
             Ok(())
         })

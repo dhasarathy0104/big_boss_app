@@ -6,7 +6,19 @@ import { hashPassword, verifyPassword, createSession, requireAuth } from '../aut
 export const authRouter = Router();
 
 function publicUser(u) {
-  return { id: u.id, name: u.name, role: u.role, managerId: u.manager_id };
+  const manager = u.manager_id ? db.prepare('SELECT name FROM users WHERE id = ?').get(u.manager_id) : null;
+  // agentKey/managerName let the native app start background tracking right
+  // from a login response — same identity the /api/enroll invite-link flow
+  // would have produced, no separate enrollment step needed for an employee
+  // who already has a dashboard account.
+  return {
+    id: u.id,
+    name: u.name,
+    role: u.role,
+    managerId: u.manager_id,
+    managerName: manager?.name ?? null,
+    agentKey: u.agent_key,
+  };
 }
 
 // Tells the login screen whether to show "create account" (fresh install) or

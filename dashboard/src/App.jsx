@@ -88,6 +88,17 @@ function Shell() {
   const [user, setUser] = useState(undefined); // undefined = checking, null = logged out
 
   useEffect(() => {
+    // The native app can hand off an already-authenticated session via
+    // ?token=... (e.g. after a native login form) so this window opens
+    // straight into the dashboard instead of asking to log in a second time.
+    const urlToken = new URLSearchParams(window.location.search).get('token');
+    if (urlToken) {
+      setToken(urlToken);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('token');
+      window.history.replaceState({}, '', url);
+    }
+
     if (!getToken()) { setUser(null); return; }
     fetch('/api/auth/me')
       .then((r) => (r.ok ? r.json() : Promise.reject()))

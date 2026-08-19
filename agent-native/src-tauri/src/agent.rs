@@ -36,11 +36,6 @@ fn queue_path() -> PathBuf {
     config_dir().join("queue.json")
 }
 
-pub fn load_config() -> Option<AgentConfig> {
-    let data = fs::read_to_string(config_path()).ok()?;
-    serde_json::from_str(&data).ok()
-}
-
 fn save_config(cfg: &AgentConfig) {
     if let Ok(data) = serde_json::to_string_pretty(cfg) {
         let _ = fs::write(config_path(), data);
@@ -53,12 +48,6 @@ fn save_config(cfg: &AgentConfig) {
 struct ViewerConfig {
     #[serde(rename = "backendUrl")]
     backend_url: String,
-}
-
-pub fn load_viewer_config() -> Option<String> {
-    let data = fs::read_to_string(viewer_config_path()).ok()?;
-    let cfg: ViewerConfig = serde_json::from_str(&data).ok()?;
-    Some(cfg.backend_url)
 }
 
 pub fn save_viewer_config(backend_url: &str) {
@@ -91,20 +80,36 @@ pub async fn enroll_and_save(name: &str, invite_token: Option<String>, backend_u
     Ok(cfg)
 }
 
-// Sanity check before saving a viewer config — better to fail in the setup
-// window than silently save a broken address and open a blank window forever.
-pub async fn check_backend_reachable(backend_url: &str) -> Result<(), String> {
-    let url = format!("{}/api/auth/bootstrap", backend_url.trim_end_matches('/'));
-    reqwest::get(&url).await.map_err(|e| format!("couldn't reach {backend_url}: {e}"))?;
-    Ok(())
+pub struct LoginOutcome {
+    pub token: String,
+    // Only set for an employee account — that's the one role that also needs
+    // a background tracking config, not just a dashboard session.
+    pub agent_config: Option<AgentConfig>,
 }
 
-pub fn default_backend_url() -> String {
-    std::env::var("DESKLOG_BACKEND_URL").unwrap_or_else(|_| "http://localhost:4000".to_string())
-}
+// One name+password login, used by every role: an employee's account also
+// carries an agent_key, so this can start tracking directly — no separate
+// invite-link enrollment needed for someone who already has a password set.
+pub async fn login(name: &str, password: &str, backend_url: &str) -> Result<LoginOutcome, String> {
+    let client = BackendClient::new(backend_url.to_string());
+    let resp = client.login(name, password).await?;
 
-pub fn default_agent_name() -> String {
-    std::env::var("DESKLOG_AGENT_NAME").unwrap_or_else(|_| whoami_fallback())
+    let agent_config = if resp.user.role == "employee" {
+        let cfg = AgentConfig {
+            user_id: resp.user.id,
+            agent_key: resp.user.agent_key,
+            manager_id: resp.user.manager_id,
+            manager_name: resp.user.manager_name,
+            backend_url: backend_url.to_string(),
+        };
+        save_config(&cfg);
+        Some(cfg)
+    } else {
+        save_viewer_config(backend_url);
+        None
+    };
+
+    Ok(LoginOutcome { token: resp.token, agent_config })
 }
 
 #[derive(Clone)]
@@ -281,8 +286,4 @@ fn rand_suffix() -> u32 {
     use std::time::{SystemTime, UNIX_EPOCH};
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().subsec_nanos();
     nanos ^ 0x9E3779B9
-}
-
-fn whoami_fallback() -> String {
-    std::env::var("USERNAME").unwrap_or_else(|_| "employee".to_string())
 }
