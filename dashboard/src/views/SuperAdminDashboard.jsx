@@ -1,9 +1,53 @@
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Coffee, MoonStar, Users, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Coffee, MoonStar, Users, ShieldCheck, ChevronDown, ChevronRight } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
 import TimelineView from './TimelineView.jsx';
 import ScreenshotsView from './ScreenshotsView.jsx';
+
+const TASK_STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', review: 'Review', done: 'Done' };
+
+function AdminProjectsPanel({ managerId }) {
+  const [projects, setProjects] = useState(null);
+  const [taskCounts, setTaskCounts] = useState({});
+
+  useEffect(() => {
+    fetch(`/api/projects?managerId=${managerId}`).then((r) => r.json()).then((data) => {
+      setProjects(data);
+      data.forEach((p) => {
+        fetch(`/api/tasks?projectId=${p.id}`).then((r) => r.json()).then((tasks) => {
+          const counts = tasks.reduce((acc, t) => { acc[t.status] = (acc[t.status] ?? 0) + 1; return acc; }, {});
+          setTaskCounts((prev) => ({ ...prev, [p.id]: counts }));
+        });
+      });
+    });
+  }, [managerId]);
+
+  if (projects === null) return <div className="empty">Loading…</div>;
+  if (projects.length === 0) return <div className="empty">No projects assigned to this admin yet.</div>;
+
+  return (
+    <table>
+      <thead><tr><th>Project</th><th>Client</th><th>Tasks</th></tr></thead>
+      <tbody>
+        {projects.map((p) => {
+          const counts = taskCounts[p.id];
+          return (
+            <tr key={p.id}>
+              <td>{p.name}</td>
+              <td>{p.client_name || '—'}</td>
+              <td>
+                {!counts ? '…' : Object.keys(counts).length === 0 ? 'No tasks yet' : (
+                  Object.entries(counts).map(([status, n]) => `${TASK_STATUS_LABEL[status]}: ${n}`).join(' · ')
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -17,7 +61,9 @@ const STATUS_LABEL = { active: 'Active', idle: 'Idle', offline: 'Offline' };
 const REFRESH_MS = 15_000;
 
 function OverviewTab({ overview }) {
+  const [expandedId, setExpandedId] = useState(null);
   if (!overview) return null;
+
   return (
     <>
       <div className="stat-row">
@@ -43,22 +89,35 @@ function OverviewTab({ overview }) {
 
       {overview.admins.length === 0 ? (
         <div className="panel"><div className="empty">No admins yet.</div></div>
-      ) : overview.admins.map((admin) => (
-        <div className="panel" key={admin.id}>
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Avatar name={admin.name} size={22} />
-            {admin.name}
-            <span className="shot-meta" style={{ fontWeight: 400 }}>— {admin.employeeCount} employee{admin.employeeCount === 1 ? '' : 's'}</span>
-          </h2>
-          {admin.employees.length === 0 ? (
-            <div className="empty">No employees under this admin yet.</div>
-          ) : (
-            <div className="chip-row">
-              {admin.employees.map((e) => <div className="chip" key={e.id}>{e.name}</div>)}
-            </div>
-          )}
-        </div>
-      ))}
+      ) : overview.admins.map((admin) => {
+        const expanded = expandedId === admin.id;
+        return (
+          <div className="panel" key={admin.id}>
+            <h2
+              style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+              onClick={() => setExpandedId(expanded ? null : admin.id)}
+            >
+              {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              <Avatar name={admin.name} size={22} />
+              {admin.name}
+              <span className="shot-meta" style={{ fontWeight: 400 }}>— {admin.employeeCount} employee{admin.employeeCount === 1 ? '' : 's'}</span>
+            </h2>
+            {admin.employees.length === 0 ? (
+              <div className="empty">No employees under this admin yet.</div>
+            ) : (
+              <div className="chip-row">
+                {admin.employees.map((e) => <div className="chip" key={e.id}>{e.name}</div>)}
+              </div>
+            )}
+            {expanded && (
+              <>
+                <h2 style={{ marginTop: 16 }}>Projects &amp; client work</h2>
+                <AdminProjectsPanel managerId={admin.id} />
+              </>
+            )}
+          </div>
+        );
+      })}
     </>
   );
 }
