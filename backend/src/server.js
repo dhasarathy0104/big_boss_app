@@ -51,13 +51,30 @@ app.post('/api/enroll', (req, res) => {
   }
 
   const agentKey = crypto.randomBytes(16).toString('hex');
-  const info = db.prepare(`
-    INSERT INTO users (name, agent_key, role, manager_id) VALUES (?, ?, 'employee', ?)
-  `).run(name.trim(), agentKey, managerId);
+  const trimmedName = name.trim();
+
+  // Re-enrolling under the same manager with the same name (e.g. after
+  // wiping a local config to fix a connection issue) resumes the existing
+  // employee record instead of forking a duplicate with empty history.
+  const existing = managerId
+    ? db.prepare("SELECT * FROM users WHERE role = 'employee' AND manager_id = ? AND name = ? COLLATE NOCASE")
+        .get(managerId, trimmedName)
+    : null;
+
+  let userId;
+  if (existing) {
+    db.prepare('UPDATE users SET agent_key = ? WHERE id = ?').run(agentKey, existing.id);
+    userId = existing.id;
+  } else {
+    const info = db.prepare(`
+      INSERT INTO users (name, agent_key, role, manager_id) VALUES (?, ?, 'employee', ?)
+    `).run(trimmedName, agentKey, managerId);
+    userId = info.lastInsertRowid;
+  }
 
   const manager = managerId ? db.prepare('SELECT name FROM users WHERE id = ?').get(managerId) : null;
   res.json({
-    userId: info.lastInsertRowid,
+    userId,
     agentKey,
     managerId,
     managerName: manager?.name ?? null,
