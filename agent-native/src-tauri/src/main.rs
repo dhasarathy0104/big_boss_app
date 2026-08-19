@@ -66,6 +66,17 @@ async fn submit_setup(app: AppHandle, name: String, invite_token: String, backen
 
 fn main() {
     tauri::Builder::default()
+        // Must be registered first. Without this, every reopen (or an
+        // auto-start launch racing a manual one) silently starts a second
+        // fully independent copy of the agent, each with its own tray icon —
+        // confusing, and only the most-recently-started one's local browser-
+        // extension listener actually wins the port.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("setup") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .invoke_handler(tauri::generate_handler![submit_setup])
         .setup(|app| {
