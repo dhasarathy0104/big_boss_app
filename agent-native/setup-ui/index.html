@@ -142,9 +142,6 @@
       <h1>Employee login</h1>
       <p class="sub">Log in with your BIG BOSS account. This starts tracking and opens your dashboard.</p>
 
-      <label for="employeeServerUrl">Server address</label>
-      <input id="employeeServerUrl" placeholder="http://192.168.1.23:4000" />
-
       <label for="employeeName">Your name</label>
       <input id="employeeName" placeholder="Jane Doe" />
 
@@ -176,9 +173,6 @@
       <h1>Admin / Super Admin login</h1>
       <p class="sub">Log in with your BIG BOSS account to open your dashboard.</p>
 
-      <label for="serverUrl">Server address</label>
-      <input id="serverUrl" placeholder="http://192.168.1.23:4000" />
-
       <label for="adminName">Your name</label>
       <input id="adminName" placeholder="Jane Doe" />
 
@@ -194,9 +188,6 @@
     <div id="screen-admin-register" class="screen">
       <h1>Create an account</h1>
       <p class="sub">Open signup — anyone with this server's address can create a manager or super admin account here.</p>
-
-      <label for="registerServerUrl">Server address</label>
-      <input id="registerServerUrl" placeholder="http://192.168.1.23:4000" />
 
       <label for="registerRole">Account type</label>
       <select id="registerRole">
@@ -218,6 +209,11 @@
 
   <script>
     const { invoke } = window.__TAURI__.core;
+
+    // The only place the hosted backend's address needs to be set. Once
+    // Lightsail is live, put its address here and rebuild — nobody using the
+    // app types or pastes a server address anymore.
+    const BACKEND_URL = 'https://REPLACE-WITH-LIGHTSAIL-ADDRESS';
 
     function showScreen(id) {
       document.querySelectorAll('.screen').forEach((el) => el.classList.remove('active'));
@@ -275,7 +271,6 @@
     });
 
     // --- Employee login (primary path) ---
-    const employeeServerUrlInput = document.getElementById('employeeServerUrl');
     const employeeNameInput = document.getElementById('employeeName');
     const employeePasswordInput = document.getElementById('employeePassword');
     const submitEmployeeLoginBtn = document.getElementById('submitEmployeeLogin');
@@ -285,12 +280,12 @@
       statusEmployeeLoginEl.textContent = '';
       statusEmployeeLoginEl.className = 'status';
 
-      const backendUrl = employeeServerUrlInput.value.trim();
+      const backendUrl = BACKEND_URL;
       const name = employeeNameInput.value.trim();
       const password = employeePasswordInput.value;
 
-      if (!backendUrl || !name || !password) {
-        statusEmployeeLoginEl.textContent = 'Fill in server address, name, and password.';
+      if (!name || !password) {
+        statusEmployeeLoginEl.textContent = 'Fill in your name and password.';
         statusEmployeeLoginEl.className = 'status error';
         return;
       }
@@ -363,7 +358,6 @@
     });
 
     // --- Admin / super admin login ---
-    const serverUrlInput = document.getElementById('serverUrl');
     const adminNameInput = document.getElementById('adminName');
     const adminPasswordInput = document.getElementById('adminPassword');
     const submitAdminBtn = document.getElementById('submitAdmin');
@@ -373,12 +367,12 @@
       statusAdminEl.textContent = '';
       statusAdminEl.className = 'status';
 
-      const backendUrl = serverUrlInput.value.trim();
+      const backendUrl = BACKEND_URL;
       const name = adminNameInput.value.trim();
       const password = adminPasswordInput.value;
 
-      if (!backendUrl || !name || !password) {
-        statusAdminEl.textContent = 'Fill in server address, name, and password.';
+      if (!name || !password) {
+        statusAdminEl.textContent = 'Fill in your name and password.';
         statusAdminEl.className = 'status error';
         return;
       }
@@ -398,7 +392,6 @@
     });
 
     // --- Admin / super admin self-registration ---
-    const registerServerUrlInput = document.getElementById('registerServerUrl');
     const registerRoleSelect = document.getElementById('registerRole');
     const registerNameInput = document.getElementById('registerName');
     const registerPasswordInput = document.getElementById('registerPassword');
@@ -409,13 +402,13 @@
       statusRegisterAdminEl.textContent = '';
       statusRegisterAdminEl.className = 'status';
 
-      const backendUrl = registerServerUrlInput.value.trim();
+      const backendUrl = BACKEND_URL;
       const role = registerRoleSelect.value;
       const name = registerNameInput.value.trim();
       const password = registerPasswordInput.value;
 
-      if (!backendUrl || !name || !password) {
-        statusRegisterAdminEl.textContent = 'Fill in server address, name, and password.';
+      if (!name || !password) {
+        statusRegisterAdminEl.textContent = 'Fill in your name and password.';
         statusRegisterAdminEl.className = 'status error';
         return;
       }
