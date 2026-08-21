@@ -38,7 +38,16 @@ fn queue_path() -> PathBuf {
 
 pub fn load_config() -> Option<AgentConfig> {
     let data = fs::read_to_string(config_path()).ok()?;
-    serde_json::from_str(&data).ok()
+    let cfg: AgentConfig = serde_json::from_str(&data).ok()?;
+    // A config saved before `backendUrl` existed deserializes with it empty
+    // (#[serde(default)]) — treating that as "already set up" sends every
+    // screen straight into a dead end (login posts to a base-less URL,
+    // reqwest fails with an opaque "builder error"). Treat it as if nothing
+    // were saved so the full chooser reappears and the user can re-enroll.
+    if cfg.backend_url.trim().is_empty() {
+        return None;
+    }
+    Some(cfg)
 }
 
 fn save_config(cfg: &AgentConfig) {
