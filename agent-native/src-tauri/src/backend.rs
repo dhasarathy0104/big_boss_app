@@ -6,6 +6,12 @@ pub struct AgentConfig {
     pub user_id: i64,
     #[serde(rename = "agentKey")]
     pub agent_key: String,
+    // Not part of any server response (enroll/login return it as a top-level
+    // field, not nested here) — filled in client-side so a silent cold-start
+    // resume has a name to report to the browser extension's /status
+    // endpoint. #[serde(default)] keeps configs saved before this existed loadable.
+    #[serde(default)]
+    pub name: String,
     #[serde(rename = "managerId")]
     pub manager_id: Option<i64>,
     #[serde(rename = "managerName")]
@@ -42,6 +48,7 @@ struct RegisterAdminRequest<'a> {
 #[derive(Deserialize)]
 pub struct LoginUser {
     pub id: i64,
+    pub name: String,
     pub role: String,
     #[serde(rename = "managerId")]
     pub manager_id: Option<i64>,

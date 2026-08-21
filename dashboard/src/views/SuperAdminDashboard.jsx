@@ -320,8 +320,8 @@ export default function SuperAdminDashboard({ user, onLogout }) {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">D</div>
-          <div className="brand-name">Desklog</div>
+          <div className="brand-mark">B</div>
+          <div className="brand-name">BIG BOSS</div>
         </div>
 
         <div className="sidebar-section">

@@ -40,8 +40,8 @@ export default function ClaimAccountPage({ token, onClaimed }) {
     <div className="join-page">
       <div className="join-card">
         <div className="brand" style={{ border: 'none', marginBottom: 20, paddingBottom: 0 }}>
-          <div className="brand-mark">D</div>
-          <div className="brand-name">Desklog</div>
+          <div className="brand-mark">B</div>
+          <div className="brand-name">BIG BOSS</div>
         </div>
 
         {status === 'loading' && <div className="empty">Checking link…</div>}
@@ -58,7 +58,7 @@ export default function ClaimAccountPage({ token, onClaimed }) {
         {status === 'valid' && (
           <>
             <h1>Welcome, {name}</h1>
-            <p className="join-sub">Set a password to access your Desklog dashboard.</p>
+            <p className="join-sub">Set a password to access your BIG BOSS dashboard.</p>
             <form className="stacked-form" onSubmit={submit}>
               <input
                 type="password"

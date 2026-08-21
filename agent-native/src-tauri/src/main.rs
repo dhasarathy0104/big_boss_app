@@ -30,29 +30,11 @@ fn tray_icon() -> Image<'static> {
     Image::new_owned(decoded.into_raw(), w, h)
 }
 
-// Opens (or focuses, if already open) a full-size window pointed straight at
-// the dashboard website. Login, session persistence, and role-based routing
-// are all handled by the dashboard itself, exactly as if it were opened in a
-// browser — nothing extra to build here.
-fn open_dashboard_window(app: &AppHandle, backend_url: &str) -> tauri::Result<()> {
-    if let Some(window) = app.get_webview_window("dashboard") {
-        let _ = window.show();
-        let _ = window.set_focus();
-        return Ok(());
-    }
-    let url = Url::parse(backend_url).map_err(|e| tauri::Error::InvalidUrl(e))?;
-    WebviewWindowBuilder::new(app, "dashboard", WebviewUrl::External(url))
-        .title("Desklog")
-        .inner_size(1200.0, 800.0)
-        .min_inner_size(800.0, 600.0)
-        .build()?;
-    Ok(())
-}
-
-// Same as above, but hands the dashboard an already-authenticated session via
-// a URL token — the dashboard's own App.jsx picks it up on load — so it opens
-// straight onto the right role's view instead of showing its login screen a
-// second time right after a native login form already collected the password.
+// Opens (or focuses, if already open) a full-size window pointed at the
+// dashboard, handing it an already-authenticated session via a URL token —
+// the dashboard's own App.jsx picks it up on load — so it opens straight onto
+// the right role's view instead of showing its login screen a second time
+// right after a native login form already collected the password.
 fn open_dashboard_window_with_token(app: &AppHandle, backend_url: &str, token: &str) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window("dashboard") {
         let _ = window.show();
@@ -62,7 +44,7 @@ fn open_dashboard_window_with_token(app: &AppHandle, backend_url: &str, token: &
     let url_str = format!("{backend_url}/?token={token}");
     let url = Url::parse(&url_str).map_err(|e| tauri::Error::InvalidUrl(e))?;
     WebviewWindowBuilder::new(app, "dashboard", WebviewUrl::External(url))
-        .title("Desklog")
+        .title("BIG BOSS")
         .inner_size(1200.0, 800.0)
         .min_inner_size(800.0, 600.0)
         .build()?;
@@ -78,7 +60,7 @@ fn open_setup_window(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
     WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("index.html".into()))
-        .title("Desklog")
+        .title("BIG BOSS")
         .inner_size(420.0, 520.0)
         .resizable(false)
         .center()
@@ -94,16 +76,18 @@ fn start_tray_and_tracking(app: &AppHandle, cfg: AgentConfig, backend_url: Strin
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&status_item, &dashboard_item, &quit_item])?;
 
-    let dashboard_url = backend_url.clone();
     TrayIconBuilder::new()
         .icon(tray_icon())
         .menu(&menu)
-        .tooltip("Desklog Agent")
+        .tooltip("BIG BOSS")
         .on_menu_event(move |app, event| {
             match event.id().as_ref() {
                 "quit" => app.exit(0),
+                // Viewing the dashboard always requires a fresh login (this
+                // opens the setup window's dashboard-login screen, not the
+                // dashboard itself) — tracking keeps running either way.
                 "dashboard" => {
-                    let _ = open_dashboard_window(app, &dashboard_url);
+                    let _ = open_setup_window(app);
                 }
                 _ => {}
             }
@@ -176,6 +160,33 @@ async fn submit_register_admin(app: AppHandle, backend_url: String, name: String
     Ok(())
 }
 
+// Tells the setup window which screen to open on: an employee PC that's
+// already tracking silently in the background skips straight to a
+// dashboard-only login (server address already known) instead of the full
+// "I am a(n)" chooser, which would be a confusing question to ask again on a
+// machine that's already been set up.
+#[tauri::command]
+fn is_tracking_active() -> bool {
+    agent::load_config().is_some()
+}
+
+// Viewing the dashboard always requires a fresh login, for every role —
+// separate from whatever tracking is already silently running, which this
+// never touches. Used when the setup window opens straight to the
+// dashboard-login screen (see is_tracking_active).
+#[tauri::command]
+async fn submit_dashboard_login(app: AppHandle, name: String, password: String) -> Result<(), String> {
+    let cfg = agent::load_config().ok_or_else(|| "no saved connection found".to_string())?;
+    let outcome = agent::login(&name, &password, &cfg.backend_url).await?;
+
+    open_dashboard_window_with_token(&app, &cfg.backend_url, &outcome.token).map_err(|e| e.to_string())?;
+
+    if let Some(setup_window) = app.get_webview_window("setup") {
+        let _ = setup_window.close();
+    }
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         // Must be registered first. Without this, every reopen (or an
@@ -197,21 +208,37 @@ fn main() {
             // Already running silently (employee tray mode) with no window
             // open — this callback only fires when someone deliberately tries
             // to launch the app again (e.g. clicking the Start Menu icon), as
-            // opposed to the original silent auto-start-at-login launch. Show
-            // the same "I am a(n)" chooser as any other launch, per explicit
-            // request that it always appears — not a shortcut straight to the
-            // dashboard, which would skip it.
+            // opposed to the original silent auto-start-at-login launch. Opens
+            // straight to the dashboard-login screen (is_tracking_active makes
+            // that call), since we already know this is an employee machine.
             let _ = open_setup_window(app);
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .manage(StaysInTray(AtomicBool::new(false)))
-        .invoke_handler(tauri::generate_handler![submit_setup, submit_login, submit_register_admin])
+        .invoke_handler(tauri::generate_handler![
+            submit_setup,
+            submit_login,
+            submit_register_admin,
+            is_tracking_active,
+            submit_dashboard_login
+        ])
         .setup(|app| {
-            // Always ask "I am a(n) Employee / Admin or Super Admin" on every
-            // launch, by explicit request — each role then logs in fresh via
-            // submit_login (or, for a brand-new employee with no account yet,
-            // the invite-link fallback via submit_setup).
-            open_setup_window(app.handle())?;
+            if let Some(cfg) = agent::load_config() {
+                // Employee already enrolled — resume tracking silently, no
+                // window at all. Auto-start-at-login stays truly silent this
+                // way; viewing the dashboard is a separate, always-fresh
+                // login (see submit_dashboard_login), not tied to this.
+                app.state::<StaysInTray>().0.store(true, Ordering::Relaxed);
+                let _ = app.autolaunch().enable();
+                let backend_url = cfg.backend_url.clone();
+                let agent_name = cfg.name.clone();
+                start_tray_and_tracking(app.handle(), cfg, backend_url, agent_name)?;
+            } else {
+                // No saved tracking config — first run, or an admin/super
+                // admin machine (which never persists anything). Always ask
+                // "I am a(n) Employee / Admin or Super Admin".
+                open_setup_window(app.handle())?;
+            }
             Ok(())
         })
         .build(tauri::generate_context!())

@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Desklog</title>
+<title>BIG BOSS</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -99,8 +99,8 @@
 <body>
   <div class="card">
     <div class="brand">
-      <div class="brand-mark">D</div>
-      <div class="brand-name">Desklog</div>
+      <div class="brand-mark">B</div>
+      <div class="brand-name">BIG BOSS</div>
     </div>
 
     <div id="screen-chooser" class="screen active">
@@ -116,9 +116,23 @@
       </button>
     </div>
 
+    <div id="screen-dashboard-login" class="screen">
+      <h1>Log in to view your dashboard</h1>
+      <p class="sub">Tracking keeps running in the background either way — this just opens your own dashboard.</p>
+
+      <label for="dashboardLoginName">Your name</label>
+      <input id="dashboardLoginName" placeholder="Jane Doe" />
+
+      <label for="dashboardLoginPassword">Password</label>
+      <input id="dashboardLoginPassword" type="password" placeholder="Password" />
+
+      <button id="submitDashboardLogin">Log in</button>
+      <div class="status" id="statusDashboardLogin"></div>
+    </div>
+
     <div id="screen-employee" class="screen">
       <h1>Employee login</h1>
-      <p class="sub">Log in with your Desklog account. This starts tracking and opens your dashboard.</p>
+      <p class="sub">Log in with your BIG BOSS account. This starts tracking and opens your dashboard.</p>
 
       <label for="employeeServerUrl">Server address</label>
       <input id="employeeServerUrl" placeholder="http://192.168.1.23:4000" />
@@ -152,7 +166,7 @@
 
     <div id="screen-admin" class="screen">
       <h1>Admin / Super Admin login</h1>
-      <p class="sub">Log in with your Desklog account to open your dashboard.</p>
+      <p class="sub">Log in with your BIG BOSS account to open your dashboard.</p>
 
       <label for="serverUrl">Server address</label>
       <input id="serverUrl" placeholder="http://192.168.1.23:4000" />
@@ -210,6 +224,46 @@
     document.getElementById('backToAdminLogin').addEventListener('click', () => showScreen('screen-admin'));
     document.querySelectorAll('[data-back]').forEach((btn) => {
       btn.addEventListener('click', () => showScreen('screen-chooser'));
+    });
+
+    // This machine is already tracking silently in the tray — skip the role
+    // question (we already know it's an employee machine) and go straight to
+    // a dashboard-only login instead.
+    invoke('is_tracking_active').then((active) => {
+      if (active) showScreen('screen-dashboard-login');
+    });
+
+    // --- Dashboard-only login (tracking already running) ---
+    const dashboardLoginNameInput = document.getElementById('dashboardLoginName');
+    const dashboardLoginPasswordInput = document.getElementById('dashboardLoginPassword');
+    const submitDashboardLoginBtn = document.getElementById('submitDashboardLogin');
+    const statusDashboardLoginEl = document.getElementById('statusDashboardLogin');
+
+    submitDashboardLoginBtn.addEventListener('click', async () => {
+      statusDashboardLoginEl.textContent = '';
+      statusDashboardLoginEl.className = 'status';
+
+      const name = dashboardLoginNameInput.value.trim();
+      const password = dashboardLoginPasswordInput.value;
+
+      if (!name || !password) {
+        statusDashboardLoginEl.textContent = 'Enter your name and password.';
+        statusDashboardLoginEl.className = 'status error';
+        return;
+      }
+
+      submitDashboardLoginBtn.disabled = true;
+      statusDashboardLoginEl.textContent = 'Logging in…';
+
+      try {
+        await invoke('submit_dashboard_login', { name, password });
+        statusDashboardLoginEl.textContent = 'Logged in — opening your dashboard…';
+        statusDashboardLoginEl.className = 'status ok';
+      } catch (err) {
+        statusDashboardLoginEl.textContent = String(err);
+        statusDashboardLoginEl.className = 'status error';
+        submitDashboardLoginBtn.disabled = false;
+      }
     });
 
     // --- Employee login (primary path) ---

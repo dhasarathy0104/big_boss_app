@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Desklog",
+  "productName": "BIG BOSS",
   "version": "0.1.0",
   "identifier": "com.desklog.agent",
   "build": {

@@ -36,6 +36,11 @@ fn queue_path() -> PathBuf {
     config_dir().join("queue.json")
 }
 
+pub fn load_config() -> Option<AgentConfig> {
+    let data = fs::read_to_string(config_path()).ok()?;
+    serde_json::from_str(&data).ok()
+}
+
 fn save_config(cfg: &AgentConfig) {
     if let Ok(data) = serde_json::to_string_pretty(cfg) {
         let _ = fs::write(config_path(), data);
@@ -75,6 +80,7 @@ fn save_queue(queue: &[ActivityEvent]) {
 pub async fn enroll_and_save(name: &str, invite_token: Option<String>, backend_url: &str) -> Result<AgentConfig, String> {
     let client = BackendClient::new(backend_url.to_string());
     let mut cfg = client.enroll(name, invite_token).await?;
+    cfg.name = name.to_string();
     cfg.backend_url = backend_url.to_string();
     save_config(&cfg);
     Ok(cfg)
@@ -92,6 +98,7 @@ fn finish_login(resp: crate::backend::LoginResponse, backend_url: &str) -> Login
         let cfg = AgentConfig {
             user_id: resp.user.id,
             agent_key: resp.user.agent_key,
+            name: resp.user.name,
             manager_id: resp.user.manager_id,
             manager_name: resp.user.manager_name,
             backend_url: backend_url.to_string(),
