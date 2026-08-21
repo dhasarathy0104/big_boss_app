@@ -2,15 +2,16 @@ import { Router } from 'express';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { db } from '../db.js';
 import { requireManager } from '../auth.js';
+import { ah } from '../asyncHandler.js';
 
 export const billingRouter = Router();
 
-function computeInvoice(projectId, startDate, endDate) {
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+async function computeInvoice(projectId, startDate, endDate) {
+  const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
   if (!project) return { error: 'project not found', status: 404 };
   if (!project.is_billable) return { error: 'project is not marked billable', status: 400 };
 
-  const entries = db.prepare(`
+  const entries = await db.prepare(`
     SELECT te.*, u.name AS user_name
     FROM time_entries te
     JOIN users u ON u.id = te.user_id
@@ -44,27 +45,27 @@ function computeInvoice(projectId, startDate, endDate) {
   };
 }
 
-function ownsProject(authUser, projectId) {
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+async function ownsProject(authUser, projectId) {
+  const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
   return project && project.manager_id === authUser.id;
 }
 
-billingRouter.get('/projects/:id/invoice', requireManager, (req, res) => {
+billingRouter.get('/projects/:id/invoice', requireManager, ah(async (req, res) => {
   const { startDate, endDate } = req.query;
   if (!startDate || !endDate) return res.status(400).json({ error: 'startDate and endDate required' });
-  if (!ownsProject(req.authUser, req.params.id)) return res.status(403).json({ error: 'not your project' });
+  if (!(await ownsProject(req.authUser, req.params.id))) return res.status(403).json({ error: 'not your project' });
 
-  const result = computeInvoice(req.params.id, startDate, endDate);
+  const result = await computeInvoice(req.params.id, startDate, endDate);
   if (result.error) return res.status(result.status).json({ error: result.error });
   res.json(result);
-});
+}));
 
-billingRouter.get('/projects/:id/invoice.pdf', requireManager, async (req, res) => {
+billingRouter.get('/projects/:id/invoice.pdf', requireManager, ah(async (req, res) => {
   const { startDate, endDate } = req.query;
   if (!startDate || !endDate) return res.status(400).json({ error: 'startDate and endDate required' });
-  if (!ownsProject(req.authUser, req.params.id)) return res.status(403).json({ error: 'not your project' });
+  if (!(await ownsProject(req.authUser, req.params.id))) return res.status(403).json({ error: 'not your project' });
 
-  const invoice = computeInvoice(req.params.id, startDate, endDate);
+  const invoice = await computeInvoice(req.params.id, startDate, endDate);
   if (invoice.error) return res.status(invoice.status).json({ error: invoice.error });
 
   const pdfDoc = await PDFDocument.create();
@@ -112,4 +113,4 @@ billingRouter.get('/projects/:id/invoice.pdf', requireManager, async (req, res) 
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoice.project.name.replace(/\W+/g, '-')}-${startDate}-${endDate}.pdf"`);
   res.send(Buffer.from(bytes));
-});
+}));

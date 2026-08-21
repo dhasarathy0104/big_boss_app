@@ -16,9 +16,9 @@ export function verifyPassword(password, stored) {
   return expected.length === check.length && crypto.timingSafeEqual(expected, check);
 }
 
-export function createSession(userId) {
+export async function createSession(userId) {
   const token = crypto.randomBytes(24).toString('hex');
-  db.prepare('INSERT INTO sessions (token, user_id) VALUES (?, ?)').run(token, userId);
+  await db.prepare('INSERT INTO sessions (token, user_id) VALUES (?, ?)').run(token, userId);
   return token;
 }
 
@@ -30,19 +30,24 @@ function tokenFromReq(req) {
   return null;
 }
 
-export function resolveSession(token) {
+export async function resolveSession(token) {
   if (!token) return null;
-  return db.prepare(`
+  const user = await db.prepare(`
     SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?
-  `).get(token) ?? null;
+  `).get(token);
+  return user ?? null;
 }
 
 // Attaches req.authUser if a valid session token is present; 401 otherwise.
-export function requireAuth(req, res, next) {
-  const user = resolveSession(tokenFromReq(req));
-  if (!user) return res.status(401).json({ error: 'not authenticated' });
-  req.authUser = user;
-  next();
+export async function requireAuth(req, res, next) {
+  try {
+    const user = await resolveSession(tokenFromReq(req));
+    if (!user) return res.status(401).json({ error: 'not authenticated' });
+    req.authUser = user;
+    next();
+  } catch (err) {
+    next(err);
+  }
 }
 
 // requireAuth + must be a manager.
@@ -82,7 +87,7 @@ export function requireManagerSelf(req, res, next) {
 // For routes shared between manager team-wide views (?managerId=) and employee
 // self-views (?userId=): the caller must be that exact manager, or that exact
 // employee, or the manager who owns that employee.
-export function authorizeScopedQuery(req, res) {
+export async function authorizeScopedQuery(req, res) {
   const { userId, managerId } = req.query;
   if (managerId !== undefined) {
     if (req.authUser.role !== 'manager' || Number(managerId) !== req.authUser.id) {
@@ -91,7 +96,7 @@ export function authorizeScopedQuery(req, res) {
     }
   }
   if (userId !== undefined) {
-    if (!isSelfOrOwnEmployee(req.authUser, Number(userId))) {
+    if (!(await isSelfOrOwnEmployee(req.authUser, Number(userId)))) {
       res.status(403).json({ error: 'not authorized for this user' });
       return false;
     }
@@ -99,10 +104,10 @@ export function authorizeScopedQuery(req, res) {
   return true;
 }
 
-export function isSelfOrOwnEmployee(authUser, targetUserId) {
+export async function isSelfOrOwnEmployee(authUser, targetUserId) {
   if (authUser.id === targetUserId) return true;
   if (authUser.role === 'superadmin') return true;
   if (authUser.role !== 'manager') return false;
-  const target = db.prepare('SELECT manager_id FROM users WHERE id = ?').get(targetUserId);
+  const target = await db.prepare('SELECT manager_id FROM users WHERE id = ?').get(targetUserId);
   return target?.manager_id === authUser.id;
 }

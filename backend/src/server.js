@@ -4,7 +4,8 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { db } from './db.js';
+import { db, withTransaction } from './db.js';
+import { ah } from './asyncHandler.js';
 import { managersRouter } from './routes/managers.js';
 import { invitesPublicRouter } from './routes/invites.js';
 import { employeesRouter } from './routes/employees.js';
@@ -28,27 +29,31 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
-function authUser(req, res, next) {
-  const key = req.header('x-agent-key');
-  if (!key) return res.status(401).json({ error: 'missing x-agent-key header' });
-  const user = db.prepare('SELECT * FROM users WHERE agent_key = ?').get(key);
-  if (!user) return res.status(401).json({ error: 'unknown agent key' });
-  req.user = user;
-  next();
+async function authUser(req, res, next) {
+  try {
+    const key = req.header('x-agent-key');
+    if (!key) return res.status(401).json({ error: 'missing x-agent-key header' });
+    const user = await db.prepare('SELECT * FROM users WHERE agent_key = ?').get(key);
+    if (!user) return res.status(401).json({ error: 'unknown agent key' });
+    req.user = user;
+    next();
+  } catch (err) {
+    next(err);
+  }
 }
 
 // Agent enrolls itself the first time it runs. If it carries an invite token,
 // it's automatically attached to whichever manager issued that link.
-app.post('/api/enroll', (req, res) => {
+app.post('/api/enroll', ah(async (req, res) => {
   const { name, inviteToken } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name required' });
 
   let managerId = null;
   if (inviteToken) {
-    const invite = db.prepare('SELECT * FROM invite_links WHERE token = ? AND revoked = 0').get(inviteToken);
+    const invite = await db.prepare('SELECT * FROM invite_links WHERE token = ? AND revoked = 0').get(inviteToken);
     if (!invite) return res.status(400).json({ error: 'invalid or revoked invite token' });
     managerId = invite.manager_id;
-    db.prepare('UPDATE invite_links SET use_count = use_count + 1 WHERE id = ?').run(invite.id);
+    await db.prepare('UPDATE invite_links SET use_count = use_count + 1 WHERE id = ?').run(invite.id);
   }
 
   const agentKey = crypto.randomBytes(16).toString('hex');
@@ -58,44 +63,44 @@ app.post('/api/enroll', (req, res) => {
   // wiping a local config to fix a connection issue) resumes the existing
   // employee record instead of forking a duplicate with empty history.
   const existing = managerId
-    ? db.prepare("SELECT * FROM users WHERE role = 'employee' AND manager_id = ? AND name = ? COLLATE NOCASE")
+    ? await db.prepare("SELECT * FROM users WHERE role = 'employee' AND manager_id = ? AND LOWER(name) = LOWER(?)")
         .get(managerId, trimmedName)
     : null;
 
   let userId;
   if (existing) {
-    db.prepare('UPDATE users SET agent_key = ? WHERE id = ?').run(agentKey, existing.id);
+    await db.prepare('UPDATE users SET agent_key = ? WHERE id = ?').run(agentKey, existing.id);
     userId = existing.id;
   } else {
-    const info = db.prepare(`
-      INSERT INTO users (name, agent_key, role, manager_id) VALUES (?, ?, 'employee', ?)
+    const info = await db.prepare(`
+      INSERT INTO users (name, agent_key, role, manager_id) VALUES (?, ?, 'employee', ?) RETURNING id
     `).run(trimmedName, agentKey, managerId);
     userId = info.lastInsertRowid;
   }
 
-  const manager = managerId ? db.prepare('SELECT name FROM users WHERE id = ?').get(managerId) : null;
+  const manager = managerId ? await db.prepare('SELECT name FROM users WHERE id = ?').get(managerId) : null;
   res.json({
     userId,
     agentKey,
     managerId,
     managerName: manager?.name ?? null,
   });
-});
+}));
 
 // Batched activity events from the agent.
-app.post('/api/ingest/activity', authUser, (req, res) => {
+app.post('/api/ingest/activity', authUser, ah(async (req, res) => {
   const { events } = req.body;
   if (!Array.isArray(events)) return res.status(400).json({ error: 'events array required' });
 
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO activity_events
-      (user_id, client_event_id, app_name, window_title, domain, started_at, ended_at, input_count, is_idle)
-    VALUES (@user_id, @client_event_id, @app_name, @window_title, @domain, @started_at, @ended_at, @input_count, @is_idle)
-  `);
-  db.exec('BEGIN');
-  try {
+  await withTransaction(async (tx) => {
+    const insert = tx.prepare(`
+      INSERT INTO activity_events
+        (user_id, client_event_id, app_name, window_title, domain, started_at, ended_at, input_count, is_idle)
+      VALUES (@user_id, @client_event_id, @app_name, @window_title, @domain, @started_at, @ended_at, @input_count, @is_idle)
+      ON CONFLICT (user_id, client_event_id) DO NOTHING
+    `);
     for (const e of events) {
-      insert.run({
+      await insert.run({
         user_id: req.user.id,
         client_event_id: e.clientEventId,
         app_name: e.appName ?? null,
@@ -107,16 +112,12 @@ app.post('/api/ingest/activity', authUser, (req, res) => {
         is_idle: e.isIdle ? 1 : 0,
       });
     }
-    db.exec('COMMIT');
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
+  });
   res.json({ accepted: events.length });
-});
+}));
 
 // Screenshot upload (base64 PNG/JPEG in JSON body — fine at prototype volume).
-app.post('/api/ingest/screenshot', authUser, (req, res) => {
+app.post('/api/ingest/screenshot', authUser, ah(async (req, res) => {
   const { capturedAt, appName, windowTitle, imageBase64, ext } = req.body;
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
 
@@ -125,86 +126,90 @@ app.post('/api/ingest/screenshot', authUser, (req, res) => {
   const filePath = path.join(screenshotsDir, fileName);
   fs.writeFileSync(filePath, Buffer.from(imageBase64, 'base64'));
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO screenshots (user_id, captured_at, file_path, app_name, window_title)
     VALUES (?, ?, ?, ?, ?)
   `).run(req.user.id, capturedAt ?? new Date().toISOString(), fileName, appName ?? null, windowTitle ?? null);
 
   res.json({ ok: true });
-});
+}));
 
 // Agent checks this periodically so a manager's interval change takes effect
 // without the employee needing to restart their agent.
-app.get('/api/agent-settings', authUser, (req, res) => {
+app.get('/api/agent-settings', authUser, ah(async (req, res) => {
   const managerId = req.user.manager_id;
   const manager = managerId
-    ? db.prepare('SELECT screenshot_interval_minutes FROM users WHERE id = ?').get(managerId)
+    ? await db.prepare('SELECT screenshot_interval_minutes FROM users WHERE id = ?').get(managerId)
     : null;
   res.json({ screenshotIntervalMinutes: manager?.screenshot_interval_minutes ?? 5 });
-});
+}));
 
 // --- Dashboard read endpoints ---
 // All scoped to: the user viewing their own data, or the manager who owns them.
 
-function requireSelfOrOwnEmployee(req, res, next) {
-  if (!isSelfOrOwnEmployee(req.authUser, Number(req.params.id))) {
-    return res.status(403).json({ error: 'not authorized for this user' });
+async function requireSelfOrOwnEmployee(req, res, next) {
+  try {
+    if (!(await isSelfOrOwnEmployee(req.authUser, Number(req.params.id)))) {
+      return res.status(403).json({ error: 'not authorized for this user' });
+    }
+    next();
+  } catch (err) {
+    next(err);
   }
-  next();
 }
 
-app.get('/api/users/:id/timeline', requireAuth, requireSelfOrOwnEmployee, (req, res) => {
+app.get('/api/users/:id/timeline', requireAuth, requireSelfOrOwnEmployee, ah(async (req, res) => {
   const { date } = req.query; // YYYY-MM-DD
   const day = date || new Date().toISOString().slice(0, 10);
-  const events = db.prepare(`
+  const events = await db.prepare(`
     SELECT * FROM activity_events
     WHERE user_id = ? AND started_at >= ? AND started_at < ?
     ORDER BY started_at
   `).all(req.params.id, `${day}T00:00:00.000Z`, `${day}T23:59:59.999Z`);
   res.json(events);
-});
+}));
 
-app.get('/api/users/:id/productivity', requireAuth, requireSelfOrOwnEmployee, (req, res) => {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+app.get('/api/users/:id/productivity', requireAuth, requireSelfOrOwnEmployee, ah(async (req, res) => {
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'user not found' });
 
   const { date } = req.query;
   const day = date || new Date().toISOString().slice(0, 10);
-  const events = db.prepare(`
+  const events = await db.prepare(`
     SELECT * FROM activity_events
     WHERE user_id = ? AND started_at >= ? AND started_at < ?
     ORDER BY started_at
   `).all(req.params.id, `${day}T00:00:00.000Z`, `${day}T23:59:59.999Z`);
 
   const rules = user.manager_id
-    ? db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(user.manager_id)
+    ? await db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(user.manager_id)
     : [];
   const overrides = buildOverrideMaps(rules);
 
   res.json(computeProductivity(events, overrides));
-});
+}));
 
-app.get('/api/users/:id/screenshots', requireAuth, requireSelfOrOwnEmployee, (req, res) => {
+app.get('/api/users/:id/screenshots', requireAuth, requireSelfOrOwnEmployee, ah(async (req, res) => {
   const { date } = req.query;
   const day = date || new Date().toISOString().slice(0, 10);
-  const shots = db.prepare(`
+  const shots = await db.prepare(`
     SELECT * FROM screenshots
     WHERE user_id = ? AND captured_at >= ? AND captured_at < ?
     ORDER BY captured_at DESC
   `).all(req.params.id, `${day}T00:00:00.000Z`, `${day}T23:59:59.999Z`);
   res.json(shots);
-});
+}));
 
 // Screenshot images themselves — was a blanket express.static mount with zero
 // auth (anyone who guessed/knew a filename could view anyone's screen
 // captures). Now resolved through the DB so the same ownership check applies,
 // with a ?token= fallback since <img src> can't set an Authorization header.
-app.get('/api/screenshots/:filename', requireAuth, (req, res) => {
-  const shot = db.prepare('SELECT * FROM screenshots WHERE file_path = ?').get(req.params.filename);
+app.get('/api/screenshots/:filename', requireAuth, ah(async (req, res) => {
+  const shot = await db.prepare('SELECT * FROM screenshots WHERE file_path = ?').get(req.params.filename);
   if (!shot) return res.status(404).end();
-  if (!isSelfOrOwnEmployee(req.authUser, shot.user_id)) return res.status(403).end();
+  if (!(await isSelfOrOwnEmployee(req.authUser, shot.user_id))) return res.status(403).end();
   res.sendFile(path.join(screenshotsDir, shot.file_path));
-});
+}));
 
 app.use('/api/auth', authRouter);
 app.use('/api/superadmin', superadminRouter);

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { buildOverrideMaps, computeProductivity } from '../productivity.js';
 import { requireManager } from '../auth.js';
+import { ah } from '../asyncHandler.js';
 
 export const liveStatusRouter = Router();
 
@@ -16,23 +17,23 @@ function statusFor(latestEvent) {
   return latestEvent.is_idle ? 'idle' : 'active';
 }
 
-liveStatusRouter.get('/:managerId/live-status', requireManager, (req, res) => {
+liveStatusRouter.get('/:managerId/live-status', requireManager, ah(async (req, res) => {
   if (Number(req.params.managerId) !== req.authUser.id) return res.status(403).json({ error: 'not your team' });
 
-  const team = db.prepare(`
+  const team = await db.prepare(`
     SELECT id, name FROM users WHERE manager_id = ? AND role = 'employee' ORDER BY name
   `).all(req.params.managerId);
 
-  const rules = db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(req.params.managerId);
+  const rules = await db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(req.params.managerId);
   const overrides = buildOverrideMaps(rules);
   const today = new Date().toISOString().slice(0, 10);
 
-  const result = team.map((member) => {
-    const latestEvent = db.prepare(`
+  const result = await Promise.all(team.map(async (member) => {
+    const latestEvent = await db.prepare(`
       SELECT * FROM activity_events WHERE user_id = ? ORDER BY ended_at DESC LIMIT 1
     `).get(member.id);
 
-    const todaysEvents = db.prepare(`
+    const todaysEvents = await db.prepare(`
       SELECT * FROM activity_events
       WHERE user_id = ? AND started_at >= ? AND started_at < ?
       ORDER BY started_at
@@ -49,7 +50,7 @@ liveStatusRouter.get('/:managerId/live-status', requireManager, (req, res) => {
       todayScore: productivity.score,
       todayActiveMinutes: Math.round(productivity.totals.productive + productivity.totals.neutral + productivity.totals.unproductive + productivity.totals.engaged),
     };
-  });
+  }));
 
   res.json(result);
-});
+}));
