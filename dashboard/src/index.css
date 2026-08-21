@@ -76,8 +76,6 @@ body {
 .brand-mark {
   width: 30px;
   height: 30px;
-  border-radius: 9px;
-  background: linear-gradient(135deg, #3987e5, #9085e9);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -85,7 +83,6 @@ body {
   font-weight: 800;
   font-size: 15px;
   flex-shrink: 0;
-  box-shadow: var(--shadow-sm);
 }
 
 .brand-name {
