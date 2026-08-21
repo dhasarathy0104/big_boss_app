@@ -36,7 +36,15 @@ function RegisterAdminForm({ onAuthed, onBack }) {
     <div className="join-page">
       <div className="join-card">
         <div className="brand" style={{ border: 'none', marginBottom: 20, paddingBottom: 0 }}>
-          <div className="brand-mark">B</div>
+          <div className="brand-mark">
+            <svg viewBox="0 0 100 60" width="22" height="13" xmlns="http://www.w3.org/2000/svg">
+              <ellipse cx="50" cy="30" rx="46" ry="26" fill="#f5f8fc" />
+              <circle cx="50" cy="30" r="15" fill="#18203a" />
+              <circle cx="50" cy="30" r="12" fill="none" stroke="#5878dc" strokeWidth="1.6" />
+              <circle cx="50" cy="30" r="7" fill="#06080f" />
+              <circle cx="45" cy="26" r="2.6" fill="#fff" />
+            </svg>
+          </div>
           <div className="brand-name">BIG BOSS</div>
         </div>
         <h1>Create an account</h1>
@@ -122,7 +130,15 @@ function AuthScreen({ onAuthed }) {
     <div className="join-page">
       <div className="join-card">
         <div className="brand" style={{ border: 'none', marginBottom: 20, paddingBottom: 0 }}>
-          <div className="brand-mark">B</div>
+          <div className="brand-mark">
+            <svg viewBox="0 0 100 60" width="22" height="13" xmlns="http://www.w3.org/2000/svg">
+              <ellipse cx="50" cy="30" rx="46" ry="26" fill="#f5f8fc" />
+              <circle cx="50" cy="30" r="15" fill="#18203a" />
+              <circle cx="50" cy="30" r="12" fill="none" stroke="#5878dc" strokeWidth="1.6" />
+              <circle cx="50" cy="30" r="7" fill="#06080f" />
+              <circle cx="45" cy="26" r="2.6" fill="#fff" />
+            </svg>
+          </div>
           <div className="brand-name">BIG BOSS</div>
         </div>
         <h1>{heading}</h1>
