@@ -216,10 +216,10 @@
   <script>
     const { invoke } = window.__TAURI__.core;
 
-    // The only place the hosted backend's address needs to be set. Once
-    // Lightsail is live, put its address here and rebuild — nobody using the
-    // app types or pastes a server address anymore.
-    const BACKEND_URL = 'https://REPLACE-WITH-LIGHTSAIL-ADDRESS';
+    // The only place the hosted backend's address needs to be set. If it
+    // ever moves, update this and rebuild — nobody using the app types or
+    // pastes a server address anymore.
+    const BACKEND_URL = 'https://big-boss-app.onrender.com';
 
     function showScreen(id) {
       document.querySelectorAll('.screen').forEach((el) => el.classList.remove('active'));
