@@ -162,13 +162,16 @@
 
     <div id="screen-employee-invite" class="screen">
       <h1>Connect this computer</h1>
-      <p class="sub">No account yet? Paste the invite link your manager sent you, and enter your name.</p>
+      <p class="sub">No account yet? Paste the invite link your manager sent you, enter your name, and choose a password — this also becomes your dashboard login.</p>
 
       <label for="link">Invite link</label>
       <input id="link" placeholder="http://.../join/abc123" />
 
       <label for="name">Your name</label>
       <input id="name" placeholder="Jane Doe" />
+
+      <label for="invitePassword">Choose a password</label>
+      <input id="invitePassword" type="password" placeholder="Choose a password (8+ characters)" />
 
       <button id="submitEmployee">Connect</button>
       <button class="text-link" id="backToEmployeeLogin">&larr; Back to login</button>
@@ -313,6 +316,7 @@
     // --- Employee invite-link fallback (new employees with no account yet) ---
     const linkInput = document.getElementById('link');
     const nameInput = document.getElementById('name');
+    const invitePasswordInput = document.getElementById('invitePassword');
     const submitEmployeeBtn = document.getElementById('submitEmployee');
     const statusEmployeeEl = document.getElementById('statusEmployee');
 
@@ -333,6 +337,7 @@
 
       const parsed = parseInvite(linkInput.value);
       const name = nameInput.value.trim();
+      const password = invitePasswordInput.value;
 
       if (!parsed) {
         statusEmployeeEl.textContent = 'That doesn\'t look like a valid invite link.';
@@ -344,6 +349,11 @@
         statusEmployeeEl.className = 'status error';
         return;
       }
+      if (!password || password.length < 8) {
+        statusEmployeeEl.textContent = 'Choose a password of at least 8 characters.';
+        statusEmployeeEl.className = 'status error';
+        return;
+      }
 
       submitEmployeeBtn.disabled = true;
       statusEmployeeEl.textContent = 'Connecting…';
@@ -351,10 +361,11 @@
       try {
         const managerName = await invoke('submit_setup', {
           name,
+          password,
           inviteToken: parsed.token,
           backendUrl: parsed.backendUrl,
         });
-        statusEmployeeEl.textContent = `Connected — joined ${managerName}'s team. You can close this window.`;
+        statusEmployeeEl.textContent = `Connected — joined ${managerName}'s team. You can close this window, or log in with your name and password to view your dashboard.`;
         statusEmployeeEl.className = 'status ok';
       } catch (err) {
         statusEmployeeEl.textContent = String(err);

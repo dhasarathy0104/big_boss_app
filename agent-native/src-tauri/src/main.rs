@@ -105,8 +105,8 @@ fn start_tray_and_tracking(app: &AppHandle, cfg: AgentConfig, backend_url: Strin
 }
 
 #[tauri::command]
-async fn submit_setup(app: AppHandle, name: String, invite_token: String, backend_url: String) -> Result<String, String> {
-    let cfg = agent::enroll_and_save(&name, Some(invite_token), &backend_url).await?;
+async fn submit_setup(app: AppHandle, name: String, password: String, invite_token: String, backend_url: String) -> Result<String, String> {
+    let cfg = agent::enroll_and_save(&name, &password, Some(invite_token), &backend_url).await?;
     let manager_label = cfg.manager_name.clone().unwrap_or_else(|| "your manager".to_string());
 
     app.state::<StaysInTray>().0.store(true, Ordering::Relaxed);

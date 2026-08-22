@@ -28,6 +28,7 @@ pub struct AgentConfig {
 #[derive(Serialize)]
 struct EnrollRequest {
     name: String,
+    password: String,
     #[serde(rename = "inviteToken", skip_serializing_if = "Option::is_none")]
     invite_token: Option<String>,
 }
@@ -93,11 +94,11 @@ impl BackendClient {
         Self { http: reqwest::Client::new(), base_url }
     }
 
-    pub async fn enroll(&self, name: &str, invite_token: Option<String>) -> Result<AgentConfig, String> {
+    pub async fn enroll(&self, name: &str, password: &str, invite_token: Option<String>) -> Result<AgentConfig, String> {
         let res = self
             .http
             .post(format!("{}/api/enroll", self.base_url))
-            .json(&EnrollRequest { name: name.to_string(), invite_token })
+            .json(&EnrollRequest { name: name.to_string(), password: password.to_string(), invite_token })
             .send()
             .await
             .map_err(|e| e.to_string())?;
