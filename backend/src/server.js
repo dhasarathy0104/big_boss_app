@@ -23,7 +23,6 @@ import { requireAuth, isSelfOrOwnEmployee } from './auth.js';
 import { buildOverrideMaps, computeProductivity } from './productivity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const screenshotsDir = path.join(__dirname, '..', 'data', 'screenshots');
 
 const app = express();
 app.use(cors());
@@ -123,13 +122,11 @@ app.post('/api/ingest/screenshot', authUser, ah(async (req, res) => {
 
   const fileExt = ext === 'png' ? 'png' : 'jpg';
   const fileName = `${req.user.id}_${Date.now()}.${fileExt}`;
-  const filePath = path.join(screenshotsDir, fileName);
-  fs.writeFileSync(filePath, Buffer.from(imageBase64, 'base64'));
 
   await db.prepare(`
-    INSERT INTO screenshots (user_id, captured_at, file_path, app_name, window_title)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(req.user.id, capturedAt ?? new Date().toISOString(), fileName, appName ?? null, windowTitle ?? null);
+    INSERT INTO screenshots (user_id, captured_at, file_path, app_name, window_title, image_data)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(req.user.id, capturedAt ?? new Date().toISOString(), fileName, appName ?? null, windowTitle ?? null, imageBase64);
 
   res.json({ ok: true });
 }));
@@ -192,8 +189,11 @@ app.get('/api/users/:id/productivity', requireAuth, requireSelfOrOwnEmployee, ah
 app.get('/api/users/:id/screenshots', requireAuth, requireSelfOrOwnEmployee, ah(async (req, res) => {
   const { date } = req.query;
   const day = date || new Date().toISOString().slice(0, 10);
+  // image_data excluded here on purpose — this list can be dozens of rows,
+  // and each one's base64 image would make the response huge for no reason.
+  // The gallery fetches the actual image per-shot via /api/screenshots/:filename.
   const shots = await db.prepare(`
-    SELECT * FROM screenshots
+    SELECT id, user_id, captured_at, file_path, app_name, window_title FROM screenshots
     WHERE user_id = ? AND captured_at >= ? AND captured_at < ?
     ORDER BY captured_at DESC
   `).all(req.params.id, `${day}T00:00:00.000Z`, `${day}T23:59:59.999Z`);
@@ -208,7 +208,10 @@ app.get('/api/screenshots/:filename', requireAuth, ah(async (req, res) => {
   const shot = await db.prepare('SELECT * FROM screenshots WHERE file_path = ?').get(req.params.filename);
   if (!shot) return res.status(404).end();
   if (!(await isSelfOrOwnEmployee(req.authUser, shot.user_id))) return res.status(403).end();
-  res.sendFile(path.join(screenshotsDir, shot.file_path));
+  if (!shot.image_data) return res.status(404).end();
+  const contentType = shot.file_path.endsWith('.png') ? 'image/png' : 'image/jpeg';
+  res.set('Content-Type', contentType);
+  res.send(Buffer.from(shot.image_data, 'base64'));
 }));
 
 app.use('/api/auth', authRouter);
