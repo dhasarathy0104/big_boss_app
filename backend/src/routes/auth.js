@@ -91,6 +91,12 @@ authRouter.post('/login', ah(async (req, res) => {
   if (!name?.trim() || !password) return res.status(400).json({ error: 'name and password required' });
 
   const user = await db.prepare('SELECT * FROM users WHERE LOWER(name) = LOWER(?)').get(name.trim());
+  // An employee who joined via invite link has no password yet (that link only
+  // connects tracking) — telling them "invalid password" reads as a wrong
+  // guess, when really they just haven't set one up. Point them at the fix.
+  if (user && !user.password_hash) {
+    return res.status(401).json({ error: 'no dashboard password set yet — ask your manager for your personal setup link' });
+  }
   if (!user || !verifyPassword(password, user.password_hash)) {
     return res.status(401).json({ error: 'invalid name or password' });
   }
