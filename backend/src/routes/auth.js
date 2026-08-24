@@ -75,6 +75,13 @@ authRouter.post('/register-admin', ah(async (req, res) => {
   if (!['manager', 'superadmin'].includes(role)) {
     return res.status(400).json({ error: "role must be 'manager' or 'superadmin'" });
   }
+  // Only ever one super admin, by explicit request — everyone else must be a
+  // manager. Unlike manager self-registration, this isn't reopenable via the
+  // UI; someone has to remove the existing super admin first.
+  if (role === 'superadmin') {
+    const hasSuperAdmin = await db.prepare("SELECT 1 FROM users WHERE role = 'superadmin'").get();
+    if (hasSuperAdmin) return res.status(409).json({ error: 'a super admin account already exists' });
+  }
   const existing = await db.prepare('SELECT 1 FROM users WHERE LOWER(name) = LOWER(?)').get(name.trim());
   if (existing) return res.status(409).json({ error: 'that name is already taken' });
 
@@ -88,16 +95,15 @@ authRouter.post('/register-admin', ah(async (req, res) => {
 
 authRouter.post('/login', ah(async (req, res) => {
   const { name, password } = req.body;
-  if (!name?.trim() || !password) return res.status(400).json({ error: 'name and password required' });
+  if (!name?.trim()) return res.status(400).json({ error: 'name required' });
 
   const user = await db.prepare('SELECT * FROM users WHERE LOWER(name) = LOWER(?)').get(name.trim());
-  // An employee who joined via invite link has no password yet (that link only
-  // connects tracking) — telling them "invalid password" reads as a wrong
-  // guess, when really they just haven't set one up. Point them at the fix.
-  if (user && !user.password_hash) {
-    return res.status(401).json({ error: 'no dashboard password set yet — ask your manager for your personal setup link' });
-  }
-  if (!user || !verifyPassword(password, user.password_hash)) {
+  if (!user) return res.status(401).json({ error: 'invalid name or password' });
+
+  // Employees authenticate by name alone — there's no employee-facing
+  // password anywhere in the app anymore. Managers and super admins still
+  // need the real password check.
+  if (user.role !== 'employee' && !verifyPassword(password, user.password_hash)) {
     return res.status(401).json({ error: 'invalid name or password' });
   }
   res.json({ token: await createSession(user.id), user: await publicUser(user) });

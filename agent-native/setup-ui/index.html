@@ -137,22 +137,16 @@
       <label for="dashboardLoginName">Your name</label>
       <input id="dashboardLoginName" placeholder="Jane Doe" />
 
-      <label for="dashboardLoginPassword">Password</label>
-      <input id="dashboardLoginPassword" type="password" placeholder="Password" />
-
       <button id="submitDashboardLogin">Log in</button>
       <div class="status" id="statusDashboardLogin"></div>
     </div>
 
     <div id="screen-employee" class="screen">
       <h1>Employee login</h1>
-      <p class="sub">Log in with your BIG BOSS account. This starts tracking and opens your dashboard.</p>
+      <p class="sub">Enter your name to start tracking and open your dashboard.</p>
 
       <label for="employeeName">Your name</label>
       <input id="employeeName" placeholder="Jane Doe" />
-
-      <label for="employeePassword">Password</label>
-      <input id="employeePassword" type="password" placeholder="Password" />
 
       <button id="submitEmployeeLogin">Log in</button>
       <button class="text-link" id="goToInvite">New employee? Connect with an invite link instead</button>
@@ -162,16 +156,13 @@
 
     <div id="screen-employee-invite" class="screen">
       <h1>Connect this computer</h1>
-      <p class="sub">No account yet? Paste the invite link your manager sent you, enter your name, and choose a password — this also becomes your dashboard login.</p>
+      <p class="sub">No account yet? Paste the invite link your manager sent you, and enter your name.</p>
 
       <label for="link">Invite link</label>
       <input id="link" placeholder="http://.../join/abc123" />
 
       <label for="name">Your name</label>
       <input id="name" placeholder="Jane Doe" />
-
-      <label for="invitePassword">Choose a password</label>
-      <input id="invitePassword" type="password" placeholder="Choose a password (8+ characters)" />
 
       <button id="submitEmployee">Connect</button>
       <button class="text-link" id="backToEmployeeLogin">&larr; Back to login</button>
@@ -248,7 +239,6 @@
 
     // --- Dashboard-only login (tracking already running) ---
     const dashboardLoginNameInput = document.getElementById('dashboardLoginName');
-    const dashboardLoginPasswordInput = document.getElementById('dashboardLoginPassword');
     const submitDashboardLoginBtn = document.getElementById('submitDashboardLogin');
     const statusDashboardLoginEl = document.getElementById('statusDashboardLogin');
 
@@ -257,10 +247,9 @@
       statusDashboardLoginEl.className = 'status';
 
       const name = dashboardLoginNameInput.value.trim();
-      const password = dashboardLoginPasswordInput.value;
 
-      if (!name || !password) {
-        statusDashboardLoginEl.textContent = 'Enter your name and password.';
+      if (!name) {
+        statusDashboardLoginEl.textContent = 'Enter your name.';
         statusDashboardLoginEl.className = 'status error';
         return;
       }
@@ -269,7 +258,7 @@
       statusDashboardLoginEl.textContent = 'Logging in…';
 
       try {
-        await invoke('submit_dashboard_login', { name, password });
+        await invoke('submit_dashboard_login', { name, password: '' });
         statusDashboardLoginEl.textContent = 'Logged in — opening your dashboard…';
         statusDashboardLoginEl.className = 'status ok';
       } catch (err) {
@@ -281,7 +270,6 @@
 
     // --- Employee login (primary path) ---
     const employeeNameInput = document.getElementById('employeeName');
-    const employeePasswordInput = document.getElementById('employeePassword');
     const submitEmployeeLoginBtn = document.getElementById('submitEmployeeLogin');
     const statusEmployeeLoginEl = document.getElementById('statusEmployeeLogin');
 
@@ -291,10 +279,9 @@
 
       const backendUrl = BACKEND_URL;
       const name = employeeNameInput.value.trim();
-      const password = employeePasswordInput.value;
 
-      if (!name || !password) {
-        statusEmployeeLoginEl.textContent = 'Fill in your name and password.';
+      if (!name) {
+        statusEmployeeLoginEl.textContent = 'Enter your name.';
         statusEmployeeLoginEl.className = 'status error';
         return;
       }
@@ -303,7 +290,7 @@
       statusEmployeeLoginEl.textContent = 'Logging in…';
 
       try {
-        await invoke('submit_login', { backendUrl, name, password });
+        await invoke('submit_login', { backendUrl, name, password: '' });
         statusEmployeeLoginEl.textContent = 'Logged in — opening your dashboard…';
         statusEmployeeLoginEl.className = 'status ok';
       } catch (err) {
@@ -316,7 +303,6 @@
     // --- Employee invite-link fallback (new employees with no account yet) ---
     const linkInput = document.getElementById('link');
     const nameInput = document.getElementById('name');
-    const invitePasswordInput = document.getElementById('invitePassword');
     const submitEmployeeBtn = document.getElementById('submitEmployee');
     const statusEmployeeEl = document.getElementById('statusEmployee');
 
@@ -337,7 +323,6 @@
 
       const parsed = parseInvite(linkInput.value);
       const name = nameInput.value.trim();
-      const password = invitePasswordInput.value;
 
       if (!parsed) {
         statusEmployeeEl.textContent = 'That doesn\'t look like a valid invite link.';
@@ -349,11 +334,6 @@
         statusEmployeeEl.className = 'status error';
         return;
       }
-      if (!password || password.length < 8) {
-        statusEmployeeEl.textContent = 'Choose a password of at least 8 characters.';
-        statusEmployeeEl.className = 'status error';
-        return;
-      }
 
       submitEmployeeBtn.disabled = true;
       statusEmployeeEl.textContent = 'Connecting…';
@@ -361,11 +341,11 @@
       try {
         const managerName = await invoke('submit_setup', {
           name,
-          password,
+          password: '',
           inviteToken: parsed.token,
           backendUrl: parsed.backendUrl,
         });
-        statusEmployeeEl.textContent = `Connected — joined ${managerName}'s team. You can close this window, or log in with your name and password to view your dashboard.`;
+        statusEmployeeEl.textContent = `Connected — joined ${managerName}'s team. You can close this window, or log in with your name to view your dashboard.`;
         statusEmployeeEl.className = 'status ok';
       } catch (err) {
         statusEmployeeEl.textContent = String(err);

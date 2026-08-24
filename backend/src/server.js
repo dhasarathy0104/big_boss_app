@@ -19,7 +19,7 @@ import { leaveRequestsRouter } from './routes/leaveRequests.js';
 import { billingRouter } from './routes/billing.js';
 import { authRouter } from './routes/auth.js';
 import { superadminRouter } from './routes/superadmin.js';
-import { requireAuth, isSelfOrOwnEmployee, hashPassword } from './auth.js';
+import { requireAuth, isSelfOrOwnEmployee } from './auth.js';
 import { buildOverrideMaps, computeProductivity } from './productivity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -44,14 +44,8 @@ async function authUser(req, res, next) {
 // Agent enrolls itself the first time it runs. If it carries an invite token,
 // it's automatically attached to whichever manager issued that link.
 app.post('/api/enroll', ah(async (req, res) => {
-  const { name, password, inviteToken } = req.body;
+  const { name, inviteToken } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name required' });
-  // Optional for backward compatibility with already-installed agents built
-  // before the invite-link screen collected a password — they still enroll
-  // fine, just without dashboard access until their manager sends a claim link.
-  if (password && password.length < 8) {
-    return res.status(400).json({ error: 'password must be at least 8 characters' });
-  }
 
   let managerId = null;
   if (inviteToken) {
@@ -78,8 +72,8 @@ app.post('/api/enroll', ah(async (req, res) => {
     userId = existing.id;
   } else {
     const info = await db.prepare(`
-      INSERT INTO users (name, agent_key, role, manager_id, password_hash) VALUES (?, ?, 'employee', ?, ?) RETURNING id
-    `).run(trimmedName, agentKey, managerId, password ? hashPassword(password) : null);
+      INSERT INTO users (name, agent_key, role, manager_id) VALUES (?, ?, 'employee', ?) RETURNING id
+    `).run(trimmedName, agentKey, managerId);
     userId = info.lastInsertRowid;
   }
 
