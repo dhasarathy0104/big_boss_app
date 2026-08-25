@@ -7,6 +7,8 @@ import { setToken } from '../api.js';
 export default function ClaimAccountPage({ token, onClaimed }) {
   const [status, setStatus] = useState('loading'); // loading | valid | invalid | done
   const [name, setName] = useState('');
+  const [needsEmail, setNeedsEmail] = useState(false);
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -14,19 +16,20 @@ export default function ClaimAccountPage({ token, onClaimed }) {
   useEffect(() => {
     fetch(`/api/auth/claim/${token}`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data) => { setName(data.name); setStatus('valid'); })
+      .then((data) => { setName(data.name); setNeedsEmail(data.needsEmail); setStatus('valid'); })
       .catch(() => setStatus('invalid'));
   }, [token]);
 
   async function submit(e) {
     e.preventDefault();
     setError('');
+    if (needsEmail && !email.trim()) { setError('Email required.'); return; }
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
     setSubmitting(true);
     const res = await fetch(`/api/auth/claim/${token}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ email: email.trim(), password }),
     });
     setSubmitting(false);
     if (!res.ok) { setError((await res.json()).error); return; }
@@ -74,8 +77,15 @@ export default function ClaimAccountPage({ token, onClaimed }) {
         {status === 'valid' && (
           <>
             <h1>Welcome, {name}</h1>
-            <p className="join-sub">Set a password to access your BIG BOSS dashboard.</p>
+            <p className="join-sub">
+              {needsEmail
+                ? 'Add your email and set a password to access your BIG BOSS dashboard.'
+                : 'Set a password to access your BIG BOSS dashboard.'}
+            </p>
             <form className="stacked-form" onSubmit={submit}>
+              {needsEmail && (
+                <input type="email" placeholder="Your email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              )}
               <input
                 type="password"
                 placeholder="Choose a password (8+ characters)"

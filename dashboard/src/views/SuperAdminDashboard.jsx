@@ -361,6 +361,7 @@ function CreateAdminPanel({ onCreated }) {
 
 function ChangeAdminPasswordPanel({ overview }) {
   const [managerId, setManagerId] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -374,25 +375,32 @@ function ChangeAdminPasswordPanel({ overview }) {
     const res = await fetch(`/api/superadmin/managers/${managerId}/change-password`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ email: email.trim() || undefined, password }),
     });
     setSubmitting(false);
     if (!res.ok) { setError((await res.json()).error); return; }
-    setSuccess('Password changed. Hand the new password to that admin.');
-    setPassword('');
+    setSuccess('Saved. Hand the new password (and email, if you set one) to that admin.');
+    setEmail(''); setPassword('');
   }
 
   return (
     <div className="panel">
       <h2>Change an admin's password</h2>
       <p className="join-sub" style={{ marginTop: 0 }}>
-        Direct override — for an admin who's locked out. This is the "forgot password" fix for admins.
+        Direct override — for an admin who's locked out, or an older account with no email attached yet (leave email
+        blank to just change the password). This is the "forgot password" fix for admins.
       </p>
       <form className="stacked-form" onSubmit={submit}>
         <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
           <option value="">Select admin…</option>
           {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
+        <input
+          type="email"
+          placeholder="Set/fix their email (leave blank to keep as-is)"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
         <input
           type="password"
           placeholder="New password (8+ characters)"

@@ -125,11 +125,13 @@ authRouter.get('/me', requireAuth, ah(async (req, res) => {
 
 // An employee visits /claim/:token (handed to them by their manager) to set a
 // dashboard password for the first time — separate from the invite link, which
-// only connects the background tracking agent, not dashboard access.
+// only connects the background tracking agent, not dashboard access. Also
+// doubles as the fix for an account created before email-based login existed
+// (needsEmail tells the page whether to ask for one).
 authRouter.get('/claim/:token', ah(async (req, res) => {
-  const user = await db.prepare('SELECT id, name FROM users WHERE claim_token = ?').get(req.params.token);
+  const user = await db.prepare('SELECT id, name, email FROM users WHERE claim_token = ?').get(req.params.token);
   if (!user) return res.status(404).json({ error: 'invalid or already-used link' });
-  res.json({ name: user.name });
+  res.json({ name: user.name, needsEmail: !user.email });
 }));
 
 authRouter.post('/claim/:token', ah(async (req, res) => {
@@ -140,7 +142,15 @@ authRouter.post('/claim/:token', ah(async (req, res) => {
   const user = await db.prepare('SELECT * FROM users WHERE claim_token = ?').get(req.params.token);
   if (!user) return res.status(404).json({ error: 'invalid or already-used link' });
 
-  await db.prepare('UPDATE users SET password_hash = ?, claim_token = NULL WHERE id = ?').run(hashPassword(password), user.id);
+  const email = normalizeEmail(req.body.email);
+  if (!user.email) {
+    if (!email) return res.status(400).json({ error: 'email required' });
+    const emailTaken = await db.prepare('SELECT 1 FROM users WHERE email = ? AND id != ?').get(email, user.id);
+    if (emailTaken) return res.status(409).json({ error: 'that email is already registered' });
+  }
+  const finalEmail = user.email || email;
+
+  await db.prepare('UPDATE users SET password_hash = ?, email = ?, claim_token = NULL WHERE id = ?').run(hashPassword(password), finalEmail, user.id);
   const updated = await db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   res.json({ token: await createSession(updated.id), user: await publicUser(updated) });
 }));

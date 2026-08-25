@@ -33,15 +33,24 @@ superadminRouter.post('/create-admin', requireSuperAdmin, ah(async (req, res) =>
 // A manager locked out of their account — the super admin sets a new
 // password directly and relays it, same idea as the employee claim-link but
 // immediate since there's no separate "manager forgot password" email flow.
+// Also accepts email, since accounts created before email-based login
+// existed have none set and can't log in at all until one is attached.
 superadminRouter.post('/managers/:id/change-password', requireSuperAdmin, ah(async (req, res) => {
   const { password } = req.body;
+  const email = req.body.email ? normalizeEmail(req.body.email) : null;
   if (!password || password.length < 8) {
     return res.status(400).json({ error: 'a password of at least 8 characters is required' });
   }
   const manager = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(req.params.id);
   if (!manager) return res.status(404).json({ error: 'manager not found' });
 
-  await db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), manager.id);
+  if (email) {
+    const emailTaken = await db.prepare('SELECT 1 FROM users WHERE email = ? AND id != ?').get(email, manager.id);
+    if (emailTaken) return res.status(409).json({ error: 'that email is already registered' });
+    await db.prepare('UPDATE users SET password_hash = ?, email = ? WHERE id = ?').run(hashPassword(password), email, manager.id);
+  } else {
+    await db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), manager.id);
+  }
   res.json({ ok: true });
 }));
 
