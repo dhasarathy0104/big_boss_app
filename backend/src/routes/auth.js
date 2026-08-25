@@ -77,22 +77,27 @@ authRouter.post('/claim-manager', ah(async (req, res) => {
 // reach this server can create themselves privileged access this way.
 authRouter.post('/register-admin', ah(async (req, res) => {
   const { name, password, role } = req.body;
-  const email = normalizeEmail(req.body.email);
-  if (!name?.trim() || !email || !password || password.length < 8) {
-    return res.status(400).json({ error: 'name, email, and a password of at least 8 characters are required' });
-  }
   if (!['manager', 'superadmin'].includes(role)) {
     return res.status(400).json({ error: "role must be 'manager' or 'superadmin'" });
+  }
+  // A super admin logs in with just a username (no email, by explicit
+  // request) — everyone else (managers) needs a real email.
+  const email = role === 'superadmin' ? null : normalizeEmail(req.body.email);
+  if (!name?.trim() || (role === 'manager' && !email) || !password || password.length < 8) {
+    return res.status(400).json({ error: `name${role === 'manager' ? ', email,' : ','} and a password of at least 8 characters are required` });
   }
   // Only ever one super admin, by explicit request — everyone else must be a
   // manager. Unlike manager self-registration, this isn't reopenable via the
   // UI; someone has to remove the existing super admin first.
   if (role === 'superadmin') {
+    // Already the only account of this role once created, so there's
+    // nothing else to check for a name collision against.
     const hasSuperAdmin = await db.prepare("SELECT 1 FROM users WHERE role = 'superadmin'").get();
     if (hasSuperAdmin) return res.status(409).json({ error: 'a super admin account already exists' });
+  } else {
+    const existing = await db.prepare('SELECT 1 FROM users WHERE email = ?').get(email);
+    if (existing) return res.status(409).json({ error: 'that email is already registered' });
   }
-  const existing = await db.prepare('SELECT 1 FROM users WHERE email = ?').get(email);
-  if (existing) return res.status(409).json({ error: 'that email is already registered' });
 
   const agentKey = crypto.randomBytes(16).toString('hex');
   const info = await db.prepare(`
@@ -102,14 +107,19 @@ authRouter.post('/register-admin', ah(async (req, res) => {
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
 }));
 
+// Managers/employees log in by email; the super admin has no email and logs
+// in by username instead (there's only ever one, so no collision risk).
+// Accepts either in the same "email" field and figures out which applies.
 authRouter.post('/login', ah(async (req, res) => {
   const { password } = req.body;
-  const email = normalizeEmail(req.body.email);
-  if (!email || !password) return res.status(400).json({ error: 'email and password required' });
+  const identifier = (req.body.email ?? '').trim();
+  if (!identifier || !password) return res.status(400).json({ error: 'email/username and password required' });
 
-  const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  const user = await db.prepare(
+    "SELECT * FROM users WHERE email = ? OR (role = 'superadmin' AND LOWER(name) = LOWER(?))"
+  ).get(normalizeEmail(identifier), identifier);
   if (!user || !verifyPassword(password, user.password_hash)) {
-    return res.status(401).json({ error: 'invalid email or password' });
+    return res.status(401).json({ error: 'invalid email/username or password' });
   }
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
 }));

@@ -185,17 +185,17 @@
 
     <div id="screen-admin" class="screen">
       <h1>Admin / Super Admin login</h1>
-      <p class="sub">Log in with your BIG BOSS account to open your dashboard.</p>
+      <p class="sub">Managers: log in with your email. Super admin: log in with your username.</p>
 
-      <label for="adminEmail">Email</label>
-      <input id="adminEmail" type="email" placeholder="jane@example.com" />
+      <label for="adminEmail">Email (managers) or username (super admin)</label>
+      <input id="adminEmail" placeholder="jane@example.com or your username" />
 
       <label for="adminPassword">Password</label>
       <input id="adminPassword" type="password" placeholder="Password" />
 
       <button id="submitAdmin">Log in</button>
       <button class="text-link" id="goToAdminRegister">New here? Create a manager account</button>
-      <button class="text-link" id="forgotAdmin">Forgot password? Ask your super admin to reset it</button>
+      <button class="text-link" id="forgotAdmin">Forgot password?</button>
       <button class="text-link" data-back>&larr; Back</button>
       <div class="status" id="statusAdmin"></div>
     </div>
@@ -410,7 +410,7 @@
       const password = adminPasswordInput.value;
 
       if (!email || !password) {
-        statusAdminEl.textContent = 'Fill in your email and password.';
+        statusAdminEl.textContent = 'Fill in your email/username and password.';
         statusAdminEl.className = 'status error';
         return;
       }

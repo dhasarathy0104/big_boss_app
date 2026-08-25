@@ -137,7 +137,7 @@ function AuthScreen({ onAuthed }) {
     ? 'This is the identity your team will see activity reported under.'
     : bootstrap.state === 'claim-manager'
       ? 'This account was created before login existed — set a password to secure it.'
-      : 'Enter your email and password.';
+      : 'Managers: enter your email. Super admin: enter your username.';
 
   return (
     <div className="join-page">
@@ -168,8 +168,11 @@ function AuthScreen({ onAuthed }) {
           {bootstrap.state === 'register' && (
             <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
           )}
-          {bootstrap.state !== 'claim-manager' && (
+          {bootstrap.state === 'register' && (
             <input type="email" placeholder="Your email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          )}
+          {bootstrap.state === 'login' && (
+            <input placeholder="Email (managers) or username (super admin)" value={email} onChange={(e) => setEmail(e.target.value)} />
           )}
           <input
             type="password"
