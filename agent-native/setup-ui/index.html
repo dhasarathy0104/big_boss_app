@@ -119,14 +119,14 @@
 
     <div id="screen-chooser" class="screen active">
       <h1>I am a(n)…</h1>
-      <p class="sub">This decides what this computer does — pick the one that's you.</p>
       <button class="role-btn" id="chooseEmployee">
         <span class="title">Employee</span>
-        <span class="desc">Log in to track my time and see my own dashboard.</span>
       </button>
       <button class="role-btn" id="chooseAdmin" style="margin-top: 10px;">
-        <span class="title">Admin or Super Admin</span>
-        <span class="desc">Log in to see my team's dashboard — no tracking on this computer.</span>
+        <span class="title">Admin</span>
+      </button>
+      <button class="role-btn" id="chooseSuperAdmin" style="margin-top: 10px;">
+        <span class="title">Super Admin</span>
       </button>
     </div>
 
@@ -147,7 +147,9 @@
 
     <div id="screen-employee" class="screen">
       <h1>Employee login</h1>
-      <p class="sub">Log in with your BIG BOSS account. This starts tracking and opens your dashboard.</p>
+
+      <label for="employeeName">Your name</label>
+      <input id="employeeName" placeholder="Jane Doe" />
 
       <label for="employeeEmail">Email</label>
       <input id="employeeEmail" type="email" placeholder="jane@example.com" />
@@ -184,11 +186,13 @@
     </div>
 
     <div id="screen-admin" class="screen">
-      <h1>Admin / Super Admin login</h1>
-      <p class="sub">Managers: log in with your email. Super admin: log in with your username.</p>
+      <h1>Admin login</h1>
 
-      <label for="adminEmail">Email (managers) or username (super admin)</label>
-      <input id="adminEmail" placeholder="jane@example.com or your username" />
+      <label for="adminName">Your name</label>
+      <input id="adminName" placeholder="Jane Doe" />
+
+      <label for="adminEmail">Email</label>
+      <input id="adminEmail" type="email" placeholder="jane@example.com" />
 
       <label for="adminPassword">Password</label>
       <input id="adminPassword" type="password" placeholder="Password" />
@@ -198,6 +202,20 @@
       <button class="text-link" id="forgotAdmin">Forgot password?</button>
       <button class="text-link" data-back>&larr; Back</button>
       <div class="status" id="statusAdmin"></div>
+    </div>
+
+    <div id="screen-superadmin" class="screen">
+      <h1>Super Admin login</h1>
+
+      <label for="superAdminUsername">Username</label>
+      <input id="superAdminUsername" placeholder="Username" />
+
+      <label for="superAdminPassword">Password</label>
+      <input id="superAdminPassword" type="password" placeholder="Password" />
+
+      <button id="submitSuperAdmin">Log in</button>
+      <button class="text-link" data-back>&larr; Back</button>
+      <div class="status" id="statusSuperAdmin"></div>
     </div>
 
     <div id="screen-admin-register" class="screen">
@@ -234,6 +252,7 @@
 
     document.getElementById('chooseEmployee').addEventListener('click', () => showScreen('screen-employee'));
     document.getElementById('chooseAdmin').addEventListener('click', () => showScreen('screen-admin'));
+    document.getElementById('chooseSuperAdmin').addEventListener('click', () => showScreen('screen-superadmin'));
     document.getElementById('goToInvite').addEventListener('click', () => showScreen('screen-employee-invite'));
     document.getElementById('backToEmployeeLogin').addEventListener('click', () => showScreen('screen-employee'));
     document.getElementById('goToAdminRegister').addEventListener('click', () => showScreen('screen-admin-register'));
@@ -288,6 +307,7 @@
     });
 
     // --- Employee login (primary path) ---
+    const employeeNameInput = document.getElementById('employeeName');
     const employeeEmailInput = document.getElementById('employeeEmail');
     const employeePasswordInput = document.getElementById('employeePassword');
     const submitEmployeeLoginBtn = document.getElementById('submitEmployeeLogin');
@@ -303,11 +323,12 @@
       statusEmployeeLoginEl.className = 'status';
 
       const backendUrl = BACKEND_URL;
+      const name = employeeNameInput.value.trim();
       const email = employeeEmailInput.value.trim();
       const password = employeePasswordInput.value;
 
-      if (!email || !password) {
-        statusEmployeeLoginEl.textContent = 'Fill in your email and password.';
+      if (!name || !email || !password) {
+        statusEmployeeLoginEl.textContent = 'Fill in your name, email, and password.';
         statusEmployeeLoginEl.className = 'status error';
         return;
       }
@@ -316,7 +337,7 @@
       statusEmployeeLoginEl.textContent = 'Logging in…';
 
       try {
-        await invoke('submit_login', { backendUrl, email, password });
+        await invoke('submit_login', { backendUrl, email, password, name });
         statusEmployeeLoginEl.textContent = 'Logged in — opening your dashboard…';
         statusEmployeeLoginEl.className = 'status ok';
       } catch (err) {
@@ -391,13 +412,14 @@
     });
 
     // --- Admin / super admin login ---
+    const adminNameInput = document.getElementById('adminName');
     const adminEmailInput = document.getElementById('adminEmail');
     const adminPasswordInput = document.getElementById('adminPassword');
     const submitAdminBtn = document.getElementById('submitAdmin');
     const statusAdminEl = document.getElementById('statusAdmin');
 
     document.getElementById('forgotAdmin').addEventListener('click', () => {
-      statusAdminEl.textContent = 'Managers: ask your super admin to reset your password. Super admin: this needs direct database access to recover.';
+      statusAdminEl.textContent = 'Ask your super admin to set a new password for you.';
       statusAdminEl.className = 'status';
     });
 
@@ -406,11 +428,12 @@
       statusAdminEl.className = 'status';
 
       const backendUrl = BACKEND_URL;
+      const name = adminNameInput.value.trim();
       const email = adminEmailInput.value.trim();
       const password = adminPasswordInput.value;
 
-      if (!email || !password) {
-        statusAdminEl.textContent = 'Fill in your email/username and password.';
+      if (!name || !email || !password) {
+        statusAdminEl.textContent = 'Fill in your name, email, and password.';
         statusAdminEl.className = 'status error';
         return;
       }
@@ -419,13 +442,50 @@
       statusAdminEl.textContent = 'Logging in…';
 
       try {
-        await invoke('submit_login', { backendUrl, email, password });
+        await invoke('submit_login', { backendUrl, email, password, name });
         statusAdminEl.textContent = 'Logged in — opening your dashboard…';
         statusAdminEl.className = 'status ok';
       } catch (err) {
         statusAdminEl.textContent = String(err);
         statusAdminEl.className = 'status error';
         submitAdminBtn.disabled = false;
+      }
+    });
+
+    // --- Super admin login (username + password, no email — this account
+    // deliberately has no email address at all). The server's login route
+    // accepts a username in the same field it reads an email from, and no
+    // name is sent, so there's no second identity check to fail. ---
+    const superAdminUsernameInput = document.getElementById('superAdminUsername');
+    const superAdminPasswordInput = document.getElementById('superAdminPassword');
+    const submitSuperAdminBtn = document.getElementById('submitSuperAdmin');
+    const statusSuperAdminEl = document.getElementById('statusSuperAdmin');
+
+    submitSuperAdminBtn.addEventListener('click', async () => {
+      statusSuperAdminEl.textContent = '';
+      statusSuperAdminEl.className = 'status';
+
+      const backendUrl = BACKEND_URL;
+      const email = superAdminUsernameInput.value.trim();
+      const password = superAdminPasswordInput.value;
+
+      if (!email || !password) {
+        statusSuperAdminEl.textContent = 'Fill in your username and password.';
+        statusSuperAdminEl.className = 'status error';
+        return;
+      }
+
+      submitSuperAdminBtn.disabled = true;
+      statusSuperAdminEl.textContent = 'Logging in…';
+
+      try {
+        await invoke('submit_login', { backendUrl, email, password });
+        statusSuperAdminEl.textContent = 'Logged in — opening your dashboard…';
+        statusSuperAdminEl.className = 'status ok';
+      } catch (err) {
+        statusSuperAdminEl.textContent = String(err);
+        statusSuperAdminEl.className = 'status error';
+        submitSuperAdminBtn.disabled = false;
       }
     });
 

@@ -38,6 +38,11 @@ struct EnrollRequest {
 struct LoginRequest<'a> {
     email: &'a str,
     password: &'a str,
+    // Employees and managers type their name on the login screen too; the
+    // super admin screen has no name field, so this stays None there and the
+    // server skips the check.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<&'a str>,
 }
 
 #[derive(Serialize)]
@@ -114,11 +119,11 @@ impl BackendClient {
     // Email+password login — same account used for dashboard access. Returns
     // the same identity info /api/enroll would (plus a session token), so an
     // already-set-up employee can skip the invite-link step entirely.
-    pub async fn login(&self, email: &str, password: &str) -> Result<LoginResponse, String> {
+    pub async fn login(&self, email: &str, password: &str, name: Option<&str>) -> Result<LoginResponse, String> {
         let res = self
             .http
             .post(format!("{}/api/auth/login", self.base_url))
-            .json(&LoginRequest { email, password })
+            .json(&LoginRequest { email, password, name })
             .send()
             .await
             .map_err(|e| e.to_string())?;

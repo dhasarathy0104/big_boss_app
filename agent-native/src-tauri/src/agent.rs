@@ -129,9 +129,9 @@ fn finish_login(resp: crate::backend::LoginResponse, backend_url: &str) -> Login
 // One email+password login, used by every role: an employee's account also
 // carries an agent_key, so this can start tracking directly — no separate
 // invite-link enrollment needed for someone who already has a password set.
-pub async fn login(email: &str, password: &str, backend_url: &str) -> Result<LoginOutcome, String> {
+pub async fn login(email: &str, password: &str, name: Option<&str>, backend_url: &str) -> Result<LoginOutcome, String> {
     let client = BackendClient::new(backend_url.to_string());
-    let resp = client.login(email, password).await?;
+    let resp = client.login(email, password, name).await?;
     Ok(finish_login(resp, backend_url))
 }
 

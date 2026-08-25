@@ -113,12 +113,21 @@ authRouter.post('/register-admin', ah(async (req, res) => {
 authRouter.post('/login', ah(async (req, res) => {
   const { password } = req.body;
   const identifier = (req.body.email ?? '').trim();
+  // Employees and managers also type their name on the login screen, so it is
+  // verified here when sent. Optional on purpose — the web dashboard and any
+  // older installed app only send email+password, and must keep working.
+  const name = (req.body.name ?? '').trim();
   if (!identifier || !password) return res.status(400).json({ error: 'email/username and password required' });
 
   const user = await db.prepare(
     "SELECT * FROM users WHERE email = ? OR (role = 'superadmin' AND LOWER(name) = LOWER(?))"
   ).get(normalizeEmail(identifier), identifier);
   if (!user || !verifyPassword(password, user.password_hash)) {
+    return res.status(401).json({ error: 'invalid email/username or password' });
+  }
+  // Deliberately the same message as a wrong password — a distinct "wrong
+  // name" would confirm the email/password pair itself is valid.
+  if (name && name.toLowerCase() !== (user.name ?? '').toLowerCase()) {
     return res.status(401).json({ error: 'invalid email/username or password' });
   }
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
