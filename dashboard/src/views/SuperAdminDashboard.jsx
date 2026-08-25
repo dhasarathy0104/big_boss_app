@@ -549,7 +549,7 @@ export default function SuperAdminDashboard({ user, onLogout }) {
         {activeTab === 'timeline' && (
           <TimelineView selectedUserId={selectedUserId} date={date} setDate={setDate} />
         )}
-        {activeTab === 'screenshots' && <ScreenshotsView selectedUserId={selectedUserId} managerId={null} />}
+        {activeTab === 'screenshots' && <ScreenshotsView selectedUserId={selectedUserId} managerId={null} canDelete />}
         {activeTab === 'manage' && <ManageTab overview={overview} onChanged={reloadOverview} />}
         {activeTab === 'assign' && <AssignTab overview={overview} />}
       </main>

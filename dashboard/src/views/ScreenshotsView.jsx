@@ -63,11 +63,12 @@ function IntervalControl({ managerId }) {
   );
 }
 
-export default function ScreenshotsView({ selectedUserId, managerId }) {
+export default function ScreenshotsView({ selectedUserId, managerId, canDelete }) {
   const [date, setDate] = useState(todayStr());
   const [shots, setShots] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
     if (!selectedUserId) return;
@@ -79,6 +80,15 @@ export default function ScreenshotsView({ selectedUserId, managerId }) {
         setLoading(false);
       });
   }, [selectedUserId, date]);
+
+  async function deleteShot(id) {
+    setDeletingId(id);
+    const res = await fetch(`/api/superadmin/screenshots/${id}`, { method: 'DELETE' });
+    setDeletingId(null);
+    if (!res.ok) return;
+    setShots((prev) => prev.filter((s) => s.id !== id));
+    setLightboxIndex(null);
+  }
 
   useEffect(() => {
     function onKey(e) {
@@ -112,9 +122,19 @@ export default function ScreenshotsView({ selectedUserId, managerId }) {
             ) : (
               <div className="screenshot-grid">
                 {shots.map((s, i) => (
-                  <div key={s.id} className="screenshot-card" onClick={() => setLightboxIndex(i)}>
-                    <img src={shotUrl(s.file_path)} alt={s.window_title} loading="lazy" />
+                  <div key={s.id} className="screenshot-card" style={{ position: 'relative' }}>
+                    <img src={shotUrl(s.file_path)} alt={s.window_title} loading="lazy" onClick={() => setLightboxIndex(i)} />
                     <div className="shot-meta">{fmtTime(s.captured_at)} — {s.app_name}</div>
+                    {canDelete && (
+                      <button
+                        className="btn-small"
+                        style={{ position: 'absolute', top: 6, right: 6 }}
+                        disabled={deletingId === s.id}
+                        onClick={(e) => { e.stopPropagation(); deleteShot(s.id); }}
+                      >
+                        {deletingId === s.id ? '…' : 'Delete'}
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -130,6 +150,16 @@ export default function ScreenshotsView({ selectedUserId, managerId }) {
             {fmtTime(active.captured_at)} — {active.app_name}
             {active.window_title ? ` — ${active.window_title}` : ''}
           </div>
+          {canDelete && (
+            <button
+              className="btn-small"
+              style={{ position: 'absolute', top: 16, right: 60 }}
+              disabled={deletingId === active.id}
+              onClick={(e) => { e.stopPropagation(); deleteShot(active.id); }}
+            >
+              {deletingId === active.id ? 'Deleting…' : 'Delete this screenshot'}
+            </button>
+          )}
           <button className="lightbox-close" onClick={() => setLightboxIndex(null)}>✕</button>
         </div>
       )}

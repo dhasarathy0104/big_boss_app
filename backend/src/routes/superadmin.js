@@ -142,3 +142,11 @@ superadminRouter.get('/live-status', requireSuperAdmin, ah(async (req, res) => {
 
   res.json(result);
 }));
+
+// Delete a single screenshot, any employee, org-wide — the super admin can
+// see everything, so they can also clean up anything.
+superadminRouter.delete('/screenshots/:id', requireSuperAdmin, ah(async (req, res) => {
+  const result = await db.prepare('DELETE FROM screenshots WHERE id = ?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'screenshot not found' });
+  res.json({ ok: true });
+}));
