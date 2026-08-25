@@ -6,35 +6,31 @@ import { ah } from '../asyncHandler.js';
 
 export const managersRouter = Router();
 
+function normalizeEmail(raw) {
+  return (raw ?? '').trim().toLowerCase();
+}
+
 // Any logged-in manager can create another manager account (a peer, e.g. for
 // team-transfer scenarios) — not open public self-registration, which was
 // intentionally locked to the very first manager account only. Reuses the
 // same claim-link flow employees use to set their own password, since the
 // claim mechanism doesn't care about role.
+// Note: creating a super admin this way was removed — that role is now
+// capped at exactly one account, created only via the super admin's own
+// dashboard (see routes/superadmin.js's create-admin, despite the name that
+// one makes managers; there's no create-superadmin anywhere anymore).
 managersRouter.post('/create-peer', requireManager, ah(async (req, res) => {
   const { name } = req.body;
-  if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+  const email = normalizeEmail(req.body.email);
+  if (!name?.trim() || !email) return res.status(400).json({ error: 'name and email required' });
+  const existing = await db.prepare('SELECT 1 FROM users WHERE email = ?').get(email);
+  if (existing) return res.status(409).json({ error: 'that email is already registered' });
 
   const agentKey = crypto.randomBytes(16).toString('hex');
   const claimToken = randomToken(16);
   const info = await db.prepare(`
-    INSERT INTO users (name, agent_key, role, manager_id, claim_token) VALUES (?, ?, 'manager', NULL, ?) RETURNING id
-  `).run(name.trim(), agentKey, claimToken);
-  res.json({ id: info.lastInsertRowid, name: name.trim(), claimToken });
-}));
-
-// Same idea, for the org-wide oversight role sitting above managers. Any
-// manager can create the first one (there's no separate super-admin
-// bootstrap flow) — same claim-link password setup as everyone else.
-managersRouter.post('/create-superadmin', requireManager, ah(async (req, res) => {
-  const { name } = req.body;
-  if (!name?.trim()) return res.status(400).json({ error: 'name required' });
-
-  const agentKey = crypto.randomBytes(16).toString('hex');
-  const claimToken = randomToken(16);
-  const info = await db.prepare(`
-    INSERT INTO users (name, agent_key, role, manager_id, claim_token) VALUES (?, ?, 'superadmin', NULL, ?) RETURNING id
-  `).run(name.trim(), agentKey, claimToken);
+    INSERT INTO users (name, email, agent_key, role, manager_id, claim_token) VALUES (?, ?, ?, 'manager', NULL, ?) RETURNING id
+  `).run(name.trim(), email, agentKey, claimToken);
   res.json({ id: info.lastInsertRowid, name: name.trim(), claimToken });
 }));
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Coffee, MoonStar, Users, ShieldCheck, ChevronDown, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Coffee, MoonStar, Users, ShieldCheck, ChevronDown, ChevronRight, UserCog } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
 import TimelineView from './TimelineView.jsx';
@@ -55,6 +55,7 @@ const TABS = [
   { key: 'timeline', label: 'Timeline', icon: Clock },
   { key: 'screenshots', label: 'Screenshots', icon: Camera },
   { key: 'assign', label: 'Assign Project', icon: KanbanSquare },
+  { key: 'manage', label: 'Manage Admins', icon: UserCog },
 ];
 
 const STATUS_LABEL = { active: 'Active', idle: 'Idle', offline: 'Offline' };
@@ -306,15 +307,182 @@ function AssignTab({ overview }) {
   );
 }
 
+function CreateAdminPanel({ onCreated }) {
+  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setError(''); setSuccess('');
+    if (!form.name.trim() || !form.email.trim() || form.password.length < 8) {
+      setError('Name, email, and a password of at least 8 characters are required.');
+      return;
+    }
+    setSubmitting(true);
+    const res = await fetch('/api/superadmin/create-admin', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: form.name.trim(), email: form.email.trim(), password: form.password }),
+    });
+    setSubmitting(false);
+    if (!res.ok) { setError((await res.json()).error); return; }
+    const admin = await res.json();
+    setSuccess(`Created admin account for ${admin.name} (${admin.email}). Give them their email and password to log in.`);
+    setForm({ name: '', email: '', password: '' });
+    onCreated?.();
+  }
+
+  return (
+    <div className="panel">
+      <h2>Create a new admin</h2>
+      <p className="join-sub" style={{ marginTop: 0 }}>
+        You set the password directly — hand it to them along with their email so they can log in.
+      </p>
+      <form className="stacked-form" onSubmit={submit}>
+        <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        <input
+          type="password"
+          placeholder="Password (8+ characters)"
+          value={form.password}
+          onChange={(e) => setForm({ ...form, password: e.target.value })}
+        />
+        {error && <div style={{ color: '#e07070', fontSize: 12 }}>{error}</div>}
+        {success && <div style={{ color: 'var(--status-good)', fontSize: 12 }}>{success}</div>}
+        <button type="submit" disabled={submitting} style={{ alignSelf: 'flex-start' }}>
+          {submitting ? 'Creating…' : 'Create admin account'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function ChangeAdminPasswordPanel({ overview }) {
+  const [managerId, setManagerId] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setError(''); setSuccess('');
+    if (!managerId || password.length < 8) { setError('Pick an admin and enter a password of at least 8 characters.'); return; }
+    setSubmitting(true);
+    const res = await fetch(`/api/superadmin/managers/${managerId}/change-password`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    setSubmitting(false);
+    if (!res.ok) { setError((await res.json()).error); return; }
+    setSuccess('Password changed. Hand the new password to that admin.');
+    setPassword('');
+  }
+
+  return (
+    <div className="panel">
+      <h2>Change an admin's password</h2>
+      <p className="join-sub" style={{ marginTop: 0 }}>
+        Direct override — for an admin who's locked out. This is the "forgot password" fix for admins.
+      </p>
+      <form className="stacked-form" onSubmit={submit}>
+        <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
+          <option value="">Select admin…</option>
+          {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <input
+          type="password"
+          placeholder="New password (8+ characters)"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        {error && <div style={{ color: '#e07070', fontSize: 12 }}>{error}</div>}
+        {success && <div style={{ color: 'var(--status-good)', fontSize: 12 }}>{success}</div>}
+        <button type="submit" disabled={submitting} style={{ alignSelf: 'flex-start' }}>
+          {submitting ? 'Saving…' : 'Set new password'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function TransferEmployeePanel({ overview, onTransferred }) {
+  const [employeeId, setEmployeeId] = useState('');
+  const [targetManagerId, setTargetManagerId] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const allEmployees = (overview?.admins ?? []).flatMap((a) =>
+    a.employees.map((e) => ({ ...e, managerId: a.id, managerName: a.name })));
+
+  async function submit(e) {
+    e.preventDefault();
+    setError(''); setSuccess('');
+    if (!employeeId || !targetManagerId) { setError('Pick an employee and a destination admin.'); return; }
+    setSubmitting(true);
+    const res = await fetch(`/api/superadmin/employees/${employeeId}/transfer`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ targetManagerId }),
+    });
+    setSubmitting(false);
+    if (!res.ok) { setError((await res.json()).error); return; }
+    const data = await res.json();
+    setSuccess(`Moved to ${data.newManagerName}'s team.`);
+    setEmployeeId(''); setTargetManagerId('');
+    onTransferred?.();
+  }
+
+  return (
+    <div className="panel">
+      <h2>Transfer an employee to another admin</h2>
+      <p className="join-sub" style={{ marginTop: 0 }}>
+        Org-wide — unlike an admin moving their own team members, you can move anyone to any admin.
+      </p>
+      <form className="stacked-form" onSubmit={submit}>
+        <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
+          <option value="">Select employee…</option>
+          {allEmployees.map((e) => <option key={e.id} value={e.id}>{e.name} (reports to {e.managerName})</option>)}
+        </select>
+        <select value={targetManagerId} onChange={(e) => setTargetManagerId(e.target.value)}>
+          <option value="">Move to admin…</option>
+          {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        {error && <div style={{ color: '#e07070', fontSize: 12 }}>{error}</div>}
+        {success && <div style={{ color: 'var(--status-good)', fontSize: 12 }}>{success}</div>}
+        <button type="submit" disabled={submitting} style={{ alignSelf: 'flex-start' }}>
+          {submitting ? 'Moving…' : 'Transfer employee'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function ManageTab({ overview, onChanged }) {
+  return (
+    <>
+      <CreateAdminPanel onCreated={onChanged} />
+      <ChangeAdminPasswordPanel overview={overview} />
+      <TransferEmployeePanel overview={overview} onTransferred={onChanged} />
+    </>
+  );
+}
+
 export default function SuperAdminDashboard({ user, onLogout }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [overview, setOverview] = useState(null);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [date, setDate] = useState(todayStr());
 
-  useEffect(() => {
+  function reloadOverview() {
     fetch('/api/superadmin/overview').then((r) => r.json()).then(setOverview);
-  }, [activeTab]);
+  }
+
+  useEffect(reloadOverview, [activeTab]);
 
   return (
     <div className="app">
@@ -374,6 +542,7 @@ export default function SuperAdminDashboard({ user, onLogout }) {
           <TimelineView selectedUserId={selectedUserId} date={date} setDate={setDate} />
         )}
         {activeTab === 'screenshots' && <ScreenshotsView selectedUserId={selectedUserId} managerId={null} />}
+        {activeTab === 'manage' && <ManageTab overview={overview} onChanged={reloadOverview} />}
         {activeTab === 'assign' && <AssignTab overview={overview} />}
       </main>
     </div>

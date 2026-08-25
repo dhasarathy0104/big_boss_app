@@ -134,35 +134,49 @@
       <h1>Log in to view your dashboard</h1>
       <p class="sub">Tracking keeps running in the background either way — this just opens your own dashboard.</p>
 
-      <label for="dashboardLoginName">Your name</label>
-      <input id="dashboardLoginName" placeholder="Jane Doe" />
+      <label for="dashboardLoginEmail">Email</label>
+      <input id="dashboardLoginEmail" type="email" placeholder="jane@example.com" />
+
+      <label for="dashboardLoginPassword">Password</label>
+      <input id="dashboardLoginPassword" type="password" placeholder="Password" />
 
       <button id="submitDashboardLogin">Log in</button>
+      <button class="text-link" id="forgotDashboard">Forgot password? Ask your manager for a new setup link</button>
       <div class="status" id="statusDashboardLogin"></div>
     </div>
 
     <div id="screen-employee" class="screen">
       <h1>Employee login</h1>
-      <p class="sub">Enter your name to start tracking and open your dashboard.</p>
+      <p class="sub">Log in with your BIG BOSS account. This starts tracking and opens your dashboard.</p>
 
-      <label for="employeeName">Your name</label>
-      <input id="employeeName" placeholder="Jane Doe" />
+      <label for="employeeEmail">Email</label>
+      <input id="employeeEmail" type="email" placeholder="jane@example.com" />
+
+      <label for="employeePassword">Password</label>
+      <input id="employeePassword" type="password" placeholder="Password" />
 
       <button id="submitEmployeeLogin">Log in</button>
       <button class="text-link" id="goToInvite">New employee? Connect with an invite link instead</button>
+      <button class="text-link" id="forgotEmployee">Forgot password? Ask your manager for a new setup link</button>
       <button class="text-link" data-back>&larr; Back</button>
       <div class="status" id="statusEmployeeLogin"></div>
     </div>
 
     <div id="screen-employee-invite" class="screen">
       <h1>Connect this computer</h1>
-      <p class="sub">No account yet? Paste the invite link your manager sent you, and enter your name.</p>
+      <p class="sub">No account yet? Paste the invite link your manager sent you, then set up your login.</p>
 
       <label for="link">Invite link</label>
       <input id="link" placeholder="http://.../join/abc123" />
 
       <label for="name">Your name</label>
       <input id="name" placeholder="Jane Doe" />
+
+      <label for="inviteEmail">Email</label>
+      <input id="inviteEmail" type="email" placeholder="jane@example.com" />
+
+      <label for="invitePassword">Choose a password</label>
+      <input id="invitePassword" type="password" placeholder="Choose a password (8+ characters)" />
 
       <button id="submitEmployee">Connect</button>
       <button class="text-link" id="backToEmployeeLogin">&larr; Back to login</button>
@@ -173,30 +187,28 @@
       <h1>Admin / Super Admin login</h1>
       <p class="sub">Log in with your BIG BOSS account to open your dashboard.</p>
 
-      <label for="adminName">Your name</label>
-      <input id="adminName" placeholder="Jane Doe" />
+      <label for="adminEmail">Email</label>
+      <input id="adminEmail" type="email" placeholder="jane@example.com" />
 
       <label for="adminPassword">Password</label>
       <input id="adminPassword" type="password" placeholder="Password" />
 
       <button id="submitAdmin">Log in</button>
-      <button class="text-link" id="goToAdminRegister">New here? Create a manager or super admin account</button>
+      <button class="text-link" id="goToAdminRegister">New here? Create a manager account</button>
+      <button class="text-link" id="forgotAdmin">Forgot password? Ask your super admin to reset it</button>
       <button class="text-link" data-back>&larr; Back</button>
       <div class="status" id="statusAdmin"></div>
     </div>
 
     <div id="screen-admin-register" class="screen">
-      <h1>Create an account</h1>
-      <p class="sub">Open signup — anyone with this server's address can create a manager or super admin account here.</p>
-
-      <label for="registerRole">Account type</label>
-      <select id="registerRole">
-        <option value="manager">Manager / Admin</option>
-        <option value="superadmin">Super Admin</option>
-      </select>
+      <h1>Create a manager account</h1>
+      <p class="sub">Open signup — anyone with this server's address can create a manager account here.</p>
 
       <label for="registerName">Your name</label>
       <input id="registerName" placeholder="Jane Doe" />
+
+      <label for="registerEmail">Email</label>
+      <input id="registerEmail" type="email" placeholder="jane@example.com" />
 
       <label for="registerPassword">Password</label>
       <input id="registerPassword" type="password" placeholder="Choose a password (8+ characters)" />
@@ -238,18 +250,25 @@
     });
 
     // --- Dashboard-only login (tracking already running) ---
-    const dashboardLoginNameInput = document.getElementById('dashboardLoginName');
+    const dashboardLoginEmailInput = document.getElementById('dashboardLoginEmail');
+    const dashboardLoginPasswordInput = document.getElementById('dashboardLoginPassword');
     const submitDashboardLoginBtn = document.getElementById('submitDashboardLogin');
     const statusDashboardLoginEl = document.getElementById('statusDashboardLogin');
+
+    document.getElementById('forgotDashboard').addEventListener('click', () => {
+      statusDashboardLoginEl.textContent = 'Ask your manager to send you a new setup link from Team & Invite.';
+      statusDashboardLoginEl.className = 'status';
+    });
 
     submitDashboardLoginBtn.addEventListener('click', async () => {
       statusDashboardLoginEl.textContent = '';
       statusDashboardLoginEl.className = 'status';
 
-      const name = dashboardLoginNameInput.value.trim();
+      const email = dashboardLoginEmailInput.value.trim();
+      const password = dashboardLoginPasswordInput.value;
 
-      if (!name) {
-        statusDashboardLoginEl.textContent = 'Enter your name.';
+      if (!email || !password) {
+        statusDashboardLoginEl.textContent = 'Fill in your email and password.';
         statusDashboardLoginEl.className = 'status error';
         return;
       }
@@ -258,7 +277,7 @@
       statusDashboardLoginEl.textContent = 'Logging in…';
 
       try {
-        await invoke('submit_dashboard_login', { name, password: '' });
+        await invoke('submit_dashboard_login', { email, password });
         statusDashboardLoginEl.textContent = 'Logged in — opening your dashboard…';
         statusDashboardLoginEl.className = 'status ok';
       } catch (err) {
@@ -269,19 +288,26 @@
     });
 
     // --- Employee login (primary path) ---
-    const employeeNameInput = document.getElementById('employeeName');
+    const employeeEmailInput = document.getElementById('employeeEmail');
+    const employeePasswordInput = document.getElementById('employeePassword');
     const submitEmployeeLoginBtn = document.getElementById('submitEmployeeLogin');
     const statusEmployeeLoginEl = document.getElementById('statusEmployeeLogin');
+
+    document.getElementById('forgotEmployee').addEventListener('click', () => {
+      statusEmployeeLoginEl.textContent = 'Ask your manager to send you a new setup link from Team & Invite.';
+      statusEmployeeLoginEl.className = 'status';
+    });
 
     submitEmployeeLoginBtn.addEventListener('click', async () => {
       statusEmployeeLoginEl.textContent = '';
       statusEmployeeLoginEl.className = 'status';
 
       const backendUrl = BACKEND_URL;
-      const name = employeeNameInput.value.trim();
+      const email = employeeEmailInput.value.trim();
+      const password = employeePasswordInput.value;
 
-      if (!name) {
-        statusEmployeeLoginEl.textContent = 'Enter your name.';
+      if (!email || !password) {
+        statusEmployeeLoginEl.textContent = 'Fill in your email and password.';
         statusEmployeeLoginEl.className = 'status error';
         return;
       }
@@ -290,7 +316,7 @@
       statusEmployeeLoginEl.textContent = 'Logging in…';
 
       try {
-        await invoke('submit_login', { backendUrl, name, password: '' });
+        await invoke('submit_login', { backendUrl, email, password });
         statusEmployeeLoginEl.textContent = 'Logged in — opening your dashboard…';
         statusEmployeeLoginEl.className = 'status ok';
       } catch (err) {
@@ -303,6 +329,8 @@
     // --- Employee invite-link fallback (new employees with no account yet) ---
     const linkInput = document.getElementById('link');
     const nameInput = document.getElementById('name');
+    const inviteEmailInput = document.getElementById('inviteEmail');
+    const invitePasswordInput = document.getElementById('invitePassword');
     const submitEmployeeBtn = document.getElementById('submitEmployee');
     const statusEmployeeEl = document.getElementById('statusEmployee');
 
@@ -323,14 +351,21 @@
 
       const parsed = parseInvite(linkInput.value);
       const name = nameInput.value.trim();
+      const email = inviteEmailInput.value.trim();
+      const password = invitePasswordInput.value;
 
       if (!parsed) {
         statusEmployeeEl.textContent = 'That doesn\'t look like a valid invite link.';
         statusEmployeeEl.className = 'status error';
         return;
       }
-      if (!name) {
-        statusEmployeeEl.textContent = 'Enter your name.';
+      if (!name || !email) {
+        statusEmployeeEl.textContent = 'Fill in your name and email.';
+        statusEmployeeEl.className = 'status error';
+        return;
+      }
+      if (!password || password.length < 8) {
+        statusEmployeeEl.textContent = 'Choose a password of at least 8 characters.';
         statusEmployeeEl.className = 'status error';
         return;
       }
@@ -341,11 +376,12 @@
       try {
         const managerName = await invoke('submit_setup', {
           name,
-          password: '',
+          email,
+          password,
           inviteToken: parsed.token,
           backendUrl: parsed.backendUrl,
         });
-        statusEmployeeEl.textContent = `Connected — joined ${managerName}'s team. You can close this window, or log in with your name to view your dashboard.`;
+        statusEmployeeEl.textContent = `Connected — joined ${managerName}'s team. You can close this window, or log in with your email to view your dashboard.`;
         statusEmployeeEl.className = 'status ok';
       } catch (err) {
         statusEmployeeEl.textContent = String(err);
@@ -355,21 +391,26 @@
     });
 
     // --- Admin / super admin login ---
-    const adminNameInput = document.getElementById('adminName');
+    const adminEmailInput = document.getElementById('adminEmail');
     const adminPasswordInput = document.getElementById('adminPassword');
     const submitAdminBtn = document.getElementById('submitAdmin');
     const statusAdminEl = document.getElementById('statusAdmin');
+
+    document.getElementById('forgotAdmin').addEventListener('click', () => {
+      statusAdminEl.textContent = 'Managers: ask your super admin to reset your password. Super admin: this needs direct database access to recover.';
+      statusAdminEl.className = 'status';
+    });
 
     submitAdminBtn.addEventListener('click', async () => {
       statusAdminEl.textContent = '';
       statusAdminEl.className = 'status';
 
       const backendUrl = BACKEND_URL;
-      const name = adminNameInput.value.trim();
+      const email = adminEmailInput.value.trim();
       const password = adminPasswordInput.value;
 
-      if (!name || !password) {
-        statusAdminEl.textContent = 'Fill in your name and password.';
+      if (!email || !password) {
+        statusAdminEl.textContent = 'Fill in your email and password.';
         statusAdminEl.className = 'status error';
         return;
       }
@@ -378,7 +419,7 @@
       statusAdminEl.textContent = 'Logging in…';
 
       try {
-        await invoke('submit_login', { backendUrl, name, password });
+        await invoke('submit_login', { backendUrl, email, password });
         statusAdminEl.textContent = 'Logged in — opening your dashboard…';
         statusAdminEl.className = 'status ok';
       } catch (err) {
@@ -388,9 +429,11 @@
       }
     });
 
-    // --- Admin / super admin self-registration ---
-    const registerRoleSelect = document.getElementById('registerRole');
+    // --- Manager self-registration (super admin signup was removed — that
+    // role is capped at one account, created only from the super admin's own
+    // dashboard, not this open form) ---
     const registerNameInput = document.getElementById('registerName');
+    const registerEmailInput = document.getElementById('registerEmail');
     const registerPasswordInput = document.getElementById('registerPassword');
     const submitRegisterAdminBtn = document.getElementById('submitRegisterAdmin');
     const statusRegisterAdminEl = document.getElementById('statusRegisterAdmin');
@@ -400,12 +443,12 @@
       statusRegisterAdminEl.className = 'status';
 
       const backendUrl = BACKEND_URL;
-      const role = registerRoleSelect.value;
       const name = registerNameInput.value.trim();
+      const email = registerEmailInput.value.trim();
       const password = registerPasswordInput.value;
 
-      if (!name || !password) {
-        statusRegisterAdminEl.textContent = 'Fill in your name and password.';
+      if (!name || !email || !password) {
+        statusRegisterAdminEl.textContent = 'Fill in your name, email, and password.';
         statusRegisterAdminEl.className = 'status error';
         return;
       }
@@ -419,7 +462,7 @@
       statusRegisterAdminEl.textContent = 'Creating account…';
 
       try {
-        await invoke('submit_register_admin', { backendUrl, name, password, role });
+        await invoke('submit_register_admin', { backendUrl, name, email, password, role: 'manager' });
         statusRegisterAdminEl.textContent = 'Account created — opening your dashboard…';
         statusRegisterAdminEl.className = 'status ok';
       } catch (err) {

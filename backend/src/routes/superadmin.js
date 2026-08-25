@@ -1,10 +1,66 @@
 import { Router } from 'express';
+import crypto from 'node:crypto';
 import { db } from '../db.js';
-import { requireSuperAdmin } from '../auth.js';
+import { requireSuperAdmin, hashPassword } from '../auth.js';
 import { buildOverrideMaps, computeProductivity } from '../productivity.js';
 import { ah } from '../asyncHandler.js';
 
 export const superadminRouter = Router();
+
+function normalizeEmail(raw) {
+  return (raw ?? '').trim().toLowerCase();
+}
+
+// Creates a manager account directly — the super admin sets the password
+// themselves and passes it along, no invite link or self-registration needed.
+superadminRouter.post('/create-admin', requireSuperAdmin, ah(async (req, res) => {
+  const { name, password } = req.body;
+  const email = normalizeEmail(req.body.email);
+  if (!name?.trim() || !email || !password || password.length < 8) {
+    return res.status(400).json({ error: 'name, email, and a password of at least 8 characters are required' });
+  }
+  const existing = await db.prepare('SELECT 1 FROM users WHERE email = ?').get(email);
+  if (existing) return res.status(409).json({ error: 'that email is already registered' });
+
+  const agentKey = crypto.randomBytes(16).toString('hex');
+  const info = await db.prepare(`
+    INSERT INTO users (name, email, agent_key, role, manager_id, password_hash) VALUES (?, ?, ?, 'manager', NULL, ?) RETURNING id
+  `).run(name.trim(), email, agentKey, hashPassword(password));
+  const user = await db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(info.lastInsertRowid);
+  res.json(user);
+}));
+
+// A manager locked out of their account — the super admin sets a new
+// password directly and relays it, same idea as the employee claim-link but
+// immediate since there's no separate "manager forgot password" email flow.
+superadminRouter.post('/managers/:id/change-password', requireSuperAdmin, ah(async (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 8) {
+    return res.status(400).json({ error: 'a password of at least 8 characters is required' });
+  }
+  const manager = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(req.params.id);
+  if (!manager) return res.status(404).json({ error: 'manager not found' });
+
+  await db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), manager.id);
+  res.json({ ok: true });
+}));
+
+// Org-wide employee transfer — unlike a manager's own team-transfer route,
+// the super admin can move any employee to any manager, not just within
+// their own team.
+superadminRouter.post('/employees/:id/transfer', requireSuperAdmin, ah(async (req, res) => {
+  const { targetManagerId } = req.body;
+  if (!targetManagerId) return res.status(400).json({ error: 'targetManagerId required' });
+
+  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'").get(req.params.id);
+  if (!employee) return res.status(404).json({ error: 'employee not found' });
+
+  const targetManager = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(targetManagerId);
+  if (!targetManager) return res.status(404).json({ error: 'target manager not found' });
+
+  await db.prepare('UPDATE users SET manager_id = ? WHERE id = ?').run(targetManager.id, employee.id);
+  res.json({ ok: true, employeeId: employee.id, newManagerId: targetManager.id, newManagerName: targetManager.name });
+}));
 
 // Org structure: how many admins, how many employees, and who reports to
 // whom. No screenshot/activity data here — that's an employee-monitoring

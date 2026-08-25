@@ -11,8 +11,10 @@ export default function TeamView({ managerId, team, onTeamChanged }) {
   const [transferError, setTransferError] = useState('');
   const [confirmingId, setConfirmingId] = useState(null); // employeeId awaiting inline confirmation
   const [newManagerName, setNewManagerName] = useState('');
+  const [newManagerEmail, setNewManagerEmail] = useState('');
   const [newManagerLink, setNewManagerLink] = useState(null);
   const [creatingManager, setCreatingManager] = useState(false);
+  const [managerCreateError, setManagerCreateError] = useState('');
   const [copiedManagerLink, setCopiedManagerLink] = useState(false);
 
   function loadInvites() {
@@ -74,18 +76,20 @@ export default function TeamView({ managerId, team, onTeamChanged }) {
 
   async function createPeerManager(e) {
     e.preventDefault();
-    if (!newManagerName.trim()) return;
+    if (!newManagerName.trim() || !newManagerEmail.trim()) return;
+    setManagerCreateError('');
     setCreatingManager(true);
     const res = await fetch('/api/managers/create-peer', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: newManagerName.trim() }),
+      body: JSON.stringify({ name: newManagerName.trim(), email: newManagerEmail.trim() }),
     });
     setCreatingManager(false);
-    if (!res.ok) return;
+    if (!res.ok) { setManagerCreateError((await res.json()).error); return; }
     const data = await res.json();
     setNewManagerLink(`${window.location.origin}/claim/${data.claimToken}`);
     setNewManagerName('');
+    setNewManagerEmail('');
     loadOtherManagers();
   }
 
@@ -160,9 +164,16 @@ export default function TeamView({ managerId, team, onTeamChanged }) {
               value={newManagerName}
               onChange={(e) => setNewManagerName(e.target.value)}
             />
+            <input
+              type="email"
+              placeholder="New manager's email"
+              value={newManagerEmail}
+              onChange={(e) => setNewManagerEmail(e.target.value)}
+            />
             <button type="submit" disabled={creatingManager}>{creatingManager ? 'Creating…' : 'Create manager account'}</button>
           </form>
         )}
+        {managerCreateError && <div style={{ color: '#e07070', fontSize: 12, marginTop: 6 }}>{managerCreateError}</div>}
       </div>
 
       <div className="panel">

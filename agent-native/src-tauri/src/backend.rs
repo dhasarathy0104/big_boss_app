@@ -28,6 +28,7 @@ pub struct AgentConfig {
 #[derive(Serialize)]
 struct EnrollRequest {
     name: String,
+    email: String,
     password: String,
     #[serde(rename = "inviteToken", skip_serializing_if = "Option::is_none")]
     invite_token: Option<String>,
@@ -35,13 +36,14 @@ struct EnrollRequest {
 
 #[derive(Serialize)]
 struct LoginRequest<'a> {
-    name: &'a str,
+    email: &'a str,
     password: &'a str,
 }
 
 #[derive(Serialize)]
 struct RegisterAdminRequest<'a> {
     name: &'a str,
+    email: &'a str,
     password: &'a str,
     role: &'a str,
 }
@@ -94,11 +96,11 @@ impl BackendClient {
         Self { http: reqwest::Client::new(), base_url }
     }
 
-    pub async fn enroll(&self, name: &str, password: &str, invite_token: Option<String>) -> Result<AgentConfig, String> {
+    pub async fn enroll(&self, name: &str, email: &str, password: &str, invite_token: Option<String>) -> Result<AgentConfig, String> {
         let res = self
             .http
             .post(format!("{}/api/enroll", self.base_url))
-            .json(&EnrollRequest { name: name.to_string(), password: password.to_string(), invite_token })
+            .json(&EnrollRequest { name: name.to_string(), email: email.to_string(), password: password.to_string(), invite_token })
             .send()
             .await
             .map_err(|e| e.to_string())?;
@@ -109,14 +111,14 @@ impl BackendClient {
         res.json::<AgentConfig>().await.map_err(|e| e.to_string())
     }
 
-    // Name+password login — same account used for dashboard access. Returns
+    // Email+password login — same account used for dashboard access. Returns
     // the same identity info /api/enroll would (plus a session token), so an
     // already-set-up employee can skip the invite-link step entirely.
-    pub async fn login(&self, name: &str, password: &str) -> Result<LoginResponse, String> {
+    pub async fn login(&self, email: &str, password: &str) -> Result<LoginResponse, String> {
         let res = self
             .http
             .post(format!("{}/api/auth/login", self.base_url))
-            .json(&LoginRequest { name, password })
+            .json(&LoginRequest { email, password })
             .send()
             .await
             .map_err(|e| e.to_string())?;
@@ -124,11 +126,11 @@ impl BackendClient {
     }
 
     // Open self-service manager/superadmin signup — no invite link required.
-    pub async fn register_admin(&self, name: &str, password: &str, role: &str) -> Result<LoginResponse, String> {
+    pub async fn register_admin(&self, name: &str, email: &str, password: &str, role: &str) -> Result<LoginResponse, String> {
         let res = self
             .http
             .post(format!("{}/api/auth/register-admin", self.base_url))
-            .json(&RegisterAdminRequest { name, password, role })
+            .json(&RegisterAdminRequest { name, email, password, role })
             .send()
             .await
             .map_err(|e| e.to_string())?;

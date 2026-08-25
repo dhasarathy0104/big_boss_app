@@ -8,6 +8,7 @@ import { getToken, setToken } from './api.js';
 
 function RegisterAdminForm({ onAuthed, onBack }) {
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('manager');
   const [error, setError] = useState('');
@@ -17,13 +18,14 @@ function RegisterAdminForm({ onAuthed, onBack }) {
     e.preventDefault();
     setError('');
     if (!name.trim()) { setError('Name required.'); return; }
+    if (!email.trim()) { setError('Email required.'); return; }
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
 
     setSubmitting(true);
     const res = await fetch('/api/auth/register-admin', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), password, role }),
+      body: JSON.stringify({ name: name.trim(), email: email.trim(), password, role }),
     });
     setSubmitting(false);
     if (!res.ok) { setError((await res.json()).error); return; }
@@ -63,6 +65,7 @@ function RegisterAdminForm({ onAuthed, onBack }) {
             <option value="superadmin">Super Admin</option>
           </select>
           <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
+          <input type="email" placeholder="Your email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input
             type="password"
             placeholder="Choose a password (8+ characters)"
@@ -89,6 +92,7 @@ function AuthScreen({ onAuthed }) {
   const [bootstrap, setBootstrap] = useState(null); // { state: 'register' | 'claim-manager' | 'login', managerName? }
   const [showRegisterAdmin, setShowRegisterAdmin] = useState(false);
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -101,13 +105,14 @@ function AuthScreen({ onAuthed }) {
     e.preventDefault();
     setError('');
     if (bootstrap.state === 'register' && !name.trim()) { setError('Name required.'); return; }
+    if (bootstrap.state !== 'claim-manager' && !email.trim()) { setError('Email required.'); return; }
     if (password.length < (bootstrap.state === 'login' ? 1 : 8)) {
       setError('Password must be at least 8 characters.');
       return;
     }
     setSubmitting(true);
     const path = bootstrap.state === 'register' ? 'register' : bootstrap.state === 'claim-manager' ? 'claim-manager' : 'login';
-    const body = bootstrap.state === 'login' ? { name, password } : bootstrap.state === 'register' ? { name, password } : { password };
+    const body = bootstrap.state === 'login' ? { email, password } : bootstrap.state === 'register' ? { name, email, password } : { password };
     const res = await fetch(`/api/auth/${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -132,7 +137,7 @@ function AuthScreen({ onAuthed }) {
     ? 'This is the identity your team will see activity reported under.'
     : bootstrap.state === 'claim-manager'
       ? 'This account was created before login existed — set a password to secure it.'
-      : 'Enter your name and password.';
+      : 'Enter your email and password.';
 
   return (
     <div className="join-page">
@@ -160,8 +165,11 @@ function AuthScreen({ onAuthed }) {
         <h1>{heading}</h1>
         <p className="join-sub">{sub}</p>
         <form className="stacked-form" onSubmit={submit}>
-          {bootstrap.state !== 'claim-manager' && (
+          {bootstrap.state === 'register' && (
             <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
+          )}
+          {bootstrap.state !== 'claim-manager' && (
+            <input type="email" placeholder="Your email" value={email} onChange={(e) => setEmail(e.target.value)} />
           )}
           <input
             type="password"

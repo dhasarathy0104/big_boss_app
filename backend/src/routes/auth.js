@@ -15,11 +15,16 @@ async function publicUser(u) {
   return {
     id: u.id,
     name: u.name,
+    email: u.email,
     role: u.role,
     managerId: u.manager_id,
     managerName: manager?.name ?? null,
     agentKey: u.agent_key,
   };
+}
+
+function normalizeEmail(raw) {
+  return (raw ?? '').trim().toLowerCase();
 }
 
 // Tells the login screen whether to show "create account" (fresh install) or
@@ -35,16 +40,19 @@ authRouter.get('/bootstrap', ah(async (req, res) => {
 // Fresh install: no manager account exists at all yet.
 authRouter.post('/register', ah(async (req, res) => {
   const { name, password } = req.body;
-  if (!name?.trim() || !password || password.length < 8) {
-    return res.status(400).json({ error: 'name and a password of at least 8 characters are required' });
+  const email = normalizeEmail(req.body.email);
+  if (!name?.trim() || !email || !password || password.length < 8) {
+    return res.status(400).json({ error: 'name, email, and a password of at least 8 characters are required' });
   }
   const existing = await db.prepare("SELECT 1 FROM users WHERE role = 'manager'").get();
   if (existing) return res.status(409).json({ error: 'a manager account already exists' });
+  const emailTaken = await db.prepare('SELECT 1 FROM users WHERE email = ?').get(email);
+  if (emailTaken) return res.status(409).json({ error: 'that email is already registered' });
 
   const agentKey = crypto.randomBytes(16).toString('hex');
   const info = await db.prepare(`
-    INSERT INTO users (name, agent_key, role, manager_id, password_hash) VALUES (?, ?, 'manager', NULL, ?) RETURNING id
-  `).run(name.trim(), agentKey, hashPassword(password));
+    INSERT INTO users (name, email, agent_key, role, manager_id, password_hash) VALUES (?, ?, ?, 'manager', NULL, ?) RETURNING id
+  `).run(name.trim(), email, agentKey, hashPassword(password));
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
 }));
@@ -69,8 +77,9 @@ authRouter.post('/claim-manager', ah(async (req, res) => {
 // reach this server can create themselves privileged access this way.
 authRouter.post('/register-admin', ah(async (req, res) => {
   const { name, password, role } = req.body;
-  if (!name?.trim() || !password || password.length < 8) {
-    return res.status(400).json({ error: 'name and a password of at least 8 characters are required' });
+  const email = normalizeEmail(req.body.email);
+  if (!name?.trim() || !email || !password || password.length < 8) {
+    return res.status(400).json({ error: 'name, email, and a password of at least 8 characters are required' });
   }
   if (!['manager', 'superadmin'].includes(role)) {
     return res.status(400).json({ error: "role must be 'manager' or 'superadmin'" });
@@ -82,29 +91,25 @@ authRouter.post('/register-admin', ah(async (req, res) => {
     const hasSuperAdmin = await db.prepare("SELECT 1 FROM users WHERE role = 'superadmin'").get();
     if (hasSuperAdmin) return res.status(409).json({ error: 'a super admin account already exists' });
   }
-  const existing = await db.prepare('SELECT 1 FROM users WHERE LOWER(name) = LOWER(?)').get(name.trim());
-  if (existing) return res.status(409).json({ error: 'that name is already taken' });
+  const existing = await db.prepare('SELECT 1 FROM users WHERE email = ?').get(email);
+  if (existing) return res.status(409).json({ error: 'that email is already registered' });
 
   const agentKey = crypto.randomBytes(16).toString('hex');
   const info = await db.prepare(`
-    INSERT INTO users (name, agent_key, role, manager_id, password_hash) VALUES (?, ?, ?, NULL, ?) RETURNING id
-  `).run(name.trim(), agentKey, role, hashPassword(password));
+    INSERT INTO users (name, email, agent_key, role, manager_id, password_hash) VALUES (?, ?, ?, ?, NULL, ?) RETURNING id
+  `).run(name.trim(), email, agentKey, role, hashPassword(password));
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
 }));
 
 authRouter.post('/login', ah(async (req, res) => {
-  const { name, password } = req.body;
-  if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+  const { password } = req.body;
+  const email = normalizeEmail(req.body.email);
+  if (!email || !password) return res.status(400).json({ error: 'email and password required' });
 
-  const user = await db.prepare('SELECT * FROM users WHERE LOWER(name) = LOWER(?)').get(name.trim());
-  if (!user) return res.status(401).json({ error: 'invalid name or password' });
-
-  // Employees authenticate by name alone — there's no employee-facing
-  // password anywhere in the app anymore. Managers and super admins still
-  // need the real password check.
-  if (user.role !== 'employee' && !verifyPassword(password, user.password_hash)) {
-    return res.status(401).json({ error: 'invalid name or password' });
+  const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  if (!user || !verifyPassword(password, user.password_hash)) {
+    return res.status(401).json({ error: 'invalid email or password' });
   }
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
 }));

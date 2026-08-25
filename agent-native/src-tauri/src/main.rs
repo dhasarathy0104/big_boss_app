@@ -105,8 +105,8 @@ fn start_tray_and_tracking(app: &AppHandle, cfg: AgentConfig, backend_url: Strin
 }
 
 #[tauri::command]
-async fn submit_setup(app: AppHandle, name: String, password: String, invite_token: String, backend_url: String) -> Result<String, String> {
-    let cfg = agent::enroll_and_save(&name, &password, Some(invite_token), &backend_url).await?;
+async fn submit_setup(app: AppHandle, name: String, email: String, password: String, invite_token: String, backend_url: String) -> Result<String, String> {
+    let cfg = agent::enroll_and_save(&name, &email, &password, Some(invite_token), &backend_url).await?;
     let manager_label = cfg.manager_name.clone().unwrap_or_else(|| "your manager".to_string());
 
     app.state::<StaysInTray>().0.store(true, Ordering::Relaxed);
@@ -126,14 +126,15 @@ async fn submit_setup(app: AppHandle, name: String, password: String, invite_tok
 // the dashboard; a manager/super admin account just opens the dashboard.
 // Always asked fresh on every launch, by explicit request — no "remember me".
 #[tauri::command]
-async fn submit_login(app: AppHandle, backend_url: String, name: String, password: String) -> Result<(), String> {
+async fn submit_login(app: AppHandle, backend_url: String, email: String, password: String) -> Result<(), String> {
     let trimmed = backend_url.trim().trim_end_matches('/').to_string();
-    let outcome = agent::login(&name, &password, &trimmed).await?;
+    let outcome = agent::login(&email, &password, &trimmed).await?;
 
     if let Some(cfg) = outcome.agent_config {
         app.state::<StaysInTray>().0.store(true, Ordering::Relaxed);
         let _ = app.autolaunch().enable();
-        start_tray_and_tracking(&app, cfg, trimmed.clone(), name).map_err(|e| e.to_string())?;
+        let agent_name = cfg.name.clone();
+        start_tray_and_tracking(&app, cfg, trimmed.clone(), agent_name).map_err(|e| e.to_string())?;
     }
 
     open_dashboard_window_with_token(&app, &trimmed, &outcome.token).map_err(|e| e.to_string())?;
@@ -148,9 +149,9 @@ async fn submit_login(app: AppHandle, backend_url: String, name: String, passwor
 // Otherwise identical to submit_login (a fresh admin account never carries
 // an agent_key, so this never starts tracking, only opens the dashboard).
 #[tauri::command]
-async fn submit_register_admin(app: AppHandle, backend_url: String, name: String, password: String, role: String) -> Result<(), String> {
+async fn submit_register_admin(app: AppHandle, backend_url: String, name: String, email: String, password: String, role: String) -> Result<(), String> {
     let trimmed = backend_url.trim().trim_end_matches('/').to_string();
-    let outcome = agent::register_admin(&name, &password, &role, &trimmed).await?;
+    let outcome = agent::register_admin(&name, &email, &password, &role, &trimmed).await?;
 
     open_dashboard_window_with_token(&app, &trimmed, &outcome.token).map_err(|e| e.to_string())?;
 
@@ -175,9 +176,9 @@ fn is_tracking_active() -> bool {
 // never touches. Used when the setup window opens straight to the
 // dashboard-login screen (see is_tracking_active).
 #[tauri::command]
-async fn submit_dashboard_login(app: AppHandle, name: String, password: String) -> Result<(), String> {
+async fn submit_dashboard_login(app: AppHandle, email: String, password: String) -> Result<(), String> {
     let cfg = agent::load_config().ok_or_else(|| "no saved connection found".to_string())?;
-    let outcome = agent::login(&name, &password, &cfg.backend_url).await?;
+    let outcome = agent::login(&email, &password, &cfg.backend_url).await?;
 
     open_dashboard_window_with_token(&app, &cfg.backend_url, &outcome.token).map_err(|e| e.to_string())?;
 

@@ -228,6 +228,11 @@ await ensureColumn('category_rules', 'rule_type', "rule_type TEXT NOT NULL DEFAU
 await ensureColumn('users', 'screenshot_interval_minutes', 'screenshot_interval_minutes INTEGER NOT NULL DEFAULT 5');
 await ensureColumn('users', 'password_hash', 'password_hash TEXT');
 await ensureColumn('users', 'claim_token', 'claim_token TEXT');
+// Login identifier for every role now (replaces name-based login). Stored
+// always-lowercased by the application, so a plain unique index is enough —
+// no need for a case-insensitive index type.
+await ensureColumn('users', 'email', 'email TEXT');
+await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL');
 // Screenshots are stored in the row itself (base64), not on local disk —
 // Render's free web services wipe local files on every restart/spin-down,
 // so a filesystem path would silently lose images.

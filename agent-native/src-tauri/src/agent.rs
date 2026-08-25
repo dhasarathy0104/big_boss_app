@@ -15,6 +15,11 @@ const SETTINGS_RECHECK_SECS: u64 = 60;
 const IDLE_THRESHOLD_SECS: u32 = 120;
 const LOCAL_PORT: u16 = 34909;
 const BROWSER_APPS: [&str; 5] = ["chrome", "msedge", "firefox", "brave", "opera"];
+// Must match setup-ui/index.html's BACKEND_URL. A saved config pointing
+// anywhere else is from an old deployment (Lightsail, a dev tunnel, an
+// earlier Render address) and is silently unreachable — better to treat it
+// as unset and show the chooser again than fail invisibly in the background.
+const CANONICAL_BACKEND_URL: &str = "https://big-boss-app.onrender.com";
 
 fn config_dir() -> PathBuf {
     let dir = dirs::data_local_dir()
@@ -44,7 +49,7 @@ pub fn load_config() -> Option<AgentConfig> {
     // screen straight into a dead end (login posts to a base-less URL,
     // reqwest fails with an opaque "builder error"). Treat it as if nothing
     // were saved so the full chooser reappears and the user can re-enroll.
-    if cfg.backend_url.trim().is_empty() {
+    if cfg.backend_url.trim().is_empty() || cfg.backend_url.trim() != CANONICAL_BACKEND_URL {
         return None;
     }
     Some(cfg)
@@ -86,9 +91,9 @@ fn save_queue(queue: &[ActivityEvent]) {
 
 // Used by the first-run setup window (see main.rs's submit_setup command) and by
 // the env-var flow for anyone still scripting enrollment directly.
-pub async fn enroll_and_save(name: &str, password: &str, invite_token: Option<String>, backend_url: &str) -> Result<AgentConfig, String> {
+pub async fn enroll_and_save(name: &str, email: &str, password: &str, invite_token: Option<String>, backend_url: &str) -> Result<AgentConfig, String> {
     let client = BackendClient::new(backend_url.to_string());
-    let mut cfg = client.enroll(name, password, invite_token).await?;
+    let mut cfg = client.enroll(name, email, password, invite_token).await?;
     cfg.name = name.to_string();
     cfg.backend_url = backend_url.to_string();
     save_config(&cfg);
@@ -121,12 +126,12 @@ fn finish_login(resp: crate::backend::LoginResponse, backend_url: &str) -> Login
     LoginOutcome { token: resp.token, agent_config }
 }
 
-// One name+password login, used by every role: an employee's account also
+// One email+password login, used by every role: an employee's account also
 // carries an agent_key, so this can start tracking directly — no separate
 // invite-link enrollment needed for someone who already has a password set.
-pub async fn login(name: &str, password: &str, backend_url: &str) -> Result<LoginOutcome, String> {
+pub async fn login(email: &str, password: &str, backend_url: &str) -> Result<LoginOutcome, String> {
     let client = BackendClient::new(backend_url.to_string());
-    let resp = client.login(name, password).await?;
+    let resp = client.login(email, password).await?;
     Ok(finish_login(resp, backend_url))
 }
 
@@ -134,9 +139,9 @@ pub async fn login(name: &str, password: &str, backend_url: &str) -> Result<Logi
 // explicit request. `role` must be "manager" or "superadmin"; the server
 // rejects anything else (including "employee" — that role only comes from
 // an invite-link enrollment or a manager-issued claim link).
-pub async fn register_admin(name: &str, password: &str, role: &str, backend_url: &str) -> Result<LoginOutcome, String> {
+pub async fn register_admin(name: &str, email: &str, password: &str, role: &str, backend_url: &str) -> Result<LoginOutcome, String> {
     let client = BackendClient::new(backend_url.to_string());
-    let resp = client.register_admin(name, password, role).await?;
+    let resp = client.register_admin(name, email, password, role).await?;
     Ok(finish_login(resp, backend_url))
 }
 

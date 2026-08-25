@@ -19,7 +19,11 @@ import { leaveRequestsRouter } from './routes/leaveRequests.js';
 import { billingRouter } from './routes/billing.js';
 import { authRouter } from './routes/auth.js';
 import { superadminRouter } from './routes/superadmin.js';
-import { requireAuth, isSelfOrOwnEmployee } from './auth.js';
+import { requireAuth, isSelfOrOwnEmployee, hashPassword } from './auth.js';
+
+function normalizeEmail(raw) {
+  return (raw ?? '').trim().toLowerCase();
+}
 import { buildOverrideMaps, computeProductivity } from './productivity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -44,8 +48,12 @@ async function authUser(req, res, next) {
 // Agent enrolls itself the first time it runs. If it carries an invite token,
 // it's automatically attached to whichever manager issued that link.
 app.post('/api/enroll', ah(async (req, res) => {
-  const { name, inviteToken } = req.body;
-  if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+  const { name, password } = req.body;
+  const inviteToken = req.body.inviteToken;
+  const email = normalizeEmail(req.body.email);
+  if (!name?.trim() || !email || !password || password.length < 8) {
+    return res.status(400).json({ error: 'name, email, and a password of at least 8 characters are required' });
+  }
 
   let managerId = null;
   if (inviteToken) {
@@ -58,22 +66,22 @@ app.post('/api/enroll', ah(async (req, res) => {
   const agentKey = crypto.randomBytes(16).toString('hex');
   const trimmedName = name.trim();
 
-  // Re-enrolling under the same manager with the same name (e.g. after
-  // wiping a local config to fix a connection issue) resumes the existing
-  // employee record instead of forking a duplicate with empty history.
-  const existing = managerId
-    ? await db.prepare("SELECT * FROM users WHERE role = 'employee' AND manager_id = ? AND LOWER(name) = LOWER(?)")
-        .get(managerId, trimmedName)
-    : null;
+  // Re-enrolling with the same email (e.g. after wiping a local config to fix
+  // a connection issue) resumes the existing employee record instead of
+  // forking a duplicate with empty history. Password isn't touched here —
+  // changing it is the manager-claim-link path, not a side effect of
+  // reconnecting the tracking agent.
+  const existing = await db.prepare("SELECT * FROM users WHERE role = 'employee' AND email = ?").get(email);
 
   let userId;
   if (existing) {
-    await db.prepare('UPDATE users SET agent_key = ? WHERE id = ?').run(agentKey, existing.id);
+    await db.prepare('UPDATE users SET agent_key = ?, manager_id = COALESCE(?, manager_id) WHERE id = ?')
+      .run(agentKey, managerId, existing.id);
     userId = existing.id;
   } else {
     const info = await db.prepare(`
-      INSERT INTO users (name, agent_key, role, manager_id) VALUES (?, ?, 'employee', ?) RETURNING id
-    `).run(trimmedName, agentKey, managerId);
+      INSERT INTO users (name, email, agent_key, role, manager_id, password_hash) VALUES (?, ?, ?, 'employee', ?, ?) RETURNING id
+    `).run(trimmedName, email, agentKey, managerId, hashPassword(password));
     userId = info.lastInsertRowid;
   }
 
@@ -243,7 +251,7 @@ if (fs.existsSync(dashboardDist)) {
 // than a real cron job since this only needs to be "eventually tidy," not
 // punctual -- and a free Render instance that's spun down from inactivity
 // just catches up whenever it next wakes up.
-const SCREENSHOT_RETENTION_HOURS = 48;
+const SCREENSHOT_RETENTION_HOURS = 24;
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 async function cleanupOldScreenshots() {
   try {
