@@ -90,51 +90,67 @@ function OverviewTab({ overview, onSelectMember }) {
 
       {overview.admins.length === 0 ? (
         <div className="panel"><div className="empty">No admins yet.</div></div>
-      ) : overview.admins.map((admin) => {
-        const expanded = expandedId === admin.id;
-        return (
-          <div className="panel" key={admin.id}>
-            <h2
-              style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
-              onClick={() => setExpandedId(expanded ? null : admin.id)}
-            >
-              {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              <Avatar name={admin.name} size={22} />
-              {admin.name}
-              <span className="shot-meta" style={{ fontWeight: 400 }}>— {admin.employeeCount} employee{admin.employeeCount === 1 ? '' : 's'}</span>
-            </h2>
-            {admin.employees.length === 0 ? (
-              <div className="empty">No employees under this admin yet.</div>
-            ) : (
-              <table>
-                <thead><tr><th>Name</th><th>Email</th><th>Mobile</th><th>Role</th><th>Department</th></tr></thead>
-                <tbody>
-                  {admin.employees.map((e) => (
-                    <tr key={e.id} onClick={() => onSelectMember(e.id)} style={{ cursor: 'pointer' }}>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <Avatar name={e.name} size={22} />
-                          {e.name}
-                        </div>
-                      </td>
-                      <td>{e.email || '—'}</td>
-                      <td>{e.mobile || '—'}</td>
-                      <td>{e.jobRole || '—'}</td>
-                      <td>{e.department || '—'}</td>
-                    </tr>
-                  ))}
+      ) : (
+        <div className="panel">
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Mobile</th><th>Role</th><th>Department</th></tr></thead>
+            {overview.admins.map((admin) => {
+              const expanded = expandedId === admin.id;
+              return (
+                <tbody key={admin.id}>
+                  <tr
+                    className="live-group-header"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setExpandedId(expanded ? null : admin.id)}
+                  >
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        <Avatar name={admin.name} size={22} />
+                        <strong>{admin.name}</strong>
+                        <span className="shot-meta" style={{ fontWeight: 400 }}>
+                          — {admin.employeeCount} employee{admin.employeeCount === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                    </td>
+                    <td>{admin.email || '—'}</td>
+                    <td>{admin.mobile || '—'}</td>
+                    <td>Manager</td>
+                    <td>{admin.department || '—'}</td>
+                  </tr>
+                  {expanded && (
+                    admin.employees.length === 0 ? (
+                      <tr><td colSpan={5} className="empty">No employees under this admin yet.</td></tr>
+                    ) : admin.employees.map((e) => (
+                      <tr key={e.id} onClick={() => onSelectMember(e.id)} style={{ cursor: 'pointer' }}>
+                        <td style={{ paddingLeft: 28 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <Avatar name={e.name} size={22} />
+                            {e.name}
+                          </div>
+                        </td>
+                        <td>{e.email || '—'}</td>
+                        <td>{e.mobile || '—'}</td>
+                        <td>{e.jobRole || '—'}</td>
+                        <td>{e.department || '—'}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
-              </table>
-            )}
-            {expanded && (
-              <>
-                <h2 style={{ marginTop: 16 }}>Projects &amp; client work</h2>
-                <AdminProjectsPanel managerId={admin.id} />
-              </>
-            )}
+              );
+            })}
+          </table>
+        </div>
+      )}
+
+      {overview.admins.map((admin) => (
+        expandedId === admin.id && (
+          <div className="panel" key={`projects-${admin.id}`}>
+            <h2>{admin.name} — Projects &amp; client work</h2>
+            <AdminProjectsPanel managerId={admin.id} />
           </div>
-        );
-      })}
+        )
+      ))}
     </>
   );
 }
