@@ -61,9 +61,15 @@ const TABS = [
 const STATUS_LABEL = { active: 'Active', idle: 'Idle', offline: 'Offline' };
 const REFRESH_MS = 15_000;
 
+// Three-level drill-down, mirroring the card look of the manager's own Live
+// tab: pick an admin (name only) -> see that admin's own details -> open
+// their employees (name + details each) -> click one to jump to Timeline.
 function OverviewTab({ overview, onSelectMember }) {
-  const [expandedId, setExpandedId] = useState(null);
+  const [selectedAdminId, setSelectedAdminId] = useState(null);
+  const [employeesOpen, setEmployeesOpen] = useState(false);
   if (!overview) return null;
+
+  const selectedAdmin = overview.admins.find((a) => a.id === selectedAdminId) ?? null;
 
   return (
     <>
@@ -88,69 +94,88 @@ function OverviewTab({ overview, onSelectMember }) {
         </div>
       </div>
 
-      {overview.admins.length === 0 ? (
-        <div className="panel"><div className="empty">No admins yet.</div></div>
-      ) : (
+      {!selectedAdmin ? (
         <div className="panel">
-          <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Mobile</th><th>Role</th><th>Department</th></tr></thead>
-            {overview.admins.map((admin) => {
-              const expanded = expandedId === admin.id;
-              return (
-                <tbody key={admin.id}>
-                  <tr
-                    className="live-group-header"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => setExpandedId(expanded ? null : admin.id)}
-                  >
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                        <Avatar name={admin.name} size={22} />
-                        <strong>{admin.name}</strong>
-                        <span className="shot-meta" style={{ fontWeight: 400 }}>
-                          — {admin.employeeCount} employee{admin.employeeCount === 1 ? '' : 's'}
-                        </span>
-                      </div>
-                    </td>
-                    <td>{admin.email || '—'}</td>
-                    <td>{admin.mobile || '—'}</td>
-                    <td>Manager</td>
-                    <td>{admin.department || '—'}</td>
-                  </tr>
-                  {expanded && (
-                    admin.employees.length === 0 ? (
-                      <tr><td colSpan={5} className="empty">No employees under this admin yet.</td></tr>
-                    ) : admin.employees.map((e) => (
-                      <tr key={e.id} onClick={() => onSelectMember(e.id)} style={{ cursor: 'pointer' }}>
-                        <td style={{ paddingLeft: 28 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <Avatar name={e.name} size={22} />
-                            {e.name}
-                          </div>
-                        </td>
-                        <td>{e.email || '—'}</td>
-                        <td>{e.mobile || '—'}</td>
-                        <td>{e.jobRole || '—'}</td>
-                        <td>{e.department || '—'}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              );
-            })}
-          </table>
+          <h2>Admins</h2>
+          {overview.admins.length === 0 ? (
+            <div className="empty">No admins yet.</div>
+          ) : (
+            <div className="live-grid">
+              {overview.admins.map((admin) => (
+                <div
+                  key={admin.id}
+                  className="live-card"
+                  onClick={() => { setSelectedAdminId(admin.id); setEmployeesOpen(false); }}
+                >
+                  <div className="live-card-top">
+                    <Avatar name={admin.name} size={30} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{admin.name}</div>
+                      <div className="shot-meta">{admin.employeeCount} employee{admin.employeeCount === 1 ? '' : 's'}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      ) : (
+        <>
+          <div className="panel">
+            <button className="btn-small" onClick={() => setSelectedAdminId(null)} style={{ marginBottom: 14 }}>
+              &larr; All admins
+            </button>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Avatar name={selectedAdmin.name} size={26} />
+              {selectedAdmin.name}
+            </h2>
+            <table>
+              <tbody>
+                <tr><th style={{ width: 110 }}>Email</th><td>{selectedAdmin.email || '—'}</td></tr>
+                <tr><th>Mobile</th><td>{selectedAdmin.mobile || '—'}</td></tr>
+                <tr><th>Role</th><td>Manager</td></tr>
+                <tr><th>Department</th><td>{selectedAdmin.department || '—'}</td></tr>
+              </tbody>
+            </table>
 
-      {overview.admins.map((admin) => (
-        expandedId === admin.id && (
-          <div className="panel" key={`projects-${admin.id}`}>
-            <h2>{admin.name} — Projects &amp; client work</h2>
-            <AdminProjectsPanel managerId={admin.id} />
+            <h2
+              style={{ marginTop: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+              onClick={() => setEmployeesOpen(!employeesOpen)}
+            >
+              {employeesOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              Employees ({selectedAdmin.employeeCount})
+            </h2>
+            {employeesOpen && (
+              selectedAdmin.employees.length === 0 ? (
+                <div className="empty">No employees under this admin yet.</div>
+              ) : (
+                <div className="live-grid">
+                  {selectedAdmin.employees.map((e) => (
+                    <div key={e.id} className="live-card" onClick={() => onSelectMember(e.id)}>
+                      <div className="live-card-top">
+                        <Avatar name={e.name} size={28} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</div>
+                          <div className="shot-meta">{e.jobRole || 'Employee'}{e.department ? ` · ${e.department}` : ''}</div>
+                        </div>
+                      </div>
+                      <div className="live-card-stats">
+                        <span>{e.email || '—'}</span>
+                        <span>{e.mobile || '—'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
           </div>
-        )
-      ))}
+
+          <div className="panel">
+            <h2>Projects &amp; client work</h2>
+            <AdminProjectsPanel managerId={selectedAdmin.id} />
+          </div>
+        </>
+      )}
     </>
   );
 }
