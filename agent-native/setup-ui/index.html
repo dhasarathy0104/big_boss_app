@@ -281,15 +281,10 @@
 
     // This machine is already tracking silently in the tray — skip the role
     // question (we already know it's an employee machine) and go straight to
-    // a dashboard-only login instead. Not when this window was opened by a
-    // deliberate logout (?chooser=1) — that always shows the full chooser,
-    // regardless of what's already saved.
-    const forceChooser = new URLSearchParams(window.location.search).get('chooser') === '1';
-    if (!forceChooser) {
-      invoke('is_tracking_active').then((active) => {
-        if (active) showScreen('screen-dashboard-login');
-      });
-    }
+    // a dashboard-only login instead.
+    invoke('is_tracking_active').then((active) => {
+      if (active) showScreen('screen-dashboard-login');
+    });
 
     // --- Dashboard-only login (tracking already running) ---
     const dashboardLoginEmailInput = document.getElementById('dashboardLoginEmail');

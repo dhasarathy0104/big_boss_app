@@ -95,6 +95,10 @@ function RegisterAdminForm({ onAuthed, onBack }) {
 function AuthScreen({ onAuthed }) {
   const [bootstrap, setBootstrap] = useState(null); // { state: 'register' | 'claim-manager' | 'login', managerName? }
   const [showRegisterAdmin, setShowRegisterAdmin] = useState(false);
+  // Separate super admin mode instead of one combined "email or username"
+  // field — that field was the actual source of confusion, since managers
+  // and the super admin log in with different kinds of credential entirely.
+  const [superAdminMode, setSuperAdminMode] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -109,6 +113,7 @@ function AuthScreen({ onAuthed }) {
     e.preventDefault();
     setError('');
     if (bootstrap.state === 'register' && !name.trim()) { setError('Name required.'); return; }
+    if (bootstrap.state === 'login' && !superAdminMode && !name.trim()) { setError('Name required.'); return; }
     if (bootstrap.state !== 'claim-manager' && !email.trim()) { setError('Email required.'); return; }
     if (password.length < (bootstrap.state === 'login' ? 1 : 8)) {
       setError('Password must be at least 8 characters.');
@@ -116,7 +121,9 @@ function AuthScreen({ onAuthed }) {
     }
     setSubmitting(true);
     const path = bootstrap.state === 'register' ? 'register' : bootstrap.state === 'claim-manager' ? 'claim-manager' : 'login';
-    const body = bootstrap.state === 'login' ? { email, password } : bootstrap.state === 'register' ? { name, email, password } : { password };
+    const body = bootstrap.state === 'login'
+      ? (superAdminMode ? { email, password } : { name, email, password })
+      : bootstrap.state === 'register' ? { name, email, password } : { password };
     const res = await fetch(`/api/auth/${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -136,12 +143,12 @@ function AuthScreen({ onAuthed }) {
     ? 'Set up your manager account'
     : bootstrap.state === 'claim-manager'
       ? `Set a password for ${bootstrap.managerName}`
-      : 'Log in';
+      : superAdminMode ? 'Super Admin login' : 'Log in';
   const sub = bootstrap.state === 'register'
     ? 'This is the identity your team will see activity reported under.'
     : bootstrap.state === 'claim-manager'
       ? 'This account was created before login existed — set a password to secure it.'
-      : 'Managers: enter your email. Super admin: enter your username.';
+      : '';
 
   return (
     <div className="join-page">
@@ -167,7 +174,7 @@ function AuthScreen({ onAuthed }) {
           <div className="brand-name">BIG BOSS</div>
         </div>
         <h1>{heading}</h1>
-        <p className="join-sub">{sub}</p>
+        {sub && <p className="join-sub">{sub}</p>}
         <form className="stacked-form" onSubmit={submit}>
           {bootstrap.state === 'register' && (
             <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
@@ -175,8 +182,16 @@ function AuthScreen({ onAuthed }) {
           {bootstrap.state === 'register' && (
             <input type="email" placeholder="Your email" value={email} onChange={(e) => setEmail(e.target.value)} />
           )}
+          {bootstrap.state === 'login' && !superAdminMode && (
+            <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
+          )}
           {bootstrap.state === 'login' && (
-            <input placeholder="Email (managers) or username (super admin)" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input
+              type={superAdminMode ? 'text' : 'email'}
+              placeholder={superAdminMode ? 'Username' : 'Your email'}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
           )}
           <input
             type="password"
@@ -193,8 +208,16 @@ function AuthScreen({ onAuthed }) {
         </form>
         {bootstrap.state === 'login' && (
           <button
+            onClick={() => { setSuperAdminMode(!superAdminMode); setError(''); setName(''); setEmail(''); setPassword(''); }}
+            style={{ background: 'none', color: '#8b93a3', fontSize: 12, marginTop: 14, padding: 0, textDecoration: 'underline', width: 'auto', display: 'block' }}
+          >
+            {superAdminMode ? '← Log in with email instead' : 'Log in as Super Admin instead'}
+          </button>
+        )}
+        {bootstrap.state === 'login' && !superAdminMode && (
+          <button
             onClick={() => setShowRegisterAdmin(true)}
-            style={{ background: 'none', color: '#8b93a3', fontSize: 12, marginTop: 14, padding: 0, textDecoration: 'underline', width: 'auto' }}
+            style={{ background: 'none', color: '#8b93a3', fontSize: 12, marginTop: 8, padding: 0, textDecoration: 'underline', width: 'auto' }}
           >
             New here? Create a manager account
           </button>
@@ -229,12 +252,7 @@ function Shell() {
   function logout() {
     fetch('/api/auth/logout', { method: 'POST' }).finally(() => {
       setToken(null);
-      // The native app's dashboard window watches for this exact navigation
-      // (a plain URL change, no Tauri API needed) and redirects it back to
-      // its own "I am a(n)…" chooser instead of letting this reload into the
-      // website's generic login form. In a normal browser tab this is a no-op
-      // beyond a harmless query param — AuthScreen ignores it.
-      window.location.href = `${window.location.origin}/?loggedout=1`;
+      setUser(null);
     });
   }
 

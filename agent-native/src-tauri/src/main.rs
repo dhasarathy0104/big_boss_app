@@ -43,28 +43,10 @@ fn open_dashboard_window_with_token(app: &AppHandle, backend_url: &str, token: &
     }
     let url_str = format!("{backend_url}/?token={token}");
     let url = Url::parse(&url_str).map_err(|e| tauri::Error::InvalidUrl(e))?;
-    // The dashboard's own Log out button navigates to `/?loggedout=1` instead
-    // of just clearing its local session — this window intercepts that plain
-    // URL change to send the user back to the native chooser instead of
-    // letting the website's own (per-role-confusing) login form render inside
-    // the app window. No IPC grant to the remote domain needed for this: it's
-    // a same-origin top-level navigation the window is already allowed to see.
-    let app_for_nav = app.clone();
     WebviewWindowBuilder::new(app, "dashboard", WebviewUrl::External(url))
         .title("BIG BOSS")
         .inner_size(1200.0, 800.0)
         .min_inner_size(800.0, 600.0)
-        .on_navigation(move |nav_url| {
-            if nav_url.query_pairs().any(|(k, v)| k == "loggedout" && v == "1") {
-                let app = app_for_nav.clone();
-                let _ = open_setup_window_at_chooser(&app);
-                if let Some(w) = app.get_webview_window("dashboard") {
-                    let _ = w.close();
-                }
-                return false;
-            }
-            true
-        })
         .build()?;
     Ok(())
 }
@@ -72,24 +54,12 @@ fn open_dashboard_window_with_token(app: &AppHandle, backend_url: &str, token: &
 // The "I am a(n)" chooser — shown on every launch (cold start or a
 // deliberate reopen while already running), per explicit request.
 fn open_setup_window(app: &AppHandle) -> tauri::Result<()> {
-    open_setup_window_at(app, "index.html")
-}
-
-// Logging out always lands back on the chooser, for every role — bypasses
-// the usual "already tracking, skip straight to dashboard-only login" shortcut
-// (see is_tracking_active) since that shortcut is for a fresh app launch, not
-// a deliberate logout.
-fn open_setup_window_at_chooser(app: &AppHandle) -> tauri::Result<()> {
-    open_setup_window_at(app, "index.html?chooser=1")
-}
-
-fn open_setup_window_at(app: &AppHandle, url: &str) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window("setup") {
         let _ = window.show();
         let _ = window.set_focus();
         return Ok(());
     }
-    WebviewWindowBuilder::new(app, "setup", WebviewUrl::App(url.into()))
+    WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("index.html".into()))
         .title("BIG BOSS")
         .inner_size(420.0, 520.0)
         .resizable(false)

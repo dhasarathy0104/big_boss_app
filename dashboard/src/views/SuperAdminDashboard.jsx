@@ -61,7 +61,7 @@ const TABS = [
 const STATUS_LABEL = { active: 'Active', idle: 'Idle', offline: 'Offline' };
 const REFRESH_MS = 15_000;
 
-function OverviewTab({ overview }) {
+function OverviewTab({ overview, onSelectMember }) {
   const [expandedId, setExpandedId] = useState(null);
   if (!overview) return null;
 
@@ -106,9 +106,25 @@ function OverviewTab({ overview }) {
             {admin.employees.length === 0 ? (
               <div className="empty">No employees under this admin yet.</div>
             ) : (
-              <div className="chip-row">
-                {admin.employees.map((e) => <div className="chip" key={e.id}>{e.name}</div>)}
-              </div>
+              <table>
+                <thead><tr><th>Name</th><th>Email</th><th>Mobile</th><th>Role</th><th>Department</th></tr></thead>
+                <tbody>
+                  {admin.employees.map((e) => (
+                    <tr key={e.id} onClick={() => onSelectMember(e.id)} style={{ cursor: 'pointer' }}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <Avatar name={e.name} size={22} />
+                          {e.name}
+                        </div>
+                      </td>
+                      <td>{e.email || '—'}</td>
+                      <td>{e.mobile || '—'}</td>
+                      <td>{e.jobRole || '—'}</td>
+                      <td>{e.department || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
             {expanded && (
               <>
@@ -176,78 +192,37 @@ function LiveTab({ onSelectMember }) {
       </div>
 
       <div className="panel">
-        <h2>Org dashboard</h2>
+        <h2>Everyone, right now</h2>
         {members.length === 0 ? (
           <div className="empty">{loading ? 'Loading…' : 'No employees anywhere yet.'}</div>
         ) : (
           <table>
-            <thead>
-              <tr><th>Name</th><th>Email</th><th>Mobile</th><th>Role</th><th>Department</th><th>Today</th></tr>
-            </thead>
-            {groupByManager(members).map((group) => (
-              <tbody key={group.managerId}>
-                <tr className="live-group-header">
+            <thead><tr><th>Name</th><th>Manager</th><th>Department</th></tr></thead>
+            <tbody>
+              {members.map((m) => (
+                <tr key={m.id} onClick={() => onSelectMember(m.id)} style={{ cursor: 'pointer' }}>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Avatar name={group.managerName} size={24} />
-                      <strong>{group.managerName}</strong>
-                    </div>
-                  </td>
-                  <td>{group.managerEmail || '—'}</td>
-                  <td>{group.managerMobile || '—'}</td>
-                  <td>Manager</td>
-                  <td>{group.managerDepartment || '—'}</td>
-                  <td></td>
-                </tr>
-                {group.employees.map((m) => (
-                  <tr key={m.id} onClick={() => onSelectMember(m.id)} style={{ cursor: 'pointer' }}>
-                    <td style={{ paddingLeft: 28 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Avatar name={m.name} size={22} />
-                        <div>
-                          <div>{m.name}</div>
-                          <div className="shot-meta" style={{ display: 'flex', alignItems: 'center' }}>
-                            <span className={`status-dot status-dot-${m.status}`} />
-                            {STATUS_LABEL[m.status]}
-                          </div>
+                      <Avatar name={m.name} size={24} />
+                      <div>
+                        <div>{m.name}</div>
+                        <div className="shot-meta" style={{ display: 'flex', alignItems: 'center' }}>
+                          <span className={`status-dot status-dot-${m.status}`} />
+                          {STATUS_LABEL[m.status]}
                         </div>
                       </div>
-                    </td>
-                    <td>{m.email || '—'}</td>
-                    <td>{m.mobile || '—'}</td>
-                    <td>{m.jobRole || '—'}</td>
-                    <td>{m.department || '—'}</td>
-                    <td>{m.todayScore}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            ))}
+                    </div>
+                  </td>
+                  <td>{m.managerName}</td>
+                  <td>{m.department || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
           </table>
         )}
       </div>
     </>
   );
-}
-
-// Employees arrive flat (each carrying its manager's own fields) — grouped
-// here client-side into one row per manager so the table can show the
-// manager's own details first, then their team beneath.
-function groupByManager(members) {
-  const groups = new Map();
-  for (const m of members) {
-    if (!groups.has(m.managerId)) {
-      groups.set(m.managerId, {
-        managerId: m.managerId,
-        managerName: m.managerName,
-        managerEmail: m.managerEmail,
-        managerMobile: m.managerMobile,
-        managerDepartment: m.managerDepartment,
-        employees: [],
-      });
-    }
-    groups.get(m.managerId).employees.push(m);
-  }
-  return [...groups.values()];
 }
 
 function AssignTab({ overview }) {
@@ -601,7 +576,9 @@ export default function SuperAdminDashboard({ user, onLogout }) {
           ))}
         </div>
 
-        {activeTab === 'overview' && <OverviewTab overview={overview} />}
+        {activeTab === 'overview' && (
+          <OverviewTab overview={overview} onSelectMember={(id) => { setSelectedUserId(id); setActiveTab('timeline'); }} />
+        )}
         {activeTab === 'live' && (
           <LiveTab onSelectMember={(id) => { setSelectedUserId(id); setActiveTab('timeline'); }} />
         )}

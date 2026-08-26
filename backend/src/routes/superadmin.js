@@ -82,7 +82,8 @@ superadminRouter.get('/overview', requireSuperAdmin, ah(async (req, res) => {
   `).all();
   const admins = await Promise.all(managers.map(async (m) => {
     const employees = await db.prepare(`
-      SELECT id, name FROM users WHERE role = 'employee' AND manager_id = ? ORDER BY name
+      SELECT id, name, email, mobile, department, job_role AS "jobRole"
+      FROM users WHERE role = 'employee' AND manager_id = ? ORDER BY name
     `).all(m.id);
     return {
       id: m.id, name: m.name, email: m.email, mobile: m.mobile, department: m.department, jobRole: m.jobRole,

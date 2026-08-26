@@ -1,15 +1,9 @@
 import { useEffect, useState } from 'react';
 
-export default function TeamView({ managerId, team, onTeamChanged }) {
+export default function TeamView({ managerId }) {
   const [invites, setInvites] = useState([]);
   const [copied, setCopied] = useState(false);
-  const [claimLinks, setClaimLinks] = useState({}); // employeeId -> url
-  const [copiedClaimId, setCopiedClaimId] = useState(null);
   const [otherManagers, setOtherManagers] = useState([]);
-  const [transferTarget, setTransferTarget] = useState({}); // employeeId -> managerId
-  const [transferring, setTransferring] = useState(null); // employeeId currently in flight
-  const [transferError, setTransferError] = useState('');
-  const [confirmingId, setConfirmingId] = useState(null); // employeeId awaiting inline confirmation
   const [newManagerName, setNewManagerName] = useState('');
   const [newManagerEmail, setNewManagerEmail] = useState('');
   const [newManagerLink, setNewManagerLink] = useState(null);
@@ -42,36 +36,6 @@ export default function TeamView({ managerId, team, onTeamChanged }) {
     navigator.clipboard.writeText(joinUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  }
-
-  async function getDashboardLink(employeeId) {
-    const res = await fetch(`/api/managers/${managerId}/team/${employeeId}/claim-link`, { method: 'POST' });
-    const { claimToken } = await res.json();
-    const url = `${window.location.origin}/claim/${claimToken}`;
-    setClaimLinks((prev) => ({ ...prev, [employeeId]: url }));
-  }
-
-  function copyClaimLink(employeeId) {
-    navigator.clipboard.writeText(claimLinks[employeeId]);
-    setCopiedClaimId(employeeId);
-    setTimeout(() => setCopiedClaimId(null), 1500);
-  }
-
-  async function confirmTransfer(employee) {
-    const targetManagerId = transferTarget[employee.id];
-    if (!targetManagerId) return;
-
-    setTransferError('');
-    setTransferring(employee.id);
-    const res = await fetch(`/api/managers/${managerId}/team/${employee.id}/transfer`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ targetManagerId }),
-    });
-    setTransferring(null);
-    setConfirmingId(null);
-    if (!res.ok) { setTransferError((await res.json()).error); return; }
-    onTeamChanged?.();
   }
 
   async function createPeerManager(e) {
@@ -174,87 +138,6 @@ export default function TeamView({ managerId, team, onTeamChanged }) {
           </form>
         )}
         {managerCreateError && <div style={{ color: '#e07070', fontSize: 12, marginTop: 6 }}>{managerCreateError}</div>}
-      </div>
-
-      <div className="panel">
-        <h2>Team ({team.length})</h2>
-        <p className="join-sub" style={{ marginTop: 0 }}>
-          Each employee needs their own private link to set a password and view their own dashboard
-          (their own timeline, log time, attendance/leave) — separate from the invite link above.
-          Nobody can see another employee's data or your manager view with this link.
-        </p>
-        {transferError && <div style={{ color: '#e07070', fontSize: 12, marginBottom: 8 }}>{transferError}</div>}
-        {team.length === 0 ? (
-          <div className="empty">Nobody has joined yet. Share the invite link above.</div>
-        ) : (
-          <table>
-            <thead><tr><th>Name</th><th>Joined</th><th>Dashboard access</th><th></th><th>Transfer to</th></tr></thead>
-            <tbody>
-              {team.map((u) => (
-                <tr key={u.id}>
-                  <td>{u.name}</td>
-                  <td>{new Date(u.created_at).toLocaleDateString()}</td>
-                  <td>
-                    {u.hasDashboardLogin ? (
-                      <span className="status-badge status-approved">Set up</span>
-                    ) : u.hasPendingClaim ? (
-                      <span className="status-badge status-pending">Link sent, not used yet</span>
-                    ) : (
-                      <span className="status-badge status-rejected">Not set up</span>
-                    )}
-                  </td>
-                  <td>
-                    {claimLinks[u.id] ? (
-                      <div className="inline-form" style={{ gap: 6 }}>
-                        <input readOnly value={claimLinks[u.id]} style={{ minWidth: 260 }} />
-                        <button className="btn-small" onClick={() => copyClaimLink(u.id)}>
-                          {copiedClaimId === u.id ? 'Copied!' : 'Copy'}
-                        </button>
-                      </div>
-                    ) : (
-                      <button className="btn-small" onClick={() => getDashboardLink(u.id)}>
-                        {u.hasDashboardLogin ? 'Reset password link' : 'Get dashboard link'}
-                      </button>
-                    )}
-                  </td>
-                  <td>
-                    {otherManagers.length === 0 ? (
-                      <span className="shot-meta">No other managers yet</span>
-                    ) : confirmingId === u.id ? (
-                      <div className="inline-form" style={{ gap: 6 }}>
-                        <span className="shot-meta">
-                          Move to {otherManagers.find((m) => m.id === Number(transferTarget[u.id]))?.name}?
-                          They'll gain full access (including past history); you'll lose it.
-                        </span>
-                        <button className="btn-small btn-danger" disabled={transferring === u.id} onClick={() => confirmTransfer(u)}>
-                          {transferring === u.id ? 'Transferring…' : 'Yes, transfer'}
-                        </button>
-                        <button className="btn-small" onClick={() => setConfirmingId(null)}>Cancel</button>
-                      </div>
-                    ) : (
-                      <div className="inline-form" style={{ gap: 6 }}>
-                        <select
-                          value={transferTarget[u.id] ?? ''}
-                          onChange={(e) => setTransferTarget((prev) => ({ ...prev, [u.id]: e.target.value }))}
-                        >
-                          <option value="">Select manager…</option>
-                          {otherManagers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                        </select>
-                        <button
-                          className="btn-small btn-danger"
-                          disabled={!transferTarget[u.id]}
-                          onClick={() => setConfirmingId(u.id)}
-                        >
-                          Transfer
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
       </div>
     </>
   );
