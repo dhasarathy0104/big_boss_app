@@ -91,9 +91,12 @@ fn save_queue(queue: &[ActivityEvent]) {
 
 // Used by the first-run setup window (see main.rs's submit_setup command) and by
 // the env-var flow for anyone still scripting enrollment directly.
-pub async fn enroll_and_save(name: &str, email: &str, password: &str, invite_token: Option<String>, backend_url: &str) -> Result<AgentConfig, String> {
+pub async fn enroll_and_save(
+    name: &str, email: &str, password: &str, invite_token: Option<String>, backend_url: &str,
+    mobile: Option<String>, department: Option<String>, job_role: Option<String>,
+) -> Result<AgentConfig, String> {
     let client = BackendClient::new(backend_url.to_string());
-    let mut cfg = client.enroll(name, email, password, invite_token).await?;
+    let mut cfg = client.enroll(name, email, password, invite_token, mobile, department, job_role).await?;
     cfg.name = name.to_string();
     cfg.backend_url = backend_url.to_string();
     save_config(&cfg);
@@ -139,9 +142,12 @@ pub async fn login(email: &str, password: &str, name: Option<&str>, backend_url:
 // explicit request. `role` must be "manager" or "superadmin"; the server
 // rejects anything else (including "employee" — that role only comes from
 // an invite-link enrollment or a manager-issued claim link).
-pub async fn register_admin(name: &str, email: &str, password: &str, role: &str, backend_url: &str) -> Result<LoginOutcome, String> {
+pub async fn register_admin(
+    name: &str, email: &str, password: &str, role: &str, backend_url: &str,
+    mobile: Option<&str>, department: Option<&str>, job_role: Option<&str>,
+) -> Result<LoginOutcome, String> {
     let client = BackendClient::new(backend_url.to_string());
-    let resp = client.register_admin(name, email, password, role).await?;
+    let resp = client.register_admin(name, email, password, role, mobile, department, job_role).await?;
     Ok(finish_login(resp, backend_url))
 }
 

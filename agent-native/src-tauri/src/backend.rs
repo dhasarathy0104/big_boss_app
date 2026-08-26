@@ -32,6 +32,12 @@ struct EnrollRequest {
     password: String,
     #[serde(rename = "inviteToken", skip_serializing_if = "Option::is_none")]
     invite_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mobile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    department: Option<String>,
+    #[serde(rename = "jobRole", skip_serializing_if = "Option::is_none")]
+    job_role: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -51,6 +57,12 @@ struct RegisterAdminRequest<'a> {
     email: &'a str,
     password: &'a str,
     role: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mobile: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    department: Option<&'a str>,
+    #[serde(rename = "jobRole", skip_serializing_if = "Option::is_none")]
+    job_role: Option<&'a str>,
 }
 
 #[derive(Deserialize)]
@@ -101,11 +113,17 @@ impl BackendClient {
         Self { http: reqwest::Client::new(), base_url }
     }
 
-    pub async fn enroll(&self, name: &str, email: &str, password: &str, invite_token: Option<String>) -> Result<AgentConfig, String> {
+    pub async fn enroll(
+        &self, name: &str, email: &str, password: &str, invite_token: Option<String>,
+        mobile: Option<String>, department: Option<String>, job_role: Option<String>,
+    ) -> Result<AgentConfig, String> {
         let res = self
             .http
             .post(format!("{}/api/enroll", self.base_url))
-            .json(&EnrollRequest { name: name.to_string(), email: email.to_string(), password: password.to_string(), invite_token })
+            .json(&EnrollRequest {
+                name: name.to_string(), email: email.to_string(), password: password.to_string(), invite_token,
+                mobile, department, job_role,
+            })
             .send()
             .await
             .map_err(|e| e.to_string())?;
@@ -131,11 +149,14 @@ impl BackendClient {
     }
 
     // Open self-service manager/superadmin signup — no invite link required.
-    pub async fn register_admin(&self, name: &str, email: &str, password: &str, role: &str) -> Result<LoginResponse, String> {
+    pub async fn register_admin(
+        &self, name: &str, email: &str, password: &str, role: &str,
+        mobile: Option<&str>, department: Option<&str>, job_role: Option<&str>,
+    ) -> Result<LoginResponse, String> {
         let res = self
             .http
             .post(format!("{}/api/auth/register-admin", self.base_url))
-            .json(&RegisterAdminRequest { name, email, password, role })
+            .json(&RegisterAdminRequest { name, email, password, role, mobile, department, job_role })
             .send()
             .await
             .map_err(|e| e.to_string())?;

@@ -63,35 +63,38 @@ export default function LiveView({ managerId, onSelectMember }) {
       </div>
 
       <div className="panel">
-        <h2>Right now</h2>
+        <h2>Team dashboard</h2>
         {members.length === 0 ? (
           <div className="empty">{loading ? 'Loading…' : 'Nobody on your team yet.'}</div>
         ) : (
-          <div className="live-grid">
-            {members.map((m) => (
-              <div key={m.id} className="live-card" onClick={() => onSelectMember?.(m.id)}>
-                <div className="live-card-top">
-                  <Avatar name={m.name} size={30} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</div>
-                    <div className="shot-meta" style={{ display: 'flex', alignItems: 'center' }}>
-                      <span className={`status-dot status-dot-${m.status}`} />
-                      {STATUS_LABEL[m.status]}
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Mobile</th><th>Role</th><th>Department</th><th>Today</th></tr>
+            </thead>
+            <tbody>
+              {members.map((m) => (
+                <tr key={m.id} className="live-row" onClick={() => onSelectMember?.(m.id)} style={{ cursor: 'pointer' }}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Avatar name={m.name} size={24} />
+                      <div>
+                        <div>{m.name}</div>
+                        <div className="shot-meta" style={{ display: 'flex', alignItems: 'center' }}>
+                          <span className={`status-dot status-dot-${m.status}`} />
+                          {STATUS_LABEL[m.status]}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-                {m.status !== 'offline' && (
-                  <div className="shot-meta" style={{ marginBottom: 4 }}>
-                    {m.currentDomain ? `${m.currentApp} · ${m.currentDomain}` : m.currentApp || '—'}
-                  </div>
-                )}
-                <div className="live-card-stats">
-                  <span>{m.todayScore}% today</span>
-                  <span>{fmtMinutes(m.todayActiveMinutes)} tracked</span>
-                </div>
-              </div>
-            ))}
-          </div>
+                  </td>
+                  <td>{m.email || '—'}</td>
+                  <td>{m.mobile || '—'}</td>
+                  <td>{m.jobRole || '—'}</td>
+                  <td>{m.department || '—'}</td>
+                  <td>{m.todayScore}% · {fmtMinutes(m.todayActiveMinutes)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
     </>

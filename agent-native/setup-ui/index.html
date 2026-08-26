@@ -123,7 +123,7 @@
         <span class="title">Employee</span>
       </button>
       <button class="role-btn" id="chooseAdmin" style="margin-top: 10px;">
-        <span class="title">Admin</span>
+        <span class="title">Manager</span>
       </button>
       <button class="role-btn" id="chooseSuperAdmin" style="margin-top: 10px;">
         <span class="title">Super Admin</span>
@@ -177,6 +177,15 @@
       <label for="inviteEmail">Email</label>
       <input id="inviteEmail" type="email" placeholder="jane@example.com" />
 
+      <label for="inviteMobile">Mobile number</label>
+      <input id="inviteMobile" placeholder="98765 43210" />
+
+      <label for="inviteDepartment">Department</label>
+      <input id="inviteDepartment" placeholder="Sales" />
+
+      <label for="inviteJobRole">Role</label>
+      <input id="inviteJobRole" placeholder="Health Coach" />
+
       <label for="invitePassword">Choose a password</label>
       <input id="invitePassword" type="password" placeholder="Choose a password (8+ characters)" />
 
@@ -186,7 +195,7 @@
     </div>
 
     <div id="screen-admin" class="screen">
-      <h1>Admin login</h1>
+      <h1>Manager login</h1>
 
       <label for="adminName">Your name</label>
       <input id="adminName" placeholder="Jane Doe" />
@@ -199,7 +208,7 @@
 
       <button id="submitAdmin">Log in</button>
       <button class="text-link" id="goToAdminRegister">New here? Create a manager account</button>
-      <button class="text-link" id="forgotAdmin">Forgot password?</button>
+      <button class="text-link" id="forgotAdmin">Forgot password? Notify your super admin</button>
       <button class="text-link" data-back>&larr; Back</button>
       <div class="status" id="statusAdmin"></div>
     </div>
@@ -227,6 +236,15 @@
 
       <label for="registerEmail">Email</label>
       <input id="registerEmail" type="email" placeholder="jane@example.com" />
+
+      <label for="registerMobile">Mobile number</label>
+      <input id="registerMobile" placeholder="98765 43210" />
+
+      <label for="registerDepartment">Department</label>
+      <input id="registerDepartment" placeholder="Sales" />
+
+      <label for="registerJobRole">Role</label>
+      <input id="registerJobRole" placeholder="Manager" />
 
       <label for="registerPassword">Password</label>
       <input id="registerPassword" type="password" placeholder="Choose a password (8+ characters)" />
@@ -263,10 +281,15 @@
 
     // This machine is already tracking silently in the tray — skip the role
     // question (we already know it's an employee machine) and go straight to
-    // a dashboard-only login instead.
-    invoke('is_tracking_active').then((active) => {
-      if (active) showScreen('screen-dashboard-login');
-    });
+    // a dashboard-only login instead. Not when this window was opened by a
+    // deliberate logout (?chooser=1) — that always shows the full chooser,
+    // regardless of what's already saved.
+    const forceChooser = new URLSearchParams(window.location.search).get('chooser') === '1';
+    if (!forceChooser) {
+      invoke('is_tracking_active').then((active) => {
+        if (active) showScreen('screen-dashboard-login');
+      });
+    }
 
     // --- Dashboard-only login (tracking already running) ---
     const dashboardLoginEmailInput = document.getElementById('dashboardLoginEmail');
@@ -313,9 +336,22 @@
     const submitEmployeeLoginBtn = document.getElementById('submitEmployeeLogin');
     const statusEmployeeLoginEl = document.getElementById('statusEmployeeLogin');
 
-    document.getElementById('forgotEmployee').addEventListener('click', () => {
-      statusEmployeeLoginEl.textContent = 'Ask your manager to send you a new setup link from Team & Invite.';
+    document.getElementById('forgotEmployee').addEventListener('click', async () => {
+      const email = employeeEmailInput.value.trim();
+      if (!email) {
+        statusEmployeeLoginEl.textContent = 'Enter your email above first, then click this again.';
+        statusEmployeeLoginEl.className = 'status error';
+        return;
+      }
+      statusEmployeeLoginEl.textContent = 'Notifying your manager…';
       statusEmployeeLoginEl.className = 'status';
+      await fetch(BACKEND_URL + '/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email }),
+      }).catch(() => {});
+      statusEmployeeLoginEl.textContent = 'Your manager has been notified and will set you a new password.';
+      statusEmployeeLoginEl.className = 'status ok';
     });
 
     submitEmployeeLoginBtn.addEventListener('click', async () => {
@@ -351,6 +387,9 @@
     const linkInput = document.getElementById('link');
     const nameInput = document.getElementById('name');
     const inviteEmailInput = document.getElementById('inviteEmail');
+    const inviteMobileInput = document.getElementById('inviteMobile');
+    const inviteDepartmentInput = document.getElementById('inviteDepartment');
+    const inviteJobRoleInput = document.getElementById('inviteJobRole');
     const invitePasswordInput = document.getElementById('invitePassword');
     const submitEmployeeBtn = document.getElementById('submitEmployee');
     const statusEmployeeEl = document.getElementById('statusEmployee');
@@ -401,6 +440,9 @@
           password,
           inviteToken: parsed.token,
           backendUrl: parsed.backendUrl,
+          mobile: inviteMobileInput.value.trim() || null,
+          department: inviteDepartmentInput.value.trim() || null,
+          jobRole: inviteJobRoleInput.value.trim() || null,
         });
         statusEmployeeEl.textContent = `Connected — joined ${managerName}'s team. You can close this window, or log in with your email to view your dashboard.`;
         statusEmployeeEl.className = 'status ok';
@@ -418,9 +460,22 @@
     const submitAdminBtn = document.getElementById('submitAdmin');
     const statusAdminEl = document.getElementById('statusAdmin');
 
-    document.getElementById('forgotAdmin').addEventListener('click', () => {
-      statusAdminEl.textContent = 'Ask your super admin to set a new password for you.';
+    document.getElementById('forgotAdmin').addEventListener('click', async () => {
+      const email = adminEmailInput.value.trim();
+      if (!email) {
+        statusAdminEl.textContent = 'Enter your email above first, then click this again.';
+        statusAdminEl.className = 'status error';
+        return;
+      }
+      statusAdminEl.textContent = 'Notifying your super admin…';
       statusAdminEl.className = 'status';
+      await fetch(BACKEND_URL + '/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email }),
+      }).catch(() => {});
+      statusAdminEl.textContent = 'Your super admin has been notified and will set you a new password.';
+      statusAdminEl.className = 'status ok';
     });
 
     submitAdminBtn.addEventListener('click', async () => {
@@ -494,6 +549,9 @@
     // dashboard, not this open form) ---
     const registerNameInput = document.getElementById('registerName');
     const registerEmailInput = document.getElementById('registerEmail');
+    const registerMobileInput = document.getElementById('registerMobile');
+    const registerDepartmentInput = document.getElementById('registerDepartment');
+    const registerJobRoleInput = document.getElementById('registerJobRole');
     const registerPasswordInput = document.getElementById('registerPassword');
     const submitRegisterAdminBtn = document.getElementById('submitRegisterAdmin');
     const statusRegisterAdminEl = document.getElementById('statusRegisterAdmin');
@@ -522,7 +580,12 @@
       statusRegisterAdminEl.textContent = 'Creating account…';
 
       try {
-        await invoke('submit_register_admin', { backendUrl, name, email, password, role: 'manager' });
+        await invoke('submit_register_admin', {
+          backendUrl, name, email, password, role: 'manager',
+          mobile: registerMobileInput.value.trim() || null,
+          department: registerDepartmentInput.value.trim() || null,
+          jobRole: registerJobRoleInput.value.trim() || null,
+        });
         statusRegisterAdminEl.textContent = 'Account created — opening your dashboard…';
         statusRegisterAdminEl.className = 'status ok';
       } catch (err) {

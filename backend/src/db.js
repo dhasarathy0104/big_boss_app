@@ -237,6 +237,16 @@ await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(ema
 // Render's free web services wipe local files on every restart/spin-down,
 // so a filesystem path would silently lose images.
 await ensureColumn('screenshots', 'image_data', 'image_data TEXT');
+// Profile fields collected at account creation, employees and managers only.
+// job_role is a free-text job title ("Health Coach", "Setter", ...) — distinct
+// from `role`, which is the account type (employee/manager/superadmin).
+await ensureColumn('users', 'mobile', 'mobile TEXT');
+await ensureColumn('users', 'department', 'department TEXT');
+await ensureColumn('users', 'job_role', 'job_role TEXT');
+// Set when an employee/manager uses "Forgot password?" — surfaces a pending
+// request to their manager (Employee Management tab) or the super admin
+// (Manage Admins tab), who sets a new password directly and clears this.
+await ensureColumn('users', 'password_reset_requested_at', 'password_reset_requested_at TEXT');
 
 export function randomToken(bytes = 12) {
   return crypto.randomBytes(bytes).toString('hex');

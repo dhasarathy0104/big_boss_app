@@ -9,8 +9,10 @@ import { getToken, setToken } from './api.js';
 function RegisterAdminForm({ onAuthed, onBack }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [mobile, setMobile] = useState('');
+  const [department, setDepartment] = useState('');
+  const [jobRole, setJobRole] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('manager');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -25,7 +27,10 @@ function RegisterAdminForm({ onAuthed, onBack }) {
     const res = await fetch('/api/auth/register-admin', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: name.trim(), email: email.trim(), password, role }),
+      body: JSON.stringify({
+        name: name.trim(), email: email.trim(), password, role: 'manager',
+        mobile: mobile.trim() || undefined, department: department.trim() || undefined, jobRole: jobRole.trim() || undefined,
+      }),
     });
     setSubmitting(false);
     if (!res.ok) { setError((await res.json()).error); return; }
@@ -57,15 +62,14 @@ function RegisterAdminForm({ onAuthed, onBack }) {
           </div>
           <div className="brand-name">BIG BOSS</div>
         </div>
-        <h1>Create an account</h1>
-        <p className="join-sub">Open signup — anyone with this server's address can create a manager or super admin account here.</p>
+        <h1>Create a manager account</h1>
+        <p className="join-sub">Open signup — anyone with this server's address can create a manager account here.</p>
         <form className="stacked-form" onSubmit={submit}>
-          <select value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value="manager">Manager / Admin</option>
-            <option value="superadmin">Super Admin</option>
-          </select>
           <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
           <input type="email" placeholder="Your email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input placeholder="Mobile number" value={mobile} onChange={(e) => setMobile(e.target.value)} />
+          <input placeholder="Department" value={department} onChange={(e) => setDepartment(e.target.value)} />
+          <input placeholder="Role (e.g. Manager)" value={jobRole} onChange={(e) => setJobRole(e.target.value)} />
           <input
             type="password"
             placeholder="Choose a password (8+ characters)"
@@ -192,7 +196,7 @@ function AuthScreen({ onAuthed }) {
             onClick={() => setShowRegisterAdmin(true)}
             style={{ background: 'none', color: '#8b93a3', fontSize: 12, marginTop: 14, padding: 0, textDecoration: 'underline', width: 'auto' }}
           >
-            New here? Create a manager or super admin account
+            New here? Create a manager account
           </button>
         )}
       </div>
@@ -225,7 +229,12 @@ function Shell() {
   function logout() {
     fetch('/api/auth/logout', { method: 'POST' }).finally(() => {
       setToken(null);
-      setUser(null);
+      // The native app's dashboard window watches for this exact navigation
+      // (a plain URL change, no Tauri API needed) and redirects it back to
+      // its own "I am a(n)…" chooser instead of letting this reload into the
+      // website's generic login form. In a normal browser tab this is a no-op
+      // beyond a harmless query param — AuthScreen ignores it.
+      window.location.href = `${window.location.origin}/?loggedout=1`;
     });
   }
 

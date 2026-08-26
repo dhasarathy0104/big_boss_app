@@ -17,9 +17,13 @@ async function publicUser(u) {
     name: u.name,
     email: u.email,
     role: u.role,
+    mobile: u.mobile,
+    department: u.department,
+    jobRole: u.job_role,
     managerId: u.manager_id,
     managerName: manager?.name ?? null,
     agentKey: u.agent_key,
+    passwordResetRequested: !!u.password_reset_requested_at,
   };
 }
 
@@ -99,12 +103,37 @@ authRouter.post('/register-admin', ah(async (req, res) => {
     if (existing) return res.status(409).json({ error: 'that email is already registered' });
   }
 
+  // Profile fields only make sense for a manager (a real employee/contact
+  // record) — the super admin has none of this, by the same "no email"
+  // reasoning as above.
+  const mobile = role === 'manager' ? (req.body.mobile ?? '').trim() || null : null;
+  const department = role === 'manager' ? (req.body.department ?? '').trim() || null : null;
+  const jobRole = role === 'manager' ? (req.body.jobRole ?? '').trim() || null : null;
+
   const agentKey = crypto.randomBytes(16).toString('hex');
   const info = await db.prepare(`
-    INSERT INTO users (name, email, agent_key, role, manager_id, password_hash) VALUES (?, ?, ?, ?, NULL, ?) RETURNING id
-  `).run(name.trim(), email, agentKey, role, hashPassword(password));
+    INSERT INTO users (name, email, agent_key, role, manager_id, password_hash, mobile, department, job_role)
+    VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?) RETURNING id
+  `).run(name.trim(), email, agentKey, role, hashPassword(password), mobile, department, jobRole);
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
+}));
+
+// An employee or manager who forgot their password flags their own account
+// from the login screen — no email required, since there's no email sending
+// set up. A manager sees the request in Employee Management and sets a new
+// password directly; a super admin sees a manager's request the same way in
+// Manage Admins. Always responds the same way regardless of whether the
+// email matched anything, so this can't be used to probe which emails exist.
+authRouter.post('/forgot-password', ah(async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  if (email) {
+    const user = await db.prepare("SELECT id FROM users WHERE email = ? AND role IN ('employee', 'manager')").get(email);
+    if (user) {
+      await db.prepare("UPDATE users SET password_reset_requested_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') WHERE id = ?").run(user.id);
+    }
+  }
+  res.json({ ok: true });
 }));
 
 // Managers/employees log in by email; the super admin has no email and logs

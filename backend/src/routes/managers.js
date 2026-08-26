@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { db, randomToken } from '../db.js';
-import { requireManager, requireManagerSelf } from '../auth.js';
+import { requireManager, requireManagerSelf, hashPassword } from '../auth.js';
 import { ah } from '../asyncHandler.js';
 
 export const managersRouter = Router();
@@ -36,10 +36,30 @@ managersRouter.post('/create-peer', requireManager, ah(async (req, res) => {
 
 managersRouter.get('/:id/team', requireManagerSelf, ah(async (req, res) => {
   const team = await db.prepare(`
-    SELECT id, name, created_at, (claim_token IS NOT NULL) AS "hasPendingClaim", (password_hash IS NOT NULL) AS "hasDashboardLogin"
+    SELECT id, name, email, mobile, department, job_role AS "jobRole", created_at,
+      (claim_token IS NOT NULL) AS "hasPendingClaim", (password_hash IS NOT NULL) AS "hasDashboardLogin",
+      (password_reset_requested_at IS NOT NULL) AS "passwordResetRequested"
     FROM users WHERE manager_id = ? AND role = 'employee' ORDER BY name
   `).all(req.params.id);
   res.json(team);
+}));
+
+// Manager sets a new password directly for one of their own employees — the
+// "forgot password" fix once an employee has flagged their account via
+// /api/auth/forgot-password (see Employee Management tab), same idea as a
+// super admin resetting a manager's password.
+managersRouter.post('/:id/team/:employeeId/set-password', requireManagerSelf, ah(async (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 8) {
+    return res.status(400).json({ error: 'a password of at least 8 characters is required' });
+  }
+  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND manager_id = ? AND role = 'employee'")
+    .get(req.params.employeeId, req.params.id);
+  if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
+
+  await db.prepare('UPDATE users SET password_hash = ?, password_reset_requested_at = NULL WHERE id = ?')
+    .run(hashPassword(password), employee.id);
+  res.json({ ok: true });
 }));
 
 managersRouter.get('/:id/invites', requireManagerSelf, ah(async (req, res) => {

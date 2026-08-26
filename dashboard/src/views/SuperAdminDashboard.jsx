@@ -176,38 +176,78 @@ function LiveTab({ onSelectMember }) {
       </div>
 
       <div className="panel">
-        <h2>Everyone, right now</h2>
+        <h2>Org dashboard</h2>
         {members.length === 0 ? (
           <div className="empty">{loading ? 'Loading…' : 'No employees anywhere yet.'}</div>
         ) : (
-          <div className="live-grid">
-            {members.map((m) => (
-              <div key={m.id} className="live-card" onClick={() => onSelectMember(m.id)}>
-                <div className="live-card-top">
-                  <Avatar name={m.name} size={30} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</div>
-                    <div className="shot-meta" style={{ display: 'flex', alignItems: 'center' }}>
-                      <span className={`status-dot status-dot-${m.status}`} />
-                      {STATUS_LABEL[m.status]} · reports to {m.managerName}
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Mobile</th><th>Role</th><th>Department</th><th>Today</th></tr>
+            </thead>
+            {groupByManager(members).map((group) => (
+              <tbody key={group.managerId}>
+                <tr className="live-group-header">
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Avatar name={group.managerName} size={24} />
+                      <strong>{group.managerName}</strong>
                     </div>
-                  </div>
-                </div>
-                {m.status !== 'offline' && (
-                  <div className="shot-meta" style={{ marginBottom: 4 }}>
-                    {m.currentDomain ? `${m.currentApp} · ${m.currentDomain}` : m.currentApp || '—'}
-                  </div>
-                )}
-                <div className="live-card-stats">
-                  <span>{m.todayScore}% today</span>
-                </div>
-              </div>
+                  </td>
+                  <td>{group.managerEmail || '—'}</td>
+                  <td>{group.managerMobile || '—'}</td>
+                  <td>Manager</td>
+                  <td>{group.managerDepartment || '—'}</td>
+                  <td></td>
+                </tr>
+                {group.employees.map((m) => (
+                  <tr key={m.id} onClick={() => onSelectMember(m.id)} style={{ cursor: 'pointer' }}>
+                    <td style={{ paddingLeft: 28 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Avatar name={m.name} size={22} />
+                        <div>
+                          <div>{m.name}</div>
+                          <div className="shot-meta" style={{ display: 'flex', alignItems: 'center' }}>
+                            <span className={`status-dot status-dot-${m.status}`} />
+                            {STATUS_LABEL[m.status]}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>{m.email || '—'}</td>
+                    <td>{m.mobile || '—'}</td>
+                    <td>{m.jobRole || '—'}</td>
+                    <td>{m.department || '—'}</td>
+                    <td>{m.todayScore}%</td>
+                  </tr>
+                ))}
+              </tbody>
             ))}
-          </div>
+          </table>
         )}
       </div>
     </>
   );
+}
+
+// Employees arrive flat (each carrying its manager's own fields) — grouped
+// here client-side into one row per manager so the table can show the
+// manager's own details first, then their team beneath.
+function groupByManager(members) {
+  const groups = new Map();
+  for (const m of members) {
+    if (!groups.has(m.managerId)) {
+      groups.set(m.managerId, {
+        managerId: m.managerId,
+        managerName: m.managerName,
+        managerEmail: m.managerEmail,
+        managerMobile: m.managerMobile,
+        managerDepartment: m.managerDepartment,
+        employees: [],
+      });
+    }
+    groups.get(m.managerId).employees.push(m);
+  }
+  return [...groups.values()];
 }
 
 function AssignTab({ overview }) {
@@ -308,7 +348,7 @@ function AssignTab({ overview }) {
 }
 
 function CreateAdminPanel({ onCreated }) {
-  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [form, setForm] = useState({ name: '', email: '', mobile: '', department: '', jobRole: '', password: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -324,13 +364,16 @@ function CreateAdminPanel({ onCreated }) {
     const res = await fetch('/api/superadmin/create-admin', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: form.name.trim(), email: form.email.trim(), password: form.password }),
+      body: JSON.stringify({
+        name: form.name.trim(), email: form.email.trim(), password: form.password,
+        mobile: form.mobile.trim() || undefined, department: form.department.trim() || undefined, jobRole: form.jobRole.trim() || undefined,
+      }),
     });
     setSubmitting(false);
     if (!res.ok) { setError((await res.json()).error); return; }
     const admin = await res.json();
     setSuccess(`Created admin account for ${admin.name} (${admin.email}). Give them their email and password to log in.`);
-    setForm({ name: '', email: '', password: '' });
+    setForm({ name: '', email: '', mobile: '', department: '', jobRole: '', password: '' });
     onCreated?.();
   }
 
@@ -343,6 +386,9 @@ function CreateAdminPanel({ onCreated }) {
       <form className="stacked-form" onSubmit={submit}>
         <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        <input placeholder="Mobile number" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
+        <input placeholder="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+        <input placeholder="Role (e.g. Manager)" value={form.jobRole} onChange={(e) => setForm({ ...form, jobRole: e.target.value })} />
         <input
           type="password"
           placeholder="Password (8+ characters)"
@@ -471,8 +517,21 @@ function TransferEmployeePanel({ overview, onTransferred }) {
 }
 
 function ManageTab({ overview, onChanged }) {
+  const requested = (overview?.admins ?? []).filter((a) => a.passwordResetRequested);
   return (
     <>
+      {requested.length > 0 && (
+        <div className="panel">
+          <h2>Password reset requested ({requested.length})</h2>
+          <p className="join-sub" style={{ marginTop: 0 }}>
+            These admins clicked "Forgot password?" on the login screen. Use "Change an admin's password" below to set
+            them a new one and tell them directly.
+          </p>
+          <div className="chip-row">
+            {requested.map((a) => <div className="chip" key={a.id}>{a.name}</div>)}
+          </div>
+        </div>
+      )}
       <CreateAdminPanel onCreated={onChanged} />
       <ChangeAdminPasswordPanel overview={overview} />
       <TransferEmployeePanel overview={overview} onTransferred={onChanged} />

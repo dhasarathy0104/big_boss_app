@@ -21,7 +21,8 @@ liveStatusRouter.get('/:managerId/live-status', requireManager, ah(async (req, r
   if (Number(req.params.managerId) !== req.authUser.id) return res.status(403).json({ error: 'not your team' });
 
   const team = await db.prepare(`
-    SELECT id, name FROM users WHERE manager_id = ? AND role = 'employee' ORDER BY name
+    SELECT id, name, email, mobile, department, job_role AS "jobRole"
+    FROM users WHERE manager_id = ? AND role = 'employee' ORDER BY name
   `).all(req.params.managerId);
 
   const rules = await db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(req.params.managerId);
@@ -43,6 +44,10 @@ liveStatusRouter.get('/:managerId/live-status', requireManager, ah(async (req, r
     return {
       id: member.id,
       name: member.name,
+      email: member.email,
+      mobile: member.mobile,
+      department: member.department,
+      jobRole: member.jobRole,
       status: statusFor(latestEvent),
       currentApp: latestEvent?.app_name ?? null,
       currentDomain: latestEvent?.domain ?? null,

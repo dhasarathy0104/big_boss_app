@@ -51,6 +51,9 @@ app.post('/api/enroll', ah(async (req, res) => {
   const { name, password } = req.body;
   const inviteToken = req.body.inviteToken;
   const email = normalizeEmail(req.body.email);
+  const mobile = (req.body.mobile ?? '').trim() || null;
+  const department = (req.body.department ?? '').trim() || null;
+  const jobRole = (req.body.jobRole ?? '').trim() || null;
   if (!name?.trim() || !email || !password || password.length < 8) {
     return res.status(400).json({ error: 'name, email, and a password of at least 8 characters are required' });
   }
@@ -75,13 +78,17 @@ app.post('/api/enroll', ah(async (req, res) => {
 
   let userId;
   if (existing) {
-    await db.prepare('UPDATE users SET agent_key = ?, manager_id = COALESCE(?, manager_id) WHERE id = ?')
-      .run(agentKey, managerId, existing.id);
+    await db.prepare(`
+      UPDATE users SET agent_key = ?, manager_id = COALESCE(?, manager_id),
+        mobile = COALESCE(?, mobile), department = COALESCE(?, department), job_role = COALESCE(?, job_role)
+      WHERE id = ?
+    `).run(agentKey, managerId, mobile, department, jobRole, existing.id);
     userId = existing.id;
   } else {
     const info = await db.prepare(`
-      INSERT INTO users (name, email, agent_key, role, manager_id, password_hash) VALUES (?, ?, ?, 'employee', ?, ?) RETURNING id
-    `).run(trimmedName, email, agentKey, managerId, hashPassword(password));
+      INSERT INTO users (name, email, agent_key, role, manager_id, password_hash, mobile, department, job_role)
+      VALUES (?, ?, ?, 'employee', ?, ?, ?, ?, ?) RETURNING id
+    `).run(trimmedName, email, agentKey, managerId, hashPassword(password), mobile, department, jobRole);
     userId = info.lastInsertRowid;
   }
 

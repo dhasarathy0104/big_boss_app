@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Activity, Camera, KanbanSquare, Clock, CalendarCheck, Tags, UserPlus, LogOut,
+  Activity, Camera, KanbanSquare, Clock, CalendarCheck, Tags, UserPlus, LogOut, Users,
 } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
@@ -9,7 +9,7 @@ import TimelineView from './TimelineView.jsx';
 import ScreenshotsView from './ScreenshotsView.jsx';
 import TeamView from './TeamView.jsx';
 import ProjectsView from './ProjectsView.jsx';
-import TimesheetReviewView from './TimesheetReviewView.jsx';
+import EmployeeManagementView from './EmployeeManagementView.jsx';
 import CategoriesView from './CategoriesView.jsx';
 import AttendanceReviewView from './AttendanceReviewView.jsx';
 
@@ -18,7 +18,7 @@ const TABS = [
   { key: 'timeline', label: 'Timeline', icon: Clock },
   { key: 'screenshots', label: 'Screenshots', icon: Camera },
   { key: 'projects', label: 'Projects', icon: KanbanSquare },
-  { key: 'timesheet', label: 'Timesheet', icon: Clock },
+  { key: 'employees', label: 'Employee Management', icon: Users },
   { key: 'attendance', label: 'Attendance', icon: CalendarCheck },
   { key: 'categories', label: 'Categories', icon: Tags },
   { key: 'team', label: 'Team & Invite', icon: UserPlus },
@@ -118,7 +118,7 @@ export default function ManagerDashboard({ manager, onLogout }) {
         )}
         {activeTab === 'screenshots' && <ScreenshotsView selectedUserId={selectedUserId} managerId={managerId} />}
         {activeTab === 'projects' && <ProjectsView managerId={managerId} team={team} />}
-        {activeTab === 'timesheet' && <TimesheetReviewView managerId={managerId} />}
+        {activeTab === 'employees' && <EmployeeManagementView managerId={managerId} team={team} onTeamChanged={loadTeam} />}
         {activeTab === 'attendance' && <AttendanceReviewView managerId={managerId} />}
         {activeTab === 'categories' && <CategoriesView managerId={managerId} />}
         {activeTab === 'team' && <TeamView managerId={managerId} team={team} onTeamChanged={loadTeam} />}

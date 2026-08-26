@@ -627,6 +627,13 @@ button:active { transform: translateY(1px); }
 .status-dot-idle { background: var(--status-warning); }
 .status-dot-offline { background: var(--idle); }
 
+.live-group-header {
+  background: rgba(255, 255, 255, 0.035);
+}
+.live-group-header td {
+  font-weight: 600;
+}
+
 .live-summary {
   display: flex;
   gap: 20px;

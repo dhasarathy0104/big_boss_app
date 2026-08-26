@@ -47,9 +47,9 @@ superadminRouter.post('/managers/:id/change-password', requireSuperAdmin, ah(asy
   if (email) {
     const emailTaken = await db.prepare('SELECT 1 FROM users WHERE email = ? AND id != ?').get(email, manager.id);
     if (emailTaken) return res.status(409).json({ error: 'that email is already registered' });
-    await db.prepare('UPDATE users SET password_hash = ?, email = ? WHERE id = ?').run(hashPassword(password), email, manager.id);
+    await db.prepare('UPDATE users SET password_hash = ?, email = ?, password_reset_requested_at = NULL WHERE id = ?').run(hashPassword(password), email, manager.id);
   } else {
-    await db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), manager.id);
+    await db.prepare('UPDATE users SET password_hash = ?, password_reset_requested_at = NULL WHERE id = ?').run(hashPassword(password), manager.id);
   }
   res.json({ ok: true });
 }));
@@ -75,12 +75,19 @@ superadminRouter.post('/employees/:id/transfer', requireSuperAdmin, ah(async (re
 // whom. No screenshot/activity data here — that's an employee-monitoring
 // concept, not something extended to overseeing admins themselves.
 superadminRouter.get('/overview', requireSuperAdmin, ah(async (req, res) => {
-  const managers = await db.prepare("SELECT id, name, created_at FROM users WHERE role = 'manager' ORDER BY name").all();
+  const managers = await db.prepare(`
+    SELECT id, name, email, mobile, department, job_role AS "jobRole", created_at,
+      (password_reset_requested_at IS NOT NULL) AS "passwordResetRequested"
+    FROM users WHERE role = 'manager' ORDER BY name
+  `).all();
   const admins = await Promise.all(managers.map(async (m) => {
     const employees = await db.prepare(`
       SELECT id, name FROM users WHERE role = 'employee' AND manager_id = ? ORDER BY name
     `).all(m.id);
-    return { id: m.id, name: m.name, createdAt: m.created_at, employeeCount: employees.length, employees };
+    return {
+      id: m.id, name: m.name, email: m.email, mobile: m.mobile, department: m.department, jobRole: m.jobRole,
+      passwordResetRequested: m.passwordResetRequested, createdAt: m.created_at, employeeCount: employees.length, employees,
+    };
   }));
   const totalEmployees = admins.reduce((sum, a) => sum + a.employeeCount, 0);
   res.json({ totalAdmins: admins.length, totalEmployees, admins });
@@ -98,7 +105,9 @@ function statusFor(latestEvent) {
 
 superadminRouter.get('/live-status', requireSuperAdmin, ah(async (req, res) => {
   const employees = await db.prepare(`
-    SELECT e.id, e.name, e.manager_id AS "managerId", m.name AS "managerName"
+    SELECT e.id, e.name, e.email, e.mobile, e.department, e.job_role AS "jobRole",
+      e.manager_id AS "managerId", m.name AS "managerName", m.email AS "managerEmail",
+      m.mobile AS "managerMobile", m.department AS "managerDepartment", m.job_role AS "managerJobRole"
     FROM users e JOIN users m ON m.id = e.manager_id
     WHERE e.role = 'employee'
     ORDER BY m.name, e.name
@@ -129,8 +138,16 @@ superadminRouter.get('/live-status', requireSuperAdmin, ah(async (req, res) => {
     result.push({
       id: emp.id,
       name: emp.name,
+      email: emp.email,
+      mobile: emp.mobile,
+      department: emp.department,
+      jobRole: emp.jobRole,
       managerId: emp.managerId,
       managerName: emp.managerName,
+      managerEmail: emp.managerEmail,
+      managerMobile: emp.managerMobile,
+      managerDepartment: emp.managerDepartment,
+      managerJobRole: emp.managerJobRole,
       status: statusFor(latestEvent),
       currentApp: latestEvent?.app_name ?? null,
       currentDomain: latestEvent?.domain ?? null,
