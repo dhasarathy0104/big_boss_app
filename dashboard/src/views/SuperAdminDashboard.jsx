@@ -61,15 +61,46 @@ const TABS = [
 const STATUS_LABEL = { active: 'Active', idle: 'Idle', offline: 'Offline' };
 const REFRESH_MS = 15_000;
 
-// Three-level drill-down, mirroring the card look of the manager's own Live
+// Four-level drill-down, mirroring the card look of the manager's own Live
 // tab: pick an admin (name only) -> see that admin's own details -> open
-// their employees (name + details each) -> click one to jump to Timeline.
+// their employees (name + summary each) -> click one to see THEIR full
+// details too, with an explicit choice to jump to Timeline/Screenshots
+// rather than navigating away the instant you click a name.
 function OverviewTab({ overview, onSelectMember }) {
   const [selectedAdminId, setSelectedAdminId] = useState(null);
   const [employeesOpen, setEmployeesOpen] = useState(false);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
   if (!overview) return null;
 
   const selectedAdmin = overview.admins.find((a) => a.id === selectedAdminId) ?? null;
+  const selectedEmployee = selectedAdmin?.employees.find((e) => e.id === selectedEmployeeId) ?? null;
+
+  if (selectedEmployee) {
+    return (
+      <div className="panel">
+        <button className="btn-small" onClick={() => setSelectedEmployeeId(null)} style={{ marginBottom: 14 }}>
+          &larr; {selectedAdmin.name}'s team
+        </button>
+        <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Avatar name={selectedEmployee.name} size={26} />
+          {selectedEmployee.name}
+        </h2>
+        <table>
+          <tbody>
+            <tr><th style={{ width: 110 }}>Email</th><td>{selectedEmployee.email || '—'}</td></tr>
+            <tr><th>Mobile</th><td>{selectedEmployee.mobile || '—'}</td></tr>
+            <tr><th>Role</th><td>{selectedEmployee.jobRole || 'Employee'}</td></tr>
+            <tr><th>Department</th><td>{selectedEmployee.department || '—'}</td></tr>
+            <tr><th>Reports to</th><td>{selectedAdmin.name}</td></tr>
+          </tbody>
+        </table>
+        <div className="inline-form" style={{ marginTop: 16 }}>
+          <button onClick={() => onSelectMember(selectedEmployee.id, 'timeline')}>View Timeline</button>
+          <button onClick={() => onSelectMember(selectedEmployee.id, 'screenshots')}>View Screenshots</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -105,7 +136,7 @@ function OverviewTab({ overview, onSelectMember }) {
                 <div
                   key={admin.id}
                   className="live-card"
-                  onClick={() => { setSelectedAdminId(admin.id); setEmployeesOpen(false); }}
+                  onClick={() => { setSelectedAdminId(admin.id); setEmployeesOpen(false); setSelectedEmployeeId(null); }}
                 >
                   <div className="live-card-top">
                     <Avatar name={admin.name} size={30} />
@@ -151,7 +182,7 @@ function OverviewTab({ overview, onSelectMember }) {
               ) : (
                 <div className="live-grid">
                   {selectedAdmin.employees.map((e) => (
-                    <div key={e.id} className="live-card" onClick={() => onSelectMember(e.id)}>
+                    <div key={e.id} className="live-card" onClick={() => setSelectedEmployeeId(e.id)}>
                       <div className="live-card-top">
                         <Avatar name={e.name} size={28} />
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -618,7 +649,7 @@ export default function SuperAdminDashboard({ user, onLogout }) {
         </div>
 
         {activeTab === 'overview' && (
-          <OverviewTab overview={overview} onSelectMember={(id) => { setSelectedUserId(id); setActiveTab('timeline'); }} />
+          <OverviewTab overview={overview} onSelectMember={(id, tab = 'timeline') => { setSelectedUserId(id); setActiveTab(tab); }} />
         )}
         {activeTab === 'live' && (
           <LiveTab onSelectMember={(id) => { setSelectedUserId(id); setActiveTab('timeline'); }} />
