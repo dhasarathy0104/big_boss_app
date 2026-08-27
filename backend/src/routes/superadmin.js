@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { requireSuperAdmin, hashPassword } from '../auth.js';
 import { buildOverrideMaps, computeProductivity } from '../productivity.js';
+import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
 
 export const superadminRouter = Router();
@@ -52,6 +53,46 @@ superadminRouter.post('/managers/:id/change-password', requireSuperAdmin, ah(asy
     await db.prepare('UPDATE users SET password_hash = ?, password_reset_requested_at = NULL WHERE id = ?').run(hashPassword(password), manager.id);
   }
   res.json({ ok: true });
+}));
+
+// Super admin can view/set any manager's tracking hours directly — same
+// server-side-only enforcement as a manager setting it for themselves
+// (see /api/ingest/* in server.js), just not limited to your own team.
+superadminRouter.get('/managers/:id/settings', requireSuperAdmin, ah(async (req, res) => {
+  const manager = await db.prepare(
+    "SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE id = ? AND role = 'manager'"
+  ).get(req.params.id);
+  if (!manager) return res.status(404).json({ error: 'manager not found' });
+  res.json({
+    screenshotIntervalMinutes: manager.screenshot_interval_minutes,
+    trackingStartTime: manager.tracking_start_time,
+    trackingEndTime: manager.tracking_end_time,
+  });
+}));
+
+superadminRouter.patch('/managers/:id/settings', requireSuperAdmin, ah(async (req, res) => {
+  const manager = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'manager'").get(req.params.id);
+  if (!manager) return res.status(404).json({ error: 'manager not found' });
+
+  const start = req.body.trackingStartTime ?? null;
+  const end = req.body.trackingEndTime ?? null;
+  if (!isValidHHMMOrEmpty(start) || !isValidHHMMOrEmpty(end)) {
+    return res.status(400).json({ error: 'tracking hours must be in HH:MM (24-hour) format, or blank' });
+  }
+  if ((start && !end) || (!start && end)) {
+    return res.status(400).json({ error: 'set both a start and end time, or leave both blank' });
+  }
+  await db.prepare('UPDATE users SET tracking_start_time = ?, tracking_end_time = ? WHERE id = ?')
+    .run(start || null, end || null, manager.id);
+
+  const updated = await db.prepare(
+    'SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE id = ?'
+  ).get(manager.id);
+  res.json({
+    screenshotIntervalMinutes: updated.screenshot_interval_minutes,
+    trackingStartTime: updated.tracking_start_time,
+    trackingEndTime: updated.tracking_end_time,
+  });
 }));
 
 // Org-wide employee transfer — unlike a manager's own team-transfer route,

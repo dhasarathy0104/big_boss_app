@@ -3,7 +3,7 @@ import { LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Co
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
 import TimelineView from './TimelineView.jsx';
-import ScreenshotsView from './ScreenshotsView.jsx';
+import ScreenshotsView, { TrackingHoursControl } from './ScreenshotsView.jsx';
 
 const TASK_STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', review: 'Review', done: 'Done' };
 
@@ -563,6 +563,28 @@ function TransferEmployeePanel({ overview, onTransferred }) {
   );
 }
 
+function SetTrackingHoursPanel({ overview }) {
+  const [managerId, setManagerId] = useState('');
+  return (
+    <>
+      <div className="panel">
+        <h2>Set an admin's tracking hours</h2>
+        <p className="join-sub" style={{ marginTop: 0 }}>
+          Same effect as an admin setting this for themselves — outside the window, activity and
+          screenshots are discarded on arrival rather than stored. No agent update needed.
+        </p>
+        <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
+          <option value="">Select admin…</option>
+          {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      </div>
+      {managerId && (
+        <TrackingHoursControl managerId={managerId} settingsUrl={`/api/superadmin/managers/${managerId}/settings`} />
+      )}
+    </>
+  );
+}
+
 function ManageTab({ overview, onChanged }) {
   const requested = (overview?.admins ?? []).filter((a) => a.passwordResetRequested);
   return (
@@ -581,6 +603,7 @@ function ManageTab({ overview, onChanged }) {
       )}
       <CreateAdminPanel onCreated={onChanged} />
       <ChangeAdminPasswordPanel overview={overview} />
+      <SetTrackingHoursPanel overview={overview} />
       <TransferEmployeePanel overview={overview} onTransferred={onChanged} />
     </>
   );

@@ -20,6 +20,7 @@ import { billingRouter } from './routes/billing.js';
 import { authRouter } from './routes/auth.js';
 import { superadminRouter } from './routes/superadmin.js';
 import { requireAuth, isSelfOrOwnEmployee, hashPassword } from './auth.js';
+import { isWithinTrackingWindow } from './trackingWindow.js';
 
 function normalizeEmail(raw) {
   return (raw ?? '').trim().toLowerCase();
@@ -101,10 +102,20 @@ app.post('/api/enroll', ah(async (req, res) => {
   });
 }));
 
-// Batched activity events from the agent.
+// Batched activity events from the agent. If the employee's manager has set
+// tracking hours, any event starting outside that window is silently
+// dropped here — the agent has no idea this happens, it just keeps sending;
+// server-side is the only place enforcing the schedule (no agent update
+// needed to turn this on for already-installed agents).
 app.post('/api/ingest/activity', authUser, ah(async (req, res) => {
   const { events } = req.body;
   if (!Array.isArray(events)) return res.status(400).json({ error: 'events array required' });
+
+  const manager = req.user.manager_id
+    ? await db.prepare('SELECT tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(req.user.manager_id)
+    : null;
+  const inWindow = (startedAt) => isWithinTrackingWindow(startedAt, manager?.tracking_start_time, manager?.tracking_end_time);
+  const acceptedEvents = events.filter((e) => inWindow(e.startedAt));
 
   await withTransaction(async (tx) => {
     const insert = tx.prepare(`
@@ -113,7 +124,7 @@ app.post('/api/ingest/activity', authUser, ah(async (req, res) => {
       VALUES (@user_id, @client_event_id, @app_name, @window_title, @domain, @started_at, @ended_at, @input_count, @is_idle)
       ON CONFLICT (user_id, client_event_id) DO NOTHING
     `);
-    for (const e of events) {
+    for (const e of acceptedEvents) {
       await insert.run({
         user_id: req.user.id,
         client_event_id: e.clientEventId,
@@ -127,13 +138,24 @@ app.post('/api/ingest/activity', authUser, ah(async (req, res) => {
       });
     }
   });
-  res.json({ accepted: events.length });
+  res.json({ accepted: acceptedEvents.length });
 }));
 
 // Screenshot upload (base64 PNG/JPEG in JSON body — fine at prototype volume).
+// Same server-side tracking-hours filter as activity ingest: a screenshot
+// captured outside the manager's configured window is accepted (so the
+// agent doesn't see an error) but never actually stored.
 app.post('/api/ingest/screenshot', authUser, ah(async (req, res) => {
   const { capturedAt, appName, windowTitle, imageBase64, ext } = req.body;
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
+
+  const effectiveCapturedAt = capturedAt ?? new Date().toISOString();
+  const manager = req.user.manager_id
+    ? await db.prepare('SELECT tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(req.user.manager_id)
+    : null;
+  if (!isWithinTrackingWindow(effectiveCapturedAt, manager?.tracking_start_time, manager?.tracking_end_time)) {
+    return res.json({ ok: true, stored: false });
+  }
 
   const fileExt = ext === 'png' ? 'png' : 'jpg';
   const fileName = `${req.user.id}_${Date.now()}.${fileExt}`;
@@ -141,9 +163,9 @@ app.post('/api/ingest/screenshot', authUser, ah(async (req, res) => {
   await db.prepare(`
     INSERT INTO screenshots (user_id, captured_at, file_path, app_name, window_title, image_data)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(req.user.id, capturedAt ?? new Date().toISOString(), fileName, appName ?? null, windowTitle ?? null, imageBase64);
+  `).run(req.user.id, effectiveCapturedAt, fileName, appName ?? null, windowTitle ?? null, imageBase64);
 
-  res.json({ ok: true });
+  res.json({ ok: true, stored: true });
 }));
 
 // Agent checks this periodically so a manager's interval change takes effect
@@ -151,9 +173,17 @@ app.post('/api/ingest/screenshot', authUser, ah(async (req, res) => {
 app.get('/api/agent-settings', authUser, ah(async (req, res) => {
   const managerId = req.user.manager_id;
   const manager = managerId
-    ? await db.prepare('SELECT screenshot_interval_minutes FROM users WHERE id = ?').get(managerId)
+    ? await db.prepare('SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(managerId)
     : null;
-  res.json({ screenshotIntervalMinutes: manager?.screenshot_interval_minutes ?? 5 });
+  res.json({
+    screenshotIntervalMinutes: manager?.screenshot_interval_minutes ?? 5,
+    // Not enforced by the currently-installed agent — enforcement lives
+    // server-side (see /api/ingest/*) so this works without an agent
+    // update. Exposed here anyway so a future agent version can save a
+    // battery/CPU cost by not polling outside the window at all.
+    trackingStartTime: manager?.tracking_start_time ?? null,
+    trackingEndTime: manager?.tracking_end_time ?? null,
+  });
 }));
 
 // --- Dashboard read endpoints ---

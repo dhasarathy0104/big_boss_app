@@ -63,6 +63,92 @@ function IntervalControl({ managerId }) {
   );
 }
 
+export function TrackingHoursControl({ managerId, settingsUrl }) {
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
+  const [enabled, setEnabled] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!managerId) return;
+    fetch(settingsUrl).then((r) => r.json()).then((d) => {
+      setStart(d.trackingStartTime || '');
+      setEnd(d.trackingEndTime || '');
+      setEnabled(!!(d.trackingStartTime && d.trackingEndTime));
+      setLoaded(true);
+    });
+  }, [managerId, settingsUrl]);
+
+  async function save(nextStart, nextEnd) {
+    setError('');
+    setSaving(true);
+    setSaved(false);
+    const res = await fetch(settingsUrl, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ trackingStartTime: nextStart, trackingEndTime: nextEnd }),
+    });
+    setSaving(false);
+    if (!res.ok) { setError((await res.json()).error); return; }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }
+
+  function toggle(on) {
+    setEnabled(on);
+    if (!on) {
+      setStart(''); setEnd('');
+      save('', '');
+    } else if (start && end) {
+      save(start, end);
+    }
+  }
+
+  if (!loaded) return null;
+
+  return (
+    <div className="panel">
+      <h2>Tracking hours</h2>
+      <p className="join-sub" style={{ marginTop: 0 }}>
+        When set, activity and screenshots are only kept for time inside this window — the agent keeps
+        running as before, but anything outside these hours is discarded on arrival, never stored. Times
+        are in IST, 24-hour format.
+      </p>
+      <div className="inline-form">
+        <label className="shot-meta" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input type="checkbox" checked={enabled} onChange={(e) => toggle(e.target.checked)} />
+          Restrict to a window
+        </label>
+        {enabled && (
+          <>
+            <input
+              type="time"
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+              onBlur={() => start && end && save(start, end)}
+              style={{ width: 120 }}
+            />
+            <span className="shot-meta">to</span>
+            <input
+              type="time"
+              value={end}
+              onChange={(e) => setEnd(e.target.value)}
+              onBlur={() => start && end && save(start, end)}
+              style={{ width: 120 }}
+            />
+          </>
+        )}
+        {saving && <span className="shot-meta">Saving…</span>}
+        {saved && <span className="shot-meta" style={{ color: 'var(--status-good)' }}>Saved</span>}
+      </div>
+      {error && <div style={{ color: '#e07070', fontSize: 12, marginTop: 6 }}>{error}</div>}
+    </div>
+  );
+}
+
 export default function ScreenshotsView({ selectedUserId, managerId, canDelete }) {
   const [date, setDate] = useState(todayStr());
   const [shots, setShots] = useState([]);
@@ -106,6 +192,7 @@ export default function ScreenshotsView({ selectedUserId, managerId, canDelete }
   return (
     <>
       <IntervalControl managerId={managerId} />
+      {managerId && <TrackingHoursControl managerId={managerId} settingsUrl={`/api/managers/${managerId}/settings`} />}
 
       {!selectedUserId ? (
         <div className="panel"><div className="empty">Select someone from your team on the left.</div></div>

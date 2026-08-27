@@ -247,6 +247,12 @@ await ensureColumn('users', 'job_role', 'job_role TEXT');
 // request to their manager (Employee Management tab) or the super admin
 // (Manage Admins tab), who sets a new password directly and clears this.
 await ensureColumn('users', 'password_reset_requested_at', 'password_reset_requested_at TEXT');
+// Manager-set tracking window ("HH:MM", 24h, IST) — server-side only for
+// now: the agent keeps polling/capturing around the clock regardless, but
+// activity and screenshots timestamped outside this window are never
+// stored. NULL on either means no restriction (track around the clock).
+await ensureColumn('users', 'tracking_start_time', 'tracking_start_time TEXT');
+await ensureColumn('users', 'tracking_end_time', 'tracking_end_time TEXT');
 
 export function randomToken(bytes = 12) {
   return crypto.randomBytes(bytes).toString('hex');

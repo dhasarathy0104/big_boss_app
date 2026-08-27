@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import { db, randomToken } from '../db.js';
 import { requireManager, requireManagerSelf, hashPassword } from '../auth.js';
+import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
 
 export const managersRouter = Router();
@@ -81,18 +82,58 @@ managersRouter.post('/:id/invites/:inviteId/revoke', requireManagerSelf, ah(asyn
 }));
 
 managersRouter.get('/:id/settings', requireManagerSelf, ah(async (req, res) => {
-  const manager = await db.prepare('SELECT screenshot_interval_minutes FROM users WHERE id = ?').get(req.params.id);
-  res.json({ screenshotIntervalMinutes: manager.screenshot_interval_minutes });
+  const manager = await db.prepare(
+    'SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE id = ?'
+  ).get(req.params.id);
+  res.json({
+    screenshotIntervalMinutes: manager.screenshot_interval_minutes,
+    trackingStartTime: manager.tracking_start_time,
+    trackingEndTime: manager.tracking_end_time,
+  });
 }));
 
+// Tracking hours are enforced server-side only (see /api/ingest/* in
+// server.js) — an already-installed agent needs no update or restart for a
+// change here to take effect; it just stops seeing its own uploads stored
+// outside the window. Send an empty string for either time to clear it
+// back to "no restriction, track around the clock."
 managersRouter.patch('/:id/settings', requireManagerSelf, ah(async (req, res) => {
-  const { screenshotIntervalMinutes } = req.body;
-  const minutes = Number(screenshotIntervalMinutes);
-  if (!Number.isInteger(minutes) || minutes < 0 || minutes > 240) {
-    return res.status(400).json({ error: 'screenshotIntervalMinutes must be an integer between 0 (off) and 240' });
+  const updates = [];
+  const values = [];
+
+  if ('screenshotIntervalMinutes' in req.body) {
+    const minutes = Number(req.body.screenshotIntervalMinutes);
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 240) {
+      return res.status(400).json({ error: 'screenshotIntervalMinutes must be an integer between 0 (off) and 240' });
+    }
+    updates.push('screenshot_interval_minutes = ?');
+    values.push(minutes);
   }
-  await db.prepare('UPDATE users SET screenshot_interval_minutes = ? WHERE id = ?').run(minutes, req.params.id);
-  res.json({ screenshotIntervalMinutes: minutes });
+  if ('trackingStartTime' in req.body || 'trackingEndTime' in req.body) {
+    const start = req.body.trackingStartTime ?? null;
+    const end = req.body.trackingEndTime ?? null;
+    if (!isValidHHMMOrEmpty(start) || !isValidHHMMOrEmpty(end)) {
+      return res.status(400).json({ error: 'tracking hours must be in HH:MM (24-hour) format, or blank' });
+    }
+    if ((start && !end) || (!start && end)) {
+      return res.status(400).json({ error: 'set both a start and end time, or leave both blank' });
+    }
+    updates.push('tracking_start_time = ?', 'tracking_end_time = ?');
+    values.push(start || null, end || null);
+  }
+  if (updates.length === 0) return res.status(400).json({ error: 'nothing to update' });
+
+  values.push(req.params.id);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+
+  const manager = await db.prepare(
+    'SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE id = ?'
+  ).get(req.params.id);
+  res.json({
+    screenshotIntervalMinutes: manager.screenshot_interval_minutes,
+    trackingStartTime: manager.tracking_start_time,
+    trackingEndTime: manager.tracking_end_time,
+  });
 }));
 
 // Generates (or regenerates) a one-time link an employee uses to set their own
