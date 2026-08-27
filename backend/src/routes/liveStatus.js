@@ -24,22 +24,39 @@ liveStatusRouter.get('/:managerId/live-status', requireManager, ah(async (req, r
     SELECT id, name, email, mobile, department, job_role AS "jobRole"
     FROM users WHERE manager_id = ? AND role = 'employee' ORDER BY name
   `).all(req.params.managerId);
+  if (team.length === 0) return res.json([]);
 
+  const ids = team.map((m) => m.id);
   const rules = await db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(req.params.managerId);
   const overrides = buildOverrideMaps(rules);
   const today = new Date().toISOString().slice(0, 10);
 
-  const result = await Promise.all(team.map(async (member) => {
-    const latestEvent = await db.prepare(`
-      SELECT * FROM activity_events WHERE user_id = ? ORDER BY ended_at DESC LIMIT 1
-    `).get(member.id);
-
-    const todaysEvents = await db.prepare(`
+  // Two queries for the whole team instead of two per member — at team
+  // sizes in the hundreds, the old per-member Promise.all() loop fired
+  // hundreds of small round trips every 15s (once per open Live tab),
+  // which queues up behind the connection pool under real load.
+  const [latestEvents, todaysEvents] = await Promise.all([
+    db.prepare(`
+      SELECT DISTINCT ON (user_id) * FROM activity_events
+      WHERE user_id = ANY(?) ORDER BY user_id, ended_at DESC
+    `).all(ids),
+    db.prepare(`
       SELECT * FROM activity_events
-      WHERE user_id = ? AND started_at >= ? AND started_at < ?
-      ORDER BY started_at
-    `).all(member.id, `${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`);
-    const productivity = computeProductivity(todaysEvents, overrides);
+      WHERE user_id = ANY(?) AND started_at >= ? AND started_at < ?
+      ORDER BY user_id, started_at
+    `).all(ids, `${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`),
+  ]);
+
+  const latestByUser = new Map(latestEvents.map((e) => [e.user_id, e]));
+  const eventsByUser = new Map();
+  for (const e of todaysEvents) {
+    if (!eventsByUser.has(e.user_id)) eventsByUser.set(e.user_id, []);
+    eventsByUser.get(e.user_id).push(e);
+  }
+
+  const result = team.map((member) => {
+    const latestEvent = latestByUser.get(member.id);
+    const productivity = computeProductivity(eventsByUser.get(member.id) ?? [], overrides);
 
     return {
       id: member.id,
@@ -55,7 +72,7 @@ liveStatusRouter.get('/:managerId/live-status', requireManager, ah(async (req, r
       todayScore: productivity.score,
       todayActiveMinutes: Math.round(productivity.totals.productive + productivity.totals.neutral + productivity.totals.unproductive + productivity.totals.engaged),
     };
-  }));
+  });
 
   res.json(result);
 }));

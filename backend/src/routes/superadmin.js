@@ -114,27 +114,44 @@ superadminRouter.get('/live-status', requireSuperAdmin, ah(async (req, res) => {
     ORDER BY m.name, e.name
   `).all();
 
+  if (employees.length === 0) return res.json([]);
+
+  const ids = employees.map((e) => e.id);
+  const managerIds = [...new Set(employees.map((e) => e.managerId))];
   const today = new Date().toISOString().slice(0, 10);
-  const rulesByManager = new Map();
-  const result = [];
 
-  for (const emp of employees) {
-    const latestEvent = await db.prepare(`
-      SELECT * FROM activity_events WHERE user_id = ? ORDER BY ended_at DESC LIMIT 1
-    `).get(emp.id);
-
-    if (!rulesByManager.has(emp.managerId)) {
-      const rules = await db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(emp.managerId);
-      rulesByManager.set(emp.managerId, buildOverrideMaps(rules));
-    }
-    const overrides = rulesByManager.get(emp.managerId);
-
-    const todaysEvents = await db.prepare(`
+  // Same batching as the manager's own /live-status: a handful of queries
+  // for the whole org instead of several per employee, which used to fire
+  // hundreds of small round trips per poll at real org sizes.
+  const [allRules, latestEvents, todaysEvents] = await Promise.all([
+    db.prepare('SELECT * FROM category_rules WHERE manager_id = ANY(?)').all(managerIds),
+    db.prepare(`
+      SELECT DISTINCT ON (user_id) * FROM activity_events
+      WHERE user_id = ANY(?) ORDER BY user_id, ended_at DESC
+    `).all(ids),
+    db.prepare(`
       SELECT * FROM activity_events
-      WHERE user_id = ? AND started_at >= ? AND started_at < ?
-      ORDER BY started_at
-    `).all(emp.id, `${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`);
-    const productivity = computeProductivity(todaysEvents, overrides);
+      WHERE user_id = ANY(?) AND started_at >= ? AND started_at < ?
+      ORDER BY user_id, started_at
+    `).all(ids, `${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`),
+  ]);
+
+  const rulesByManager = new Map();
+  for (const managerId of managerIds) {
+    rulesByManager.set(managerId, buildOverrideMaps(allRules.filter((r) => r.manager_id === managerId)));
+  }
+  const latestByUser = new Map(latestEvents.map((e) => [e.user_id, e]));
+  const eventsByUser = new Map();
+  for (const e of todaysEvents) {
+    if (!eventsByUser.has(e.user_id)) eventsByUser.set(e.user_id, []);
+    eventsByUser.get(e.user_id).push(e);
+  }
+
+  const result = [];
+  for (const emp of employees) {
+    const latestEvent = latestByUser.get(emp.id);
+    const overrides = rulesByManager.get(emp.managerId);
+    const productivity = computeProductivity(eventsByUser.get(emp.id) ?? [], overrides);
 
     result.push({
       id: emp.id,
