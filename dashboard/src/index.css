@@ -25,13 +25,14 @@
      glassy ground. Red/green (productive/unproductive) still fail raw CVD
      separation, expected for a good/bad pair; every use pairs the color
      with a visible text label, the documented mitigation for that case.
-     Idle is teal — deliberately not a grey, so it reads as its own category
-     rather than "uncategorized." */
+     Idle is slate grey — was teal before, but teal read as green next to
+     --productive/--status-good at a glance (status dots, timeline segments),
+     so it's now a clearly distinct neutral instead. */
   --productive: #10b981;
   --unproductive: #e11d48;
   --neutral: #4f7cf0;
   --engaged: #8b5cf6;
-  --idle: #0d9488;
+  --idle: #64748b;
 
   --status-good: #10b981;
   --status-warning: #f59e0b;
