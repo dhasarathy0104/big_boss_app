@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 
 const COLUMNS = [
   { key: 'todo', label: 'To do' },
@@ -76,6 +77,11 @@ export default function ProjectsView({ managerId, team }) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ status }),
     });
+  }
+
+  async function removeTask(taskId) {
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
   }
 
   function memberName(id) {
@@ -173,8 +179,17 @@ export default function ProjectsView({ managerId, team }) {
                     className="kanban-card"
                     draggable
                     onDragStart={(e) => e.dataTransfer.setData('text/task-id', String(t.id))}
+                    style={{ position: 'relative' }}
                   >
-                    <div>{t.title}</div>
+                    <button
+                      className="btn-small"
+                      title="Remove task"
+                      onClick={() => removeTask(t.id)}
+                      style={{ position: 'absolute', top: 6, right: 6, padding: 2, lineHeight: 0 }}
+                    >
+                      <X size={12} />
+                    </button>
+                    <div style={{ paddingRight: 20 }}>{t.title}</div>
                     <div className="shot-meta">{memberName(t.assignee_user_id)}</div>
                   </div>
                 ))}

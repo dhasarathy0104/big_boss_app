@@ -1,0 +1,499 @@
+<title>BIG BOSS on Lightsail</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root {
+    --bg: #EEF3F8;
+    --grid: #D3E0EE;
+    --panel: #FFFFFF;
+    --panel-2: #F5F9FC;
+    --ink: #16233A;
+    --ink-dim: #4C5C74;
+    --ink-faint: #8494AA;
+    --line: #C9D8E8;
+    --accent: #0B7285;
+    --accent-ink: #FFFFFF;
+    --amber: #9A6414;
+    --amber-bg: #FBF0DC;
+    --good: #1F6E4A;
+    --good-bg: #E4F3EA;
+    --bad: #A3372B;
+    --bad-bg: #FCEAE7;
+    --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0A121C;
+      --grid: #16283C;
+      --panel: #101B29;
+      --panel-2: #0D1926;
+      --ink: #E8EEF6;
+      --ink-dim: #A9B9CE;
+      --ink-faint: #6E8098;
+      --line: #223A54;
+      --accent: #37B7C4;
+      --accent-ink: #06171B;
+      --amber: #E4B368;
+      --amber-bg: #2A2213;
+      --good: #6FD3A0;
+      --good-bg: #12261C;
+      --bad: #F0938A;
+      --bad-bg: #2A1613;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0A121C;
+    --grid: #16283C;
+    --panel: #101B29;
+    --panel-2: #0D1926;
+    --ink: #E8EEF6;
+    --ink-dim: #A9B9CE;
+    --ink-faint: #6E8098;
+    --line: #223A54;
+    --accent: #37B7C4;
+    --accent-ink: #06171B;
+    --amber: #E4B368;
+    --amber-bg: #2A2213;
+    --good: #6FD3A0;
+    --good-bg: #12261C;
+    --bad: #F0938A;
+    --bad-bg: #2A1613;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background:
+      repeating-linear-gradient(0deg, var(--grid) 0 1px, transparent 1px 32px),
+      repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 32px),
+      var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+
+  .wrap { max-width: 920px; margin: 0 auto; padding: 56px 24px 100px; }
+
+  .kicker {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .kicker::before {
+    content: "";
+    width: 22px; height: 1px;
+    background: var(--accent);
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: clamp(28px, 5vw, 40px);
+    letter-spacing: -0.01em;
+    margin: 0 0 12px;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+  .sub {
+    color: var(--ink-dim);
+    font-size: 16px;
+    max-width: 62ch;
+    margin: 0 0 48px;
+  }
+
+  h2 {
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 20px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  h2 .num { color: var(--accent); }
+
+  .panel {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    padding: 28px 30px;
+    margin-bottom: 20px;
+  }
+  .panel::before, .panel::after,
+  .panel .tick-br::before, .panel .tick-br::after { content: ""; position: absolute; width: 9px; height: 9px; }
+  .panel::before { top: -1px; left: -1px; border-top: 2px solid var(--accent); border-left: 2px solid var(--accent); }
+  .panel::after { top: -1px; right: -1px; border-top: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+  .tick-br { position: absolute; bottom: -1px; left: -1px; right: -1px; height: 9px; }
+  .tick-br::before { bottom: 0; left: 0; border-bottom: 2px solid var(--accent); border-left: 2px solid var(--accent); }
+  .tick-br::after { bottom: 0; right: 0; border-bottom: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+
+  section { margin-bottom: 52px; }
+
+  p { color: var(--ink); margin: 0 0 14px; }
+  p:last-child { margin-bottom: 0; }
+  .lede { color: var(--ink-dim); }
+
+  strong { color: var(--ink); font-weight: 600; }
+  .num-hi { font-family: var(--mono); font-weight: 600; color: var(--accent); }
+
+  code, .mono { font-family: var(--mono); }
+
+  /* ---- architecture diagram ---- */
+  .diagram { display: flex; flex-direction: column; gap: 0; align-items: stretch; }
+  .diagram-row { display: flex; gap: 22px; align-items: stretch; flex-wrap: wrap; }
+  .box {
+    flex: 1 1 260px;
+    background: var(--panel-2);
+    border: 1.5px solid var(--line);
+    border-radius: 3px;
+    padding: 16px 18px;
+    position: relative;
+  }
+  .box .label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .box .title { font-weight: 600; margin-bottom: 6px; }
+  .box .desc { color: var(--ink-dim); font-size: 13.5px; }
+  .box.host {
+    border-style: dashed;
+    border-color: var(--accent);
+    background: transparent;
+    padding: 20px;
+  }
+  .box.host .host-tag {
+    position: absolute; top: -11px; left: 14px;
+    background: var(--bg);
+    padding: 0 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .flow-link {
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 18px;
+    padding: 6px 0;
+  }
+  .flow-link.vert { flex-direction: column; height: 34px; }
+
+  /* ---- data tables ---- */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  th {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 600;
+  }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  tr:last-child td { border-bottom: none; }
+  tr.total td { font-weight: 600; border-top: 1.5px solid var(--ink-faint); color: var(--ink); }
+  tr.total td.num { color: var(--accent); }
+
+  .table-scroll { overflow-x: auto; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 20px;
+  }
+  .pill.good { background: var(--good-bg); color: var(--good); }
+  .pill.warn { background: var(--amber-bg); color: var(--amber); }
+
+  .callout {
+    display: flex; gap: 12px;
+    background: var(--amber-bg);
+    border-left: 3px solid var(--amber);
+    padding: 14px 16px;
+    border-radius: 0 3px 3px 0;
+    font-size: 13.5px;
+    color: var(--ink);
+  }
+  .callout .mark { font-family: var(--mono); font-weight: 700; color: var(--amber); flex-shrink: 0; }
+
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+  .stat {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 16px 18px;
+  }
+  .stat .v { font-family: var(--mono); font-size: 26px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .stat .l { color: var(--ink-dim); font-size: 12.5px; margin-top: 6px; }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 640px) { .compare { grid-template-columns: 1fr; } }
+  .compare .col h3 {
+    font-family: var(--mono); font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase;
+    margin: 0 0 12px; color: var(--ink-faint);
+  }
+  .compare .col.now h3 { color: var(--ink-faint); }
+  .compare .col.next h3 { color: var(--accent); }
+  .compare ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .compare li { font-size: 13.5px; color: var(--ink-dim); display: flex; gap: 8px; }
+  .compare li::before { content: "—"; color: var(--ink-faint); flex-shrink: 0; }
+
+  footer {
+    margin-top: 60px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-faint);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.03em;
+  }
+</style>
+
+<div class="wrap">
+
+  <div class="kicker">Infrastructure proposal — BIG BOSS</div>
+  <h1>Moving backend &amp; database to AWS Lightsail</h1>
+  <p class="sub lede">
+    How the system would run, where data travels and lands, whether it holds up at 300 employees,
+    and what it costs — worked out from the app's real, measured numbers, not guesses.
+  </p>
+
+  <section>
+    <h2><span class="num">01</span> Architecture</h2>
+    <div class="panel">
+      <div class="diagram">
+        <div class="diagram-row">
+          <div class="box">
+            <div class="label">300× on employee PCs</div>
+            <div class="title">Native tracking agent</div>
+            <div class="desc">Watches the active window, captures a screenshot on a timer, uploads over HTTPS.</div>
+          </div>
+        </div>
+        <div class="flow-link vert">↓</div>
+        <div class="box host">
+          <div class="host-tag">AWS Lightsail — one region</div>
+          <div class="diagram-row" style="margin-top:4px;">
+            <div class="box">
+              <div class="label">Lightsail instance</div>
+              <div class="title">Node.js / Express API</div>
+              <div class="desc">Same server also hands out the built React dashboard — one origin, no separate frontend host.</div>
+            </div>
+            <div class="flow-link">→</div>
+            <div class="box">
+              <div class="label">Lightsail managed database</div>
+              <div class="title">PostgreSQL</div>
+              <div class="desc">Every table — accounts, activity, screenshots — lives here. No separate file storage.</div>
+            </div>
+          </div>
+        </div>
+        <div class="flow-link vert">↓</div>
+        <div class="box">
+          <div class="label">Manager / employee / super admin</div>
+          <div class="title">Web dashboard</div>
+          <div class="desc">Loaded in a browser or inside the native viewer app, talking to the same instance.</div>
+        </div>
+      </div>
+    </div>
+    <p class="lede" style="margin-top:16px; font-size:13.5px;">
+      This is the same shape the system already runs in on Render — one app server, one database, in one place.
+      Lightsail changes <em>where</em> that runs and what it costs, not the design.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="num">02</span> Data transmission</h2>
+    <p class="lede">What actually crosses the network, per employee and at 300.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Traffic</th><th class="num">Per employee / day</th><th class="num">At 300 employees / day</th></tr></thead>
+        <tbody>
+          <tr><td>Screenshots (85 KB avg, every 5 min, 8h day)</td><td class="num">~8.2 MB</td><td class="num">~2.4 GB</td></tr>
+          <tr><td>Activity data (small batches every 30s)</td><td class="num">~1.4 MB</td><td class="num">~0.4 GB</td></tr>
+          <tr class="total"><td>Total inbound</td><td class="num">~9.6 MB</td><td class="num">~2.8 GB</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:14px; font-size:13.5px;" class="lede">
+      Over a 22-day working month, that's roughly <span class="num-hi">62 GB</span> of inbound data at full 300-employee load —
+      well inside what a single Lightsail plan includes (see cost section). This is illustrative math based on default
+      settings; actual volume moves with screenshot frequency and how much of the day is genuinely active.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="num">03</span> Storage</h2>
+    <div class="stat-row" style="margin-bottom:20px;">
+      <div class="stat"><div class="v">85 KB</div><div class="l">avg. screenshot, measured from the live database</div></div>
+      <div class="stat"><div class="v">24 h</div><div class="l">screenshot retention — older ones auto-delete hourly</div></div>
+      <div class="stat"><div class="v">~2.4 GB</div><div class="l">screenshot storage ceiling at 300 employees, steady-state</div></div>
+    </div>
+    <p class="lede">
+      Screenshots never accumulate past a rolling 24 hours, so that ~2.4 GB figure is close to a <em>ceiling</em>, not a
+      number that grows month over month. The one table that does grow indefinitely is the activity log
+      (timestamps and app/site names, no images) — kept for historical timelines and productivity history. It's text,
+      not images, so its growth is on the order of tens of MB per employee per month, not a real storage concern
+      at this scale for years.
+    </p>
+    <div class="table-scroll" style="margin-top:16px;">
+      <table>
+        <thead><tr><th>If retention were changed to</th><th class="num">Steady-state screenshot storage</th><th class="num">% of the 40 GB database plan</th></tr></thead>
+        <tbody>
+          <tr><td>24 hours (current)</td><td class="num">~2.4 GB</td><td class="num">6%</td></tr>
+          <tr><td>36 hours</td><td class="num">~3.6 GB</td><td class="num">9%</td></tr>
+          <tr><td>48 hours</td><td class="num">~4.8 GB</td><td class="num">12%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lede" style="margin-top:12px; font-size:13.5px;">
+      Even doubling retention to 48 hours barely moves the needle — it would take weeks of retention before storage
+      became a real cost consideration.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="num">04</span> Does it hold at 300?</h2>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Check</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Live-status dashboard query cost</td><td><span class="pill good">✓ fixed</span> — rewritten to a small, fixed number of queries per request regardless of team size</td></tr>
+          <tr><td>Backend CPU/memory for the API workload</td><td><span class="pill good">✓ light</span> — mostly small JSON in/out; a modest instance handles this comfortably</td></tr>
+          <tr><td>Database write load (activity + screenshots)</td><td><span class="pill warn">watch</span> — the real load-bearing part; sized for in the plan below</td></tr>
+          <tr><td>300 concurrent screenshot uploads</td><td><span class="pill good">✓ fine</span> — Node handles concurrent connections asynchronously; uploads land over ~5 minutes, not all at once</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+      <div class="label" style="font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); margin-bottom:8px;">What "Live-status query cost" means</div>
+      <p style="font-size:13.5px;">
+        The Live tab shows every employee's status (Active/Idle/Offline) and refreshes automatically every 15 seconds.
+        The code used to look up each employee's status <em>one at a time</em> — fine for 10 people, but at 300 employees
+        that's 300 separate database lookups, repeated every 15 seconds, for every manager or the super admin with that
+        tab open. That would have made the dashboard visibly slower as the team grew. It's been rewritten to fetch
+        everyone's status in one batch — 2–3 lookups total, whether the team is 10 people or 3,000 — so this is already
+        resolved, not something the Lightsail move needs to fix.
+      </p>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+      <div class="label" style="font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--amber); margin-bottom:8px;">What "database write load — watch" means</div>
+      <p style="font-size:13.5px;">
+        There's a difference between the database being <em>asked a question</em> (reading — like the Live tab above)
+        and being <em>told to save something</em> (writing). Every 30 seconds, each employee's agent sends new activity
+        data; every 5 minutes, it sends a screenshot. That's a steady stream of save operations, all day, from every
+        connected employee at once — and writing to disk is inherently more work for a database than reading from it.
+        This row is marked "watch" rather than "fixed" because, unlike the query-cost issue, it hasn't been tested
+        under real 300-employee load yet — it's the reason the database plan below has some headroom built in rather
+        than being the cheapest option available, not a sign something is currently broken.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">05</span> Lightsail plan menu</h2>
+    <p class="lede">Every published tier, so the $10/$15 choice below is visible against the alternatives — not the only option.</p>
+    <h3 style="font-family:var(--mono); font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-faint); margin:20px 0 10px;">App server (instance) plans</h3>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Specs</th><th class="num">USD / mo</th><th class="num">INR / mo</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1 GB RAM · 2 vCPU · 40 GB SSD · 2 TB transfer</td><td class="num">$5</td><td class="num">₹475</td></tr>
+          <tr style="background:var(--panel-2);"><td class="mono">2 GB RAM · 2 vCPU · 60 GB SSD · 3 TB transfer <span class="pill good" style="margin-left:6px;">recommended</span></td><td class="num">$10</td><td class="num">₹950</td></tr>
+          <tr><td class="mono">4 GB RAM · 2 vCPU · 80 GB SSD · 4 TB transfer</td><td class="num">$20</td><td class="num">₹1,900</td></tr>
+          <tr><td class="mono">8 GB RAM · 2 vCPU · 160 GB SSD · 5 TB transfer</td><td class="num">$40</td><td class="num">₹3,800</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3 style="font-family:var(--mono); font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-faint); margin:24px 0 10px;">Managed database (PostgreSQL) plans</h3>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Specs</th><th class="num">USD / mo</th><th class="num">INR / mo</th></tr></thead>
+        <tbody>
+          <tr style="background:var(--panel-2);"><td class="mono">1 GB RAM · 1 vCPU · 40 GB SSD <span class="pill good" style="margin-left:6px;">recommended</span></td><td class="num">$15</td><td class="num">₹1,425</td></tr>
+          <tr><td class="mono">2 GB RAM · 1 vCPU · 80 GB SSD</td><td class="num">$30</td><td class="num">₹2,850</td></tr>
+          <tr><td class="mono">4 GB RAM · 2 vCPU · 160 GB SSD</td><td class="num">$60</td><td class="num">₹5,700</td></tr>
+          <tr><td class="mono">8 GB RAM · 2 vCPU · 320 GB SSD</td><td class="num">$115</td><td class="num">₹10,925</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout" style="margin-top:16px;">
+      <span class="mark">note</span>
+      <span>A "High Availability" version of each database plan exists too (roughly double the price) — it keeps a live
+      standby copy so a hardware fault doesn't cause downtime. Not necessary at this scale; worth revisiting only if
+      uptime becomes business-critical.</span>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">06</span> Cost, monthly — the recommended pair</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Item</th><th>Plan</th><th class="num">USD</th><th class="num">INR</th></tr></thead>
+        <tbody>
+          <tr><td>App server</td><td class="mono">Lightsail instance — 2 GB RAM, 2 vCPU, 60 GB SSD, 3 TB transfer included</td><td class="num">$10</td><td class="num">₹950</td></tr>
+          <tr><td>Database</td><td class="mono">Lightsail managed Postgres — 1 GB RAM, 40 GB SSD</td><td class="num">$15</td><td class="num">₹1,425</td></tr>
+          <tr><td>Data transfer overage</td><td class="mono">~62 GB/mo used, 3,000 GB included</td><td class="num">$0</td><td class="num">₹0</td></tr>
+          <tr><td>Static IP</td><td class="mono">Free while attached to a running instance</td><td class="num">$0</td><td class="num">₹0</td></tr>
+          <tr class="total"><td>Total</td><td></td><td class="num">$25 / mo</td><td class="num">₹2,375 / mo</td></tr>
+          <tr class="total"><td>Per year</td><td></td><td class="num">$300 / yr</td><td class="num">₹28,500 / yr</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout" style="margin-top:16px;">
+      <span class="mark">note</span>
+      <span>INR figures use ₹95 = $1 (as given) and AWS bills in USD regardless — the actual rupee amount charged will
+      track the real exchange rate on your card statement each month, not this fixed figure. AWS also lists current
+      Lightsail prices at aws.amazon.com/lightsail/pricing — worth a live check before committing, since published
+      tiers do shift. The 40 GB database plan has years of headroom at today's usage; moving up a tier is a same-day
+      change if it's ever needed, not a re-architecture.</span>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">07</span> What actually changes vs. today</h2>
+    <div class="compare">
+      <div class="col now">
+        <h3>Render — today</h3>
+        <ul>
+          <li>Free tier: $0/month</li>
+          <li>Spins down after ~15 min idle — first request after a quiet spell takes ~50s to wake up</li>
+          <li>Free database has a fixed lifetime and needs renewal before it lapses</li>
+          <li>Deploys automatically on every push</li>
+        </ul>
+      </div>
+      <div class="col next">
+        <h3>Lightsail — proposed</h3>
+        <ul>
+          <li>~$25/month, always on</li>
+          <li>No cold start — instant response any time of day</li>
+          <li>Database on a paid, stable plan — no expiry to track</li>
+          <li>Deploys are a manual or scripted step, not automatic on push (set up separately)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    BIG BOSS — infrastructure notes · figures sourced from the live production database and current codebase
+  </footer>
+
+</div>

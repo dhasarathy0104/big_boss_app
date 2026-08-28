@@ -10,8 +10,10 @@ const TASK_STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', review: '
 function AdminProjectsPanel({ managerId }) {
   const [projects, setProjects] = useState(null);
   const [taskCounts, setTaskCounts] = useState({});
+  const [removingId, setRemovingId] = useState(null);
+  const [confirmingId, setConfirmingId] = useState(null);
 
-  useEffect(() => {
+  function load() {
     fetch(`/api/projects?managerId=${managerId}`).then((r) => r.json()).then((data) => {
       setProjects(data);
       data.forEach((p) => {
@@ -21,24 +23,53 @@ function AdminProjectsPanel({ managerId }) {
         });
       });
     });
-  }, [managerId]);
+  }
+
+  useEffect(load, [managerId]);
+
+  async function removeProject(projectId) {
+    setRemovingId(projectId);
+    const res = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' });
+    setRemovingId(null);
+    setConfirmingId(null);
+    if (!res.ok) return;
+    setProjects((prev) => prev.filter((p) => p.id !== projectId));
+  }
 
   if (projects === null) return <div className="empty">Loading…</div>;
   if (projects.length === 0) return <div className="empty">No projects assigned to this admin yet.</div>;
 
   return (
     <table>
-      <thead><tr><th>Project</th><th>Client</th><th>Tasks</th></tr></thead>
+      <thead><tr><th>Project</th><th>Client</th><th>Progress</th><th></th></tr></thead>
       <tbody>
         {projects.map((p) => {
           const counts = taskCounts[p.id];
+          const total = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : 0;
+          const done = counts?.done ?? 0;
           return (
             <tr key={p.id}>
               <td>{p.name}</td>
               <td>{p.client_name || '—'}</td>
               <td>
-                {!counts ? '…' : Object.keys(counts).length === 0 ? 'No tasks yet' : (
-                  Object.entries(counts).map(([status, n]) => `${TASK_STATUS_LABEL[status]}: ${n}`).join(' · ')
+                {!counts ? '…' : total === 0 ? 'No tasks yet' : (
+                  <>
+                    {Object.entries(counts).map(([status, n]) => `${TASK_STATUS_LABEL[status]}: ${n}`).join(' · ')}
+                    <span className="shot-meta"> — {done}/{total} done ({Math.round((done / total) * 100)}%)</span>
+                  </>
+                )}
+              </td>
+              <td>
+                {confirmingId === p.id ? (
+                  <div className="inline-form" style={{ gap: 6 }}>
+                    <span className="shot-meta">Remove — deletes its tasks too?</span>
+                    <button className="btn-small btn-danger" disabled={removingId === p.id} onClick={() => removeProject(p.id)}>
+                      {removingId === p.id ? 'Removing…' : 'Yes, remove'}
+                    </button>
+                    <button className="btn-small" onClick={() => setConfirmingId(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <button className="btn-small btn-danger" onClick={() => setConfirmingId(p.id)}>Remove</button>
                 )}
               </td>
             </tr>

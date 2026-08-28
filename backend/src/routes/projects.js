@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db } from '../db.js';
+import { db, withTransaction } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { ah } from '../asyncHandler.js';
 
@@ -40,4 +40,27 @@ projectsRouter.post('/', requireAuth, ah(async (req, res) => {
     VALUES (?, ?, ?, ?, ?) RETURNING id
   `).run(managerId, name.trim(), clientName ?? null, isBillable ? 1 : 0, hourlyRate ?? null);
   res.json(await db.prepare('SELECT * FROM projects WHERE id = ?').get(info.lastInsertRowid));
+}));
+
+// Manager (their own project) or super admin (any project, since a super
+// admin is the one who can assign a project to a manager in the first
+// place). Removes the project entirely — its tasks, and any time entries
+// logged against it (project_id is required on a time entry, so those can't
+// be kept dangling once the project is gone).
+projectsRouter.delete('/:id', requireAuth, ah(async (req, res) => {
+  const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+
+  const isOwnProject = req.authUser.role === 'manager' && req.authUser.id === project.manager_id;
+  if (req.authUser.role !== 'superadmin' && !isOwnProject) {
+    return res.status(403).json({ error: 'not your project' });
+  }
+
+  await withTransaction(async (tx) => {
+    await tx.prepare('DELETE FROM time_entries WHERE project_id = ?').run(project.id);
+    await tx.prepare('DELETE FROM tasks WHERE project_id = ?').run(project.id);
+    await tx.prepare('DELETE FROM project_members WHERE project_id = ?').run(project.id);
+    await tx.prepare('DELETE FROM projects WHERE id = ?').run(project.id);
+  });
+  res.json({ ok: true });
 }));

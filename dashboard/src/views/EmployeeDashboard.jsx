@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { Clock, PlayCircle, CalendarCheck, LogOut } from 'lucide-react';
+import { Clock, PlayCircle, CalendarCheck, LogOut, KanbanSquare } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
 import TimelineView from './TimelineView.jsx';
 import LogTimeView from './LogTimeView.jsx';
 import AttendanceView from './AttendanceView.jsx';
+import MyTasksView from './MyTasksView.jsx';
 
 const TABS = [
   { key: 'timeline', label: 'My Timeline', icon: Clock },
+  { key: 'projects', label: 'Projects', icon: KanbanSquare },
   { key: 'logtime', label: 'Log Time', icon: PlayCircle },
   { key: 'attendance', label: 'Attendance & Leave', icon: CalendarCheck },
 ];
@@ -69,6 +71,7 @@ export default function EmployeeDashboard({ employee, onLogout }) {
         {activeTab === 'timeline' && (
           <TimelineView selectedUserId={employee.id} date={date} setDate={setDate} />
         )}
+        {activeTab === 'projects' && <MyTasksView userId={employee.id} />}
         {activeTab === 'logtime' && (
           <LogTimeView userId={employee.id} managerId={employee.managerId} />
         )}
