@@ -9,7 +9,7 @@ const TASK_STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', review: '
 
 function AdminProjectsPanel({ managerId }) {
   const [projects, setProjects] = useState(null);
-  const [taskCounts, setTaskCounts] = useState({});
+  const [tasksByProject, setTasksByProject] = useState({});
   const [removingId, setRemovingId] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
 
@@ -18,8 +18,7 @@ function AdminProjectsPanel({ managerId }) {
       setProjects(data);
       data.forEach((p) => {
         fetch(`/api/tasks?projectId=${p.id}`).then((r) => r.json()).then((tasks) => {
-          const counts = tasks.reduce((acc, t) => { acc[t.status] = (acc[t.status] ?? 0) + 1; return acc; }, {});
-          setTaskCounts((prev) => ({ ...prev, [p.id]: counts }));
+          setTasksByProject((prev) => ({ ...prev, [p.id]: tasks }));
         });
       });
     });
@@ -40,43 +39,62 @@ function AdminProjectsPanel({ managerId }) {
   if (projects.length === 0) return <div className="empty">No projects assigned to this admin yet.</div>;
 
   return (
-    <table>
-      <thead><tr><th>Project</th><th>Client</th><th>Progress</th><th></th></tr></thead>
-      <tbody>
-        {projects.map((p) => {
-          const counts = taskCounts[p.id];
-          const total = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : 0;
-          const done = counts?.done ?? 0;
-          return (
-            <tr key={p.id}>
-              <td>{p.name}</td>
-              <td>{p.client_name || '—'}</td>
-              <td>
-                {!counts ? '…' : total === 0 ? 'No tasks yet' : (
-                  <>
-                    {Object.entries(counts).map(([status, n]) => `${TASK_STATUS_LABEL[status]}: ${n}`).join(' · ')}
-                    <span className="shot-meta"> — {done}/{total} done ({Math.round((done / total) * 100)}%)</span>
-                  </>
-                )}
-              </td>
-              <td>
-                {confirmingId === p.id ? (
-                  <div className="inline-form" style={{ gap: 6 }}>
-                    <span className="shot-meta">Remove — deletes its tasks too?</span>
-                    <button className="btn-small btn-danger" disabled={removingId === p.id} onClick={() => removeProject(p.id)}>
-                      {removingId === p.id ? 'Removing…' : 'Yes, remove'}
-                    </button>
-                    <button className="btn-small" onClick={() => setConfirmingId(null)}>Cancel</button>
-                  </div>
-                ) : (
-                  <button className="btn-small btn-danger" onClick={() => setConfirmingId(p.id)}>Remove</button>
-                )}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <>
+      {projects.map((p) => {
+        const tasks = tasksByProject[p.id];
+        const total = tasks?.length ?? 0;
+        const done = tasks?.filter((t) => t.status === 'done').length ?? 0;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+        return (
+          <div className="project-card" key={p.id}>
+            <div className="project-card-head">
+              <div>
+                <div className="project-card-title">{p.name}</div>
+                {p.client_name && <div className="shot-meta">{p.client_name}</div>}
+              </div>
+              {confirmingId === p.id ? (
+                <div className="inline-form" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                  <span className="shot-meta">Deletes its tasks too?</span>
+                  <button className="btn-small btn-danger" disabled={removingId === p.id} onClick={() => removeProject(p.id)}>
+                    {removingId === p.id ? 'Removing…' : 'Yes, remove'}
+                  </button>
+                  <button className="btn-small" onClick={() => setConfirmingId(null)}>Cancel</button>
+                </div>
+              ) : (
+                <button className="btn-small btn-danger" onClick={() => setConfirmingId(p.id)}>Remove project</button>
+              )}
+            </div>
+
+            <div className="shot-meta" style={{ marginBottom: 4, fontWeight: 700, letterSpacing: '.02em', textTransform: 'uppercase', fontSize: 10.5 }}>
+              Project progress
+            </div>
+            <div className="progress-row">
+              <div className="progress-track">
+                <div className="progress-fill" style={{ width: `${pct}%` }} />
+              </div>
+              <div className="progress-label">{total === 0 ? 'No tasks' : `${done}/${total} · ${pct}%`}</div>
+            </div>
+
+            <div className="shot-meta" style={{ marginBottom: 2, fontWeight: 700, letterSpacing: '.02em', textTransform: 'uppercase', fontSize: 10.5 }}>
+              Task progress
+            </div>
+            {!tasks ? (
+              <div className="shot-meta">Loading tasks…</div>
+            ) : tasks.length === 0 ? (
+              <div className="shot-meta">No tasks yet.</div>
+            ) : (
+              tasks.map((t) => (
+                <div className="task-row" key={t.id}>
+                  <span>{t.title}</span>
+                  <span className={`status-badge task-status-${t.status}`}>{TASK_STATUS_LABEL[t.status]}</span>
+                </div>
+              ))
+            )}
+          </div>
+        );
+      })}
+    </>
   );
 }
 
@@ -231,11 +249,6 @@ function OverviewTab({ overview, onSelectMember }) {
               )
             )}
           </div>
-
-          <div className="panel">
-            <h2>Projects &amp; client work</h2>
-            <AdminProjectsPanel managerId={selectedAdmin.id} />
-          </div>
         </>
       )}
     </>
@@ -335,6 +348,10 @@ function AssignTab({ overview }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // AdminProjectsPanel loads its own data independently and has no way to
+  // know a project was just created under the same manager — remounting it
+  // via a changing key is the simplest way to force a refresh.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   function loadProjects(id) {
     if (!id) { setProjects([]); return; }
@@ -373,6 +390,7 @@ function AssignTab({ overview }) {
     setForm({ name: '', clientName: '', taskTitle: '' });
     setSuccess(`Assigned "${project.name}" to ${overview.admins.find((a) => a.id === Number(managerId))?.name}.`);
     loadProjects(managerId);
+    setRefreshKey((k) => k + 1);
   }
 
   return (
@@ -415,9 +433,7 @@ function AssignTab({ overview }) {
           {projects.length === 0 ? (
             <div className="empty">None yet.</div>
           ) : (
-            <div className="chip-row">
-              {projects.map((p) => <div className="chip" key={p.id}>{p.name}</div>)}
-            </div>
+            <AdminProjectsPanel managerId={managerId} key={`${managerId}-${refreshKey}`} />
           )}
         </>
       )}
