@@ -751,6 +751,10 @@ button {
   font-weight: 700;
   box-shadow: var(--shadow-btn);
   transition: transform 0.15s cubic-bezier(.4, 0, .2, 1), box-shadow 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 button:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(91, 33, 182, .4); }
@@ -1003,6 +1007,126 @@ button:disabled { opacity: .5; cursor: not-allowed; transform: none !important; 
 }
 
 .btn-outline:hover { background: var(--tint-6); box-shadow: none; }
+
+.btn-outline-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  color: var(--unproductive);
+  border: 1px solid rgba(225, 29, 72, .3);
+  box-shadow: none;
+}
+
+.btn-outline-danger:hover { background: rgba(225, 29, 72, .06); box-shadow: none; }
+
+.btn-text {
+  background: none;
+  color: var(--brand);
+  box-shadow: none;
+  text-decoration: underline;
+  font-weight: 700;
+  padding: 9px 6px;
+}
+
+.btn-text:hover { transform: none; box-shadow: none; opacity: 0.75; }
+
+/* ---------- Section headers (icon + title + subtitle, optional illustration) ---------- */
+
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.section-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: var(--tint-10);
+  color: var(--brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.section-icon-sm {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+}
+
+.section-illustration {
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0.95;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field label {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.input-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-icon-wrap > svg {
+  position: absolute;
+  left: 12px;
+  color: var(--muted-2);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.input-icon-wrap input, .input-icon-wrap select {
+  width: 100%;
+  padding-left: 34px;
+}
+
+.mini-table-head {
+  display: flex;
+  justify-content: space-between;
+  background: rgba(139, 92, 246, 0.07);
+  border-radius: 8px;
+  padding: 7px 12px;
+  margin: 12px 0 6px;
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--brand);
+}
+
+.employee-progress-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 4px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
 
 /* ---------- Status badges ---------- */
 

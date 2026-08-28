@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Coffee, MoonStar, Users, ShieldCheck, ChevronDown, ChevronRight, UserCog } from 'lucide-react';
+import {
+  LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Coffee, MoonStar, Users, ShieldCheck,
+  ChevronDown, ChevronRight, UserCog, Send, Building2, ListChecks, BarChart3, FolderOpen, Trash2, Users2,
+} from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
 import DeskIllustration from '../components/DeskIllustration.jsx';
+import FolderIllustration from '../components/FolderIllustration.jsx';
 import TimelineView from './TimelineView.jsx';
 import ScreenshotsView, { TrackingHoursControl } from './ScreenshotsView.jsx';
 
@@ -407,10 +411,13 @@ function OngoingProjectsPanel({ overview }) {
 
   return (
     <div className="panel">
-      <h2>Ongoing projects, org-wide</h2>
-      <p className="join-sub" style={{ marginTop: 0 }}>
-        Every project across every admin, with each assigned employee's own task progress on it.
-      </p>
+      <div className="section-head">
+        <div className="section-icon"><BarChart3 size={22} /></div>
+        <div>
+          <h2 className="card-title">Ongoing projects, org-wide</h2>
+          <p className="card-subtitle">Every project across every admin, with each assigned employee's own task progress on it.</p>
+        </div>
+      </div>
       {rows.length === 0 ? (
         <div className="empty">No projects assigned to anyone yet.</div>
       ) : (
@@ -419,9 +426,12 @@ function OngoingProjectsPanel({ overview }) {
           return (
             <div className="project-card" key={r.projectId}>
               <div className="project-card-head">
-                <div>
-                  <div className="project-card-title">{r.projectName}</div>
-                  <div className="shot-meta">Admin: {r.managerName}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div className="section-icon section-icon-sm"><FolderOpen size={16} /></div>
+                  <div>
+                    <div className="project-card-title">{r.projectName}</div>
+                    <div className="shot-meta">Admin: {r.managerName}</div>
+                  </div>
                 </div>
                 {confirmingId === r.projectId ? (
                   <div className="inline-form" style={{ gap: 6, flexWrap: 'nowrap' }}>
@@ -432,7 +442,9 @@ function OngoingProjectsPanel({ overview }) {
                     <button className="btn-small" onClick={() => setConfirmingId(null)}>Cancel</button>
                   </div>
                 ) : (
-                  <button className="btn-small btn-danger" onClick={() => setConfirmingId(r.projectId)}>Remove project</button>
+                  <button className="btn-outline-danger btn-small" onClick={() => setConfirmingId(r.projectId)}>
+                    <Trash2 size={13} />Remove project
+                  </button>
                 )}
               </div>
               <div className="progress-row">
@@ -443,15 +455,24 @@ function OngoingProjectsPanel({ overview }) {
               </div>
               {r.employees.length > 0 && (
                 <>
-                  <div className="shot-meta" style={{ marginBottom: 2, fontWeight: 700, letterSpacing: '.02em', textTransform: 'uppercase', fontSize: 10.5 }}>
-                    By employee
+                  <div className="mini-table-head">
+                    <span>By employee</span>
+                    <span>Task progress</span>
                   </div>
                   {r.employees.map((e, i) => {
                     const ePct = e.total > 0 ? Math.round((e.done / e.total) * 100) : 0;
                     return (
-                      <div className="task-row" key={i}>
-                        <span>{e.name}</span>
-                        <span className="shot-meta">{e.done}/{e.total} tasks · {ePct}%</span>
+                      <div className="employee-progress-row" key={i}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <Avatar name={e.name} size={22} />
+                          {e.name}
+                        </div>
+                        <div className="progress-row" style={{ flex: 1, maxWidth: 240 }}>
+                          <div className="progress-track">
+                            <div className="progress-fill" style={{ width: `${ePct}%` }} />
+                          </div>
+                          <div className="progress-label">{e.done}/{e.total} tasks · {ePct}%</div>
+                        </div>
                       </div>
                     );
                   })}
@@ -517,39 +538,80 @@ function AssignTab({ overview }) {
     setRefreshKey((k) => k + 1);
   }
 
+  function reset() {
+    setManagerId('');
+    setForm({ name: '', clientName: '', taskTitle: '' });
+    setError(''); setSuccess('');
+  }
+
   return (
     <>
     <div className="panel">
-      <h2>Assign a project to an admin</h2>
-      <p className="join-sub" style={{ marginTop: 0 }}>
-        Creates a project owned by the selected admin — it shows up in their own Projects tab, ready for them to
-        build out with tasks and their team. Optionally also create a first task, assigned directly to that admin.
-      </p>
-      <form className="stacked-form" onSubmit={submit}>
-        <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
-          <option value="">Select admin…</option>
-          {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-        <input
-          placeholder="Project name"
-          value={form.name}
-          onChange={(e) => setForm({ ...form, name: e.target.value })}
-        />
-        <input
-          placeholder="Client (optional)"
-          value={form.clientName}
-          onChange={(e) => setForm({ ...form, clientName: e.target.value })}
-        />
-        <input
-          placeholder="First task title (optional, assigned to the admin)"
-          value={form.taskTitle}
-          onChange={(e) => setForm({ ...form, taskTitle: e.target.value })}
-        />
-        {error && <div style={{ color: '#e07070', fontSize: 12 }}>{error}</div>}
-        {success && <div style={{ color: 'var(--status-good)', fontSize: 12 }}>{success}</div>}
-        <button type="submit" disabled={submitting} style={{ alignSelf: 'flex-start' }}>
-          {submitting ? 'Assigning…' : 'Assign project'}
-        </button>
+      <div className="section-head">
+        <div className="section-icon"><Users2 size={22} /></div>
+        <div>
+          <h2 className="card-title">Assign a project to an admin</h2>
+          <p className="card-subtitle">
+            Create a project owned by the selected admin. It shows up in their own Projects tab, ready for them to
+            build out with tasks and their team. Optionally, create a first task, assigned directly to that admin.
+          </p>
+        </div>
+        <div className="section-illustration"><FolderIllustration /></div>
+      </div>
+      <form onSubmit={submit}>
+        <div className="form-grid">
+          <div className="field">
+            <label>Select admin</label>
+            <div className="input-icon-wrap">
+              <UserCog size={15} />
+              <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
+                <option value="">Select admin…</option>
+                {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="field">
+            <label>Project name</label>
+            <div className="input-icon-wrap">
+              <FolderOpen size={15} />
+              <input
+                placeholder="Enter project name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label>Client (optional)</label>
+            <div className="input-icon-wrap">
+              <Building2 size={15} />
+              <input
+                placeholder="Enter client name"
+                value={form.clientName}
+                onChange={(e) => setForm({ ...form, clientName: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label>First task title (optional)</label>
+            <div className="input-icon-wrap">
+              <ListChecks size={15} />
+              <input
+                placeholder="e.g. Setup project repository"
+                value={form.taskTitle}
+                onChange={(e) => setForm({ ...form, taskTitle: e.target.value })}
+              />
+            </div>
+          </div>
+        </div>
+        {error && <div style={{ color: '#e07070', fontSize: 12, marginBottom: 12 }}>{error}</div>}
+        {success && <div style={{ color: 'var(--status-good)', fontSize: 12, marginBottom: 12 }}>{success}</div>}
+        <div className="inline-form">
+          <button type="submit" disabled={submitting}>
+            <Send size={14} />{submitting ? 'Assigning…' : 'Assign Project'}
+          </button>
+          <button type="button" className="btn-text" onClick={reset}>Reset</button>
+        </div>
       </form>
 
       {managerId && (
