@@ -1,7 +1,27 @@
 import { useEffect, useState } from 'react';
-import { Calendar, ChevronDown, Info, TrendingDown, TrendingUp } from 'lucide-react';
+import { Calendar, ChevronDown, Globe, Info, Lock, TrendingDown, TrendingUp } from 'lucide-react';
 import { fmtTime, fmtMinutes } from '../format.js';
 import ProgressRing from '../components/ProgressRing.jsx';
+
+const APP_ICON_COLORS = ['#f97316', '#3b82f6', '#8b5cf6', '#0d9488', '#ec4899', '#f59e0b', '#0ea5e9'];
+
+function appIconColor(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return APP_ICON_COLORS[hash % APP_ICON_COLORS.length];
+}
+
+function AppIcon({ name }) {
+  const lower = name.toLowerCase();
+  const background = appIconColor(name);
+  let content = name.slice(0, 2).toUpperCase();
+  if (lower.includes('chrome') || lower.includes('edge') || lower.includes('firefox')) {
+    content = <Globe size={14} color="white" />;
+  } else if (lower === 'lockapp' || lower.includes('lock')) {
+    content = <Lock size={14} color="white" />;
+  }
+  return <div className="app-icon" style={{ background }}>{content}</div>;
+}
 
 const CATEGORY_COLOR = {
   productive: 'var(--productive)',
@@ -67,8 +87,8 @@ export default function TimelineView({ selectedUserId, date, setDate }) {
   const visibleApps = showAllApps ? topApps : topApps.slice(0, APPS_PAGE_SIZE);
   const trend = prevScore != null ? score - prevScore : null;
 
-  const ringColor = score >= 60 ? 'var(--productive)' : score >= 35 ? 'var(--status-warning)' : 'var(--unproductive)';
-  const ringCaption = score >= 60 ? 'Productive' : score >= 35 ? 'Neutral' : 'Needs focus';
+  const ringColor = 'var(--productive)';
+  const ringCaption = 'Productive';
 
   return (
     <>
@@ -177,7 +197,12 @@ export default function TimelineView({ selectedUserId, date, setDate }) {
                   const pct = totalTrackedMinutes > 0 ? Math.round((a.minutes / totalTrackedMinutes) * 100) : 0;
                   return (
                     <tr key={a.appName}>
-                      <td>{a.appName}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <AppIcon name={a.appName} />
+                          {a.appName}
+                        </div>
+                      </td>
                       <td><span className={`badge badge-${a.category}`}>{CATEGORY_LABEL[a.category]}</span></td>
                       <td>{fmtMinutes(a.minutes)}</td>
                       <td>
