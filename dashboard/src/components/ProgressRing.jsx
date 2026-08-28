@@ -1,6 +1,6 @@
 // Hero-figure treatment for the productivity score — the number is the point,
 // the ring is a secondary magnitude cue, not the only way to read the value.
-export default function ProgressRing({ value, size = 88, stroke = 8, color = 'var(--productive)' }) {
+export default function ProgressRing({ value, size = 88, stroke = 8, color = 'var(--productive)', caption }) {
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - Math.max(0, Math.min(100, value)) / 100);
@@ -30,7 +30,14 @@ export default function ProgressRing({ value, size = 88, stroke = 8, color = 'va
           style={{ transition: 'stroke-dashoffset 0.4s ease' }}
         />
       </svg>
-      <div className="progress-ring-label">{value}%</div>
+      {caption ? (
+        <div className="progress-ring-label stacked">
+          <span className="progress-ring-value">{value}%</span>
+          <span className="progress-ring-caption">{caption}</span>
+        </div>
+      ) : (
+        <div className="progress-ring-label">{value}%</div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Calendar, ChevronDown, Info, TrendingDown, TrendingUp } from 'lucide-react';
 import { fmtTime, fmtMinutes } from '../format.js';
 import ProgressRing from '../components/ProgressRing.jsx';
 
@@ -18,19 +19,35 @@ const CATEGORY_LABEL = {
   idle: 'Idle',
 };
 
+const HOUR_AXIS = ['12 AM', '3 AM', '6 AM', '9 AM', '12 PM', '3 PM', '6 PM', '9 PM', '12 AM'];
+const APPS_PAGE_SIZE = 5;
+
+function prevDateStr(date) {
+  const d = new Date(`${date}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function TimelineView({ selectedUserId, date, setDate }) {
   const [productivity, setProductivity] = useState(null);
+  const [prevScore, setPrevScore] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showAllApps, setShowAllApps] = useState(false);
 
   useEffect(() => {
     if (!selectedUserId) return;
     setLoading(true);
+    setShowAllApps(false);
     fetch(`/api/users/${selectedUserId}/productivity?date=${date}`)
       .then((r) => r.json())
       .then((prod) => {
         setProductivity(prod);
         setLoading(false);
       });
+    fetch(`/api/users/${selectedUserId}/productivity?date=${prevDateStr(date)}`)
+      .then((r) => r.json())
+      .then((prod) => setPrevScore(prod?.events?.length ? prod.score : null))
+      .catch(() => setPrevScore(null));
   }, [selectedUserId, date]);
 
   const dayStart = new Date(`${date}T00:00:00.000Z`).getTime();
@@ -45,12 +62,28 @@ export default function TimelineView({ selectedUserId, date, setDate }) {
   const totals = productivity?.totals ?? { productive: 0, neutral: 0, unproductive: 0, engaged: 0, idle: 0 };
   const score = productivity?.score ?? 0;
   const topApps = productivity?.topApps ?? [];
+  const totalTrackedMinutes = Object.values(totals).reduce((a, b) => a + b, 0);
+  const presentCategories = Object.entries(totals).filter(([, mins]) => mins > 0).map(([cat]) => cat);
+  const visibleApps = showAllApps ? topApps : topApps.slice(0, APPS_PAGE_SIZE);
+  const trend = prevScore != null ? score - prevScore : null;
+
+  const ringColor = score >= 60 ? 'var(--productive)' : score >= 35 ? 'var(--status-warning)' : 'var(--unproductive)';
+  const ringCaption = score >= 60 ? 'Productive' : score >= 35 ? 'Neutral' : 'Needs focus';
 
   return (
     <>
-      <div className="panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h2 style={{ margin: 0 }}>Daily timeline</h2>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+      <div className="panel">
+        <div className="card-head">
+          <div>
+            <h2 className="card-title">Daily timeline</h2>
+            <p className="card-subtitle">Overview of productivity and activity</p>
+          </div>
+          <div className="date-pill">
+            <Calendar size={15} />
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <ChevronDown size={14} />
+          </div>
+        </div>
       </div>
 
       <div className="panel">
@@ -58,50 +91,76 @@ export default function TimelineView({ selectedUserId, date, setDate }) {
         {events.length === 0 ? (
           <div className="empty">{loading ? 'Loading…' : 'No activity recorded for this day yet.'}</div>
         ) : (
-          <>
-            <div className="score-row">
-              <ProgressRing value={score} color={score >= 60 ? 'var(--productive)' : score >= 35 ? 'var(--status-warning)' : 'var(--unproductive)'} />
-              <div style={{ flex: 1 }}>
-                <div className="score-bar">
-                  {Object.entries(totals).filter(([, mins]) => mins > 0).map(([cat, mins]) => (
-                    <div
-                      key={cat}
-                      style={{ width: `${(mins / Object.values(totals).reduce((a, b) => a + b, 0)) * 100}%`, background: CATEGORY_COLOR[cat] }}
-                      title={`${CATEGORY_LABEL[cat]}: ${fmtMinutes(mins)}`}
-                    />
-                  ))}
-                </div>
-                <div className="legend">
-                  {Object.entries(totals).filter(([, mins]) => mins > 0).map(([cat, mins]) => (
-                    <span key={cat}><span className="legend-dot" style={{ background: CATEGORY_COLOR[cat] }} />{CATEGORY_LABEL[cat]} — {fmtMinutes(mins)}</span>
-                  ))}
-                </div>
+          <div className="score-row">
+            <ProgressRing value={score} color={ringColor} caption={ringCaption} />
+            <div style={{ flex: 1 }}>
+              <div className="score-bar">
+                {presentCategories.map((cat) => (
+                  <div
+                    key={cat}
+                    style={{ width: `${(totals[cat] / totalTrackedMinutes) * 100}%`, background: CATEGORY_COLOR[cat] }}
+                    title={`${CATEGORY_LABEL[cat]}: ${fmtMinutes(totals[cat])}`}
+                  />
+                ))}
+              </div>
+              <div className="legend">
+                {presentCategories.map((cat) => (
+                  <span key={cat}><span className="legend-dot" style={{ background: CATEGORY_COLOR[cat] }} />{CATEGORY_LABEL[cat]} — {fmtMinutes(totals[cat])}</span>
+                ))}
               </div>
             </div>
-          </>
+            {trend !== null && (
+              <div className={`trend-pill ${trend < 0 ? 'down' : ''}`}>
+                <div className="trend-pill-value">
+                  {trend < 0 ? <TrendingDown size={15} /> : <TrendingUp size={15} />}
+                  {trend > 0 ? '+' : ''}{trend}%
+                </div>
+                <div className="trend-pill-label">vs yesterday</div>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
       <div className="panel">
-        <h2>Activity timeline</h2>
+        <div className="timeline-head">
+          <div className="timeline-head-title">
+            <h2>Activity timeline</h2>
+            <span className="info-icon" title="Each segment is a tracked activity window, colored by category.">
+              <Info size={14} />
+            </span>
+          </div>
+          {presentCategories.length > 0 && (
+            <div className="timeline-legend">
+              {presentCategories.map((cat) => (
+                <span key={cat}><span className="legend-dot" style={{ background: CATEGORY_COLOR[cat] }} />{CATEGORY_LABEL[cat]}</span>
+              ))}
+            </div>
+          )}
+        </div>
         {events.length === 0 ? (
           <div className="empty">{loading ? 'Loading…' : 'No activity recorded for this day yet.'}</div>
         ) : (
-          <div className="timeline">
-            {events.map((e) => {
-              const start = new Date(e.started_at).getTime();
-              const end = new Date(e.ended_at).getTime();
-              const widthPct = Math.max(0.15, ((end - start) / dayMs) * 100);
-              return (
-                <div
-                  key={e.id}
-                  className="segment"
-                  title={`${e.domain ? `${e.app_name} — ${e.domain}` : `${e.app_name} — ${e.window_title}`} · ${CATEGORY_LABEL[e.category]} (${fmtTime(e.started_at)}–${fmtTime(e.ended_at)})`}
-                  style={{ width: `${widthPct}%`, background: CATEGORY_COLOR[e.category] }}
-                />
-              );
-            })}
-          </div>
+          <>
+            <div className="timeline">
+              {events.map((e) => {
+                const start = new Date(e.started_at).getTime();
+                const end = new Date(e.ended_at).getTime();
+                const widthPct = Math.max(0.15, ((end - start) / dayMs) * 100);
+                return (
+                  <div
+                    key={e.id}
+                    className="segment"
+                    title={`${e.domain ? `${e.app_name} — ${e.domain}` : `${e.app_name} — ${e.window_title}`} · ${CATEGORY_LABEL[e.category]} (${fmtTime(e.started_at)}–${fmtTime(e.ended_at)})`}
+                    style={{ width: `${widthPct}%`, background: CATEGORY_COLOR[e.category] }}
+                  />
+                );
+              })}
+            </div>
+            <div className="timeline-axis">
+              {HOUR_AXIS.map((label, i) => <span key={i}>{label}</span>)}
+            </div>
+          </>
         )}
       </div>
 
@@ -110,18 +169,38 @@ export default function TimelineView({ selectedUserId, date, setDate }) {
         {topApps.length === 0 ? (
           <div className="empty">Nothing tracked yet.</div>
         ) : (
-          <table>
-            <thead><tr><th>App</th><th>Category</th><th>Time</th></tr></thead>
-            <tbody>
-              {topApps.map((a) => (
-                <tr key={a.appName}>
-                  <td><span className="legend-dot" style={{ background: CATEGORY_COLOR[a.category] }} />{a.appName}</td>
-                  <td>{CATEGORY_LABEL[a.category]}</td>
-                  <td>{fmtMinutes(a.minutes)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <table>
+              <thead><tr><th>App</th><th>Category</th><th>Time</th><th>Usage %</th></tr></thead>
+              <tbody>
+                {visibleApps.map((a) => {
+                  const pct = totalTrackedMinutes > 0 ? Math.round((a.minutes / totalTrackedMinutes) * 100) : 0;
+                  return (
+                    <tr key={a.appName}>
+                      <td>{a.appName}</td>
+                      <td><span className={`badge badge-${a.category}`}>{CATEGORY_LABEL[a.category]}</span></td>
+                      <td>{fmtMinutes(a.minutes)}</td>
+                      <td>
+                        <div className="usage-cell">
+                          <span className="usage-cell-pct">{pct}%</span>
+                          <div className="progress-track">
+                            <div className="progress-fill" style={{ width: `${pct}%`, background: CATEGORY_COLOR[a.category] }} />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {topApps.length > APPS_PAGE_SIZE && (
+              <div className="view-all-row">
+                <button className="btn-small" onClick={() => setShowAllApps((v) => !v)}>
+                  {showAllApps ? 'Show less' : 'View all applications'}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </>

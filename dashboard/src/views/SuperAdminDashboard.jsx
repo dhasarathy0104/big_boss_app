@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Coffee, MoonStar, Users, ShieldCheck, ChevronDown, ChevronRight, UserCog } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
+import DeskIllustration from '../components/DeskIllustration.jsx';
 import TimelineView from './TimelineView.jsx';
 import ScreenshotsView, { TrackingHoursControl } from './ScreenshotsView.jsx';
 
@@ -819,15 +820,33 @@ export default function SuperAdminDashboard({ user, onLogout }) {
           <div className="brand-name">BIG BOSS</div>
         </div>
 
-        <div className="sidebar-section">
-          <h1>Signed in as</h1>
-          <div className="inline-form" style={{ justifyContent: 'space-between' }}>
-            <strong>{user.name}</strong>
-            <button className="btn-small" onClick={onLogout}>
-              <LogOut size={12} style={{ marginRight: 4, verticalAlign: -1 }} />Log out
-            </button>
+        <nav className="sidebar-nav">
+          {TABS.map((t) => (
+            <div
+              key={t.key}
+              className={`nav-item ${activeTab === t.key ? 'active' : ''}`}
+              onClick={() => setActiveTab(t.key)}
+            >
+              <t.icon size={16} />
+              {t.label}
+            </div>
+          ))}
+        </nav>
+
+        <div className="sidebar-footer">
+          <div className="profile-card">
+            <Avatar name={user.name} size={38} />
+            <div className="profile-info">
+              <div className="profile-name">{user.name}</div>
+              <div className="profile-role">Super Admin</div>
+            </div>
           </div>
-          <div className="shot-meta" style={{ marginTop: 6 }}>Super Admin</div>
+          <button className="btn-small profile-logout" onClick={onLogout}>
+            <LogOut size={13} />Log out
+          </button>
+          <div className="sidebar-illustration">
+            <DeskIllustration />
+          </div>
         </div>
       </aside>
 
