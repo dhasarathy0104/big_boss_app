@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Clock, PlayCircle, CalendarCheck, LogOut, KanbanSquare } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
+import DeskIllustration from '../components/DeskIllustration.jsx';
 import TimelineView from './TimelineView.jsx';
 import LogTimeView from './LogTimeView.jsx';
 import AttendanceView from './AttendanceView.jsx';
@@ -42,15 +43,34 @@ export default function EmployeeDashboard({ employee, onLogout }) {
           <div className="brand-name">BIG BOSS</div>
         </div>
 
-        <div className="sidebar-section">
-          <h1>Signed in as</h1>
-          <div className="user-item selected" style={{ cursor: 'default', marginBottom: 8 }}>
-            <Avatar name={employee.name} size={26} />
-            {employee.name}
+        <nav className="sidebar-nav">
+          {TABS.map((t) => (
+            <div
+              key={t.key}
+              className={`nav-item ${activeTab === t.key ? 'active' : ''}`}
+              onClick={() => setActiveTab(t.key)}
+              title={t.label}
+            >
+              <t.icon size={16} />
+              <span>{t.label}</span>
+            </div>
+          ))}
+        </nav>
+
+        <div className="sidebar-footer">
+          <div className="profile-card">
+            <Avatar name={employee.name} size={38} />
+            <div className="profile-info">
+              <div className="profile-name">{employee.name}</div>
+              <div className="profile-role">Employee</div>
+            </div>
           </div>
-          <button className="btn-small" onClick={onLogout} style={{ width: '100%' }}>
-            <LogOut size={12} style={{ marginRight: 4, verticalAlign: -1 }} />Log out
+          <button className="btn-outline profile-logout" onClick={onLogout} title="Log out">
+            <LogOut size={13} /><span>Log out</span>
           </button>
+          <div className="sidebar-illustration">
+            <DeskIllustration />
+          </div>
         </div>
       </aside>
 

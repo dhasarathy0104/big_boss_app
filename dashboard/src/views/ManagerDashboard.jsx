@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
+import DeskIllustration from '../components/DeskIllustration.jsx';
 import LiveView from './LiveView.jsx';
 import TimelineView from './TimelineView.jsx';
 import ScreenshotsView from './ScreenshotsView.jsx';
@@ -67,15 +68,19 @@ export default function ManagerDashboard({ manager, onLogout }) {
           <div className="brand-name">BIG BOSS</div>
         </div>
 
-        <div className="sidebar-section">
-          <h1>Signed in as</h1>
-          <div className="inline-form" style={{ justifyContent: 'space-between' }}>
-            <strong>{manager.name}</strong>
-            <button className="btn-small" onClick={onLogout}>
-              <LogOut size={12} style={{ marginRight: 4, verticalAlign: -1 }} />Log out
-            </button>
-          </div>
-        </div>
+        <nav className="sidebar-nav">
+          {TABS.map((t) => (
+            <div
+              key={t.key}
+              className={`nav-item ${activeTab === t.key ? 'active' : ''}`}
+              onClick={() => setActiveTab(t.key)}
+              title={t.label}
+            >
+              <t.icon size={16} />
+              <span>{t.label}</span>
+            </div>
+          ))}
+        </nav>
 
         <div className="sidebar-section">
           <h1>Team ({team.length})</h1>
@@ -90,6 +95,22 @@ export default function ManagerDashboard({ manager, onLogout }) {
               {u.name}
             </div>
           ))}
+        </div>
+
+        <div className="sidebar-footer">
+          <div className="profile-card">
+            <Avatar name={manager.name} size={38} />
+            <div className="profile-info">
+              <div className="profile-name">{manager.name}</div>
+              <div className="profile-role">Manager</div>
+            </div>
+          </div>
+          <button className="btn-outline profile-logout" onClick={onLogout} title="Log out">
+            <LogOut size={13} /><span>Log out</span>
+          </button>
+          <div className="sidebar-illustration">
+            <DeskIllustration />
+          </div>
         </div>
       </aside>
 

@@ -1,7 +1,28 @@
 import { useEffect, useState } from 'react';
-import { Calendar, ChevronDown, ChevronRight, Globe, Info, Lock, TrendingDown, TrendingUp } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronRight, Info, Lock, TrendingDown, TrendingUp } from 'lucide-react';
+import {
+  siGooglechrome, siFirefox, siGithub, siGmail, siZoom, siFigma,
+  siNotion, siDiscord, siSpotify, siWhatsapp, siClaude,
+} from 'simple-icons';
 import { fmtTime, fmtMinutes } from '../format.js';
 import ProgressRing from '../components/ProgressRing.jsx';
+
+// Real brand icons where simple-icons has one (trademark takedowns mean a
+// handful of common apps — Slack, Edge, Teams — just aren't in the dataset;
+// those fall through to the generic initials tile below.
+const BRAND_ICONS = [
+  { match: /chrome/i, icon: siGooglechrome },
+  { match: /firefox/i, icon: siFirefox },
+  { match: /github/i, icon: siGithub },
+  { match: /gmail/i, icon: siGmail },
+  { match: /zoom/i, icon: siZoom },
+  { match: /figma/i, icon: siFigma },
+  { match: /notion/i, icon: siNotion },
+  { match: /discord/i, icon: siDiscord },
+  { match: /spotify/i, icon: siSpotify },
+  { match: /whatsapp/i, icon: siWhatsapp },
+  { match: /^claude$/i, icon: siClaude },
+];
 
 const APP_ICON_COLORS = ['#f97316', '#3b82f6', '#8b5cf6', '#0d9488', '#ec4899', '#f59e0b', '#0ea5e9'];
 
@@ -12,15 +33,21 @@ function appIconColor(name) {
 }
 
 function AppIcon({ name }) {
-  const lower = name.toLowerCase();
-  const background = appIconColor(name);
-  let content = name.slice(0, 2).toUpperCase();
-  if (lower.includes('chrome') || lower.includes('edge') || lower.includes('firefox')) {
-    content = <Globe size={14} color="white" />;
-  } else if (lower === 'lockapp' || lower.includes('lock')) {
-    content = <Lock size={14} color="white" />;
+  const brand = BRAND_ICONS.find((b) => b.match.test(name));
+  if (brand) {
+    return (
+      <div className="app-icon app-icon-brand" title={brand.icon.title}>
+        <svg viewBox="0 0 24 24" width={15} height={15} fill={`#${brand.icon.hex}`}>
+          <path d={brand.icon.path} />
+        </svg>
+      </div>
+    );
   }
-  return <div className="app-icon" style={{ background }}>{content}</div>;
+  const lower = name.toLowerCase();
+  if (lower === 'lockapp' || lower.includes('lock')) {
+    return <div className="app-icon" style={{ background: appIconColor(name) }}><Lock size={14} color="white" /></div>;
+  }
+  return <div className="app-icon" style={{ background: appIconColor(name) }}>{name.slice(0, 2).toUpperCase()}</div>;
 }
 
 const CATEGORY_COLOR = {

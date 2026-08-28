@@ -842,7 +842,7 @@ export default function SuperAdminDashboard({ user, onLogout }) {
               <div className="profile-role">Super Admin</div>
             </div>
           </div>
-          <button className="btn-small profile-logout" onClick={onLogout} title="Log out">
+          <button className="btn-outline profile-logout" onClick={onLogout} title="Log out">
             <LogOut size={13} /><span>Log out</span>
           </button>
           <div className="sidebar-illustration">
