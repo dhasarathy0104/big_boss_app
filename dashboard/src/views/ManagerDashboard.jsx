@@ -115,19 +115,6 @@ export default function ManagerDashboard({ manager, onLogout }) {
       </aside>
 
       <main className="main">
-        <div className="tabs">
-          {TABS.map((t) => (
-            <div
-              key={t.key}
-              className={`tab ${activeTab === t.key ? 'active' : ''}`}
-              onClick={() => setActiveTab(t.key)}
-            >
-              <t.icon size={15} />
-              {t.label}
-            </div>
-          ))}
-        </div>
-
         {activeTab === 'live' && (
           <LiveView
             managerId={managerId}

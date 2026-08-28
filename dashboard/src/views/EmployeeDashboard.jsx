@@ -75,18 +75,6 @@ export default function EmployeeDashboard({ employee, onLogout }) {
       </aside>
 
       <main className="main">
-        <div className="tabs">
-          {TABS.map((t) => (
-            <div
-              key={t.key}
-              className={`tab ${activeTab === t.key ? 'active' : ''}`}
-              onClick={() => setActiveTab(t.key)}
-            >
-              <t.icon size={15} />
-              {t.label}
-            </div>
-          ))}
-        </div>
 
         {activeTab === 'timeline' && (
           <TimelineView selectedUserId={employee.id} date={date} setDate={setDate} />
