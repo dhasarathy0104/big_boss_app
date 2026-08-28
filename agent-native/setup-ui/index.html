@@ -4,22 +4,46 @@
 <meta charset="utf-8" />
 <title>BIG BOSS</title>
 <style>
-  :root { color-scheme: dark; }
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
+  :root { color-scheme: light; }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    background: #0b0d12;
-    color: #eef0f4;
+    font-family: 'Outfit', 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-weight: 500;
+    background: #EDEAF8;
+    color: #3B0764;
     display: flex;
     align-items: center;
     justify-content: center;
     min-height: 100vh;
     padding: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: -20% -10% auto -10%;
+    height: 120vh;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(560px 380px at 15% 0%, rgba(139, 92, 246, .28), transparent 62%),
+      radial-gradient(520px 420px at 100% 100%, rgba(192, 38, 212, .18), transparent 60%);
   }
   .card {
     width: 100%;
     max-width: 360px;
+    background: rgba(255, 255, 255, 0.88);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 26px;
+    padding: 28px 26px;
+    box-shadow: 0 18px 44px rgba(59, 7, 100, .16), 0 2px 8px rgba(91, 33, 182, .10);
+    position: relative;
+    z-index: 1;
   }
   .brand {
     display: flex;
@@ -28,68 +52,84 @@
     margin-bottom: 22px;
   }
   .brand-mark {
-    width: 30px;
-    height: 30px;
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 800;
     font-size: 15px;
+    background: #fff;
+    box-shadow: 0 4px 16px rgba(91, 33, 182, .20), 0 0 18px 3px rgba(139, 92, 246, .22);
   }
-  .brand-name { font-weight: 700; font-size: 16px; }
-  h1 { font-size: 18px; margin: 0 0 6px; }
-  p.sub { color: #8b93a3; font-size: 13px; line-height: 1.5; margin: 0 0 20px; }
-  label { display: block; font-size: 12px; color: #8b93a3; margin-bottom: 5px; margin-top: 14px; }
+  .brand-name { font-weight: 800; font-size: 16px; color: #3B0764; }
+  h1 { font-size: 18px; font-weight: 800; margin: 0 0 6px; color: #3B0764; }
+  p.sub { color: rgba(76, 29, 149, 0.78); font-weight: 500; font-size: 13px; line-height: 1.5; margin: 0 0 20px; }
+  label { display: block; font-size: 12px; font-weight: 700; color: rgba(76, 29, 149, 0.78); margin-bottom: 5px; margin-top: 14px; }
   input, select {
     width: 100%;
+    font-family: inherit;
     font-size: 13px;
-    background: #171a21;
-    color: #eef0f4;
-    border: 1px solid #262b36;
-    border-radius: 6px;
-    padding: 9px 11px;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.92);
+    color: #3B0764;
+    border: 1px solid rgba(209, 196, 240, 0.75);
+    border-radius: 12px;
+    padding: 9px 12px;
+    transition: all 0.15s ease;
   }
-  input:focus, select:focus { outline: none; border-color: #3987e5; }
+  input::placeholder { color: rgba(76, 29, 149, 0.40); font-weight: 500; }
+  input:hover, select:hover { border-color: rgba(139, 92, 246, 0.45); }
+  input:focus, select:focus { outline: none; border-color: #5B21B6; box-shadow: 0 0 0 3px rgba(91, 33, 182, 0.14); }
   button {
     width: 100%;
     margin-top: 20px;
+    font-family: inherit;
     font-size: 13px;
-    font-weight: 600;
-    background: #3987e5;
+    font-weight: 700;
+    background: linear-gradient(135deg, #7C3AED, #C026D3);
     color: white;
     border: none;
-    border-radius: 6px;
-    padding: 10px;
+    border-radius: 999px;
+    padding: 11px;
     cursor: pointer;
+    box-shadow: 0 4px 20px rgba(91, 33, 182, .35);
+    transition: transform 0.15s cubic-bezier(.4,0,.2,1), box-shadow 0.15s ease;
   }
-  button:disabled { opacity: 0.6; cursor: default; }
+  button:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(91, 33, 182, .4); }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: 0.5; cursor: default; transform: none; box-shadow: none; }
   .role-btn {
-    background: #171a21;
-    border: 1px solid #262b36;
+    background: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(209, 196, 240, 0.75);
+    border-radius: 16px;
     text-align: left;
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 14px 14px;
+    padding: 14px 16px;
+    box-shadow: 0 2px 10px rgba(91, 33, 182, .07);
   }
-  .role-btn:hover { border-color: #3987e5; }
-  .role-btn .title { font-weight: 600; font-size: 13.5px; }
-  .role-btn .desc { font-weight: 400; font-size: 12px; color: #8b93a3; }
+  .role-btn:hover { border-color: rgba(139, 92, 246, 0.5); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(91, 33, 182, .14); }
+  .role-btn .title { font-weight: 700; font-size: 13.5px; color: #3B0764; }
+  .role-btn .desc { font-weight: 500; font-size: 12px; color: rgba(76, 29, 149, 0.70); }
   .text-link {
     background: none;
-    color: #8b93a3;
+    color: rgba(76, 29, 149, 0.70);
     font-size: 12px;
-    font-weight: 400;
+    font-weight: 600;
     margin-top: 14px;
     padding: 0;
     text-align: left;
     text-decoration: underline;
     width: auto;
+    box-shadow: none;
     cursor: pointer;
   }
-  .status { margin-top: 14px; font-size: 12.5px; min-height: 18px; }
-  .status.error { color: #e05a5a; }
-  .status.ok { color: #17b86f; }
+  .status { margin-top: 14px; font-size: 12.5px; font-weight: 600; min-height: 18px; }
+  .status.error { color: #be123c; }
+  .status.ok { color: #15803d; }
   .screen { display: none; }
   .screen.active { display: block; }
 </style>

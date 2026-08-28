@@ -9,24 +9,29 @@
   --border: rgba(209, 196, 240, 0.75);
   --border-soft: rgba(209, 196, 240, 0.42);
   --text: #3B0764;
-  --muted: rgba(91, 33, 182, 0.58);
-  --muted-2: rgba(91, 33, 182, 0.40);
+  --muted: rgba(76, 29, 149, 0.78);
+  --muted-2: rgba(76, 29, 149, 0.56);
   --brand: #5B21B6;
   --accent: #5B21B6;
-  --grad: linear-gradient(135deg, #8b5cf6, #6d28d9);
-  --grad-soft: linear-gradient(135deg, rgba(139, 92, 246, .16), rgba(109, 40, 217, .10));
+  /* Exact gradient sampled from the user's supplied logo — the one gradient
+     used everywhere a "blue button" used to be, including the native app's
+     own login screens (setup-ui/index.html carries its own copy of this). */
+  --grad: linear-gradient(135deg, #7C3AED, #C026D3);
+  --grad-soft: linear-gradient(135deg, rgba(124, 58, 237, .16), rgba(192, 38, 212, .10));
   --tint-6: rgba(91, 33, 182, 0.06);
   --tint-10: rgba(91, 33, 182, 0.10);
 
   /* Data colors — same semantic roles as before, recolored for a light,
      glassy ground. Red/green (productive/unproductive) still fail raw CVD
      separation, expected for a good/bad pair; every use pairs the color
-     with a visible text label, the documented mitigation for that case. */
+     with a visible text label, the documented mitigation for that case.
+     Idle is teal — deliberately not a grey, so it reads as its own category
+     rather than "uncategorized." */
   --productive: #10b981;
   --unproductive: #e11d48;
   --neutral: #4f7cf0;
   --engaged: #8b5cf6;
-  --idle: #b3a5d9;
+  --idle: #0d9488;
 
   --status-good: #10b981;
   --status-warning: #f59e0b;
@@ -48,6 +53,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
+  font-size: 14.5px;
   font-weight: 500;
   -webkit-font-smoothing: antialiased;
   position: relative;
@@ -191,13 +197,13 @@ body::before {
   backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: var(--radius-lg);
-  padding: 20px 22px;
+  padding: 22px 24px;
   margin-bottom: 18px;
   box-shadow: var(--shadow-md);
 }
 
 .panel h2 {
-  font-size: 13px;
+  font-size: 14.5px;
   margin: 0 0 14px;
   color: var(--text);
   font-weight: 800;
@@ -253,7 +259,7 @@ body::before {
 }
 
 .stat-tile-value {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: -0.02em;
@@ -263,9 +269,9 @@ body::before {
 }
 
 .stat-tile-label {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--muted);
-  font-weight: 600;
+  font-weight: 700;
   margin-top: 2px;
   position: relative;
   z-index: 1;
@@ -334,12 +340,12 @@ table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 13px;
+  font-size: 13.5px;
 }
 
 th, td {
   text-align: left;
-  padding: 11px 12px;
+  padding: 12px 13px;
   border-bottom: 1px solid var(--border-soft);
   white-space: nowrap;
 }
@@ -384,7 +390,7 @@ tbody tr:last-child td {
 }
 
 .shot-meta {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--muted);
   font-weight: 600;
   margin-top: 5px;
@@ -410,9 +416,9 @@ tbody tr:last-child td {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 9px 16px;
+  padding: 10px 18px;
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: 13.5px;
   font-weight: 700;
   color: var(--brand);
   background: var(--panel);
@@ -439,13 +445,13 @@ tbody tr:last-child td {
 
 input, select, button {
   font-family: inherit;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   background: rgba(255, 255, 255, 0.92);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 8px 12px;
+  padding: 9px 13px;
   transition: all 0.15s ease;
 }
 
@@ -836,12 +842,13 @@ button:disabled { opacity: .5; cursor: not-allowed; transform: none !important; 
 }
 
 .live-card {
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.85);
+  border: 1.5px solid var(--border);
   border-radius: 18px;
   padding: 14px;
   cursor: pointer;
   transition: all 0.18s cubic-bezier(.4, 0, .2, 1);
+  box-shadow: 0 2px 8px rgba(91, 33, 182, .06);
 }
 
 .live-card:hover {
@@ -855,7 +862,7 @@ button:disabled { opacity: .5; cursor: not-allowed; transform: none !important; 
   align-items: center;
   gap: 10px;
   margin-bottom: 8px;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text);
 }

@@ -354,6 +354,17 @@ function LiveTab({ onSelectMember }) {
 // independent of whichever single admin is selected in the form above.
 function OngoingProjectsPanel({ overview }) {
   const [rows, setRows] = useState(null);
+  const [removingId, setRemovingId] = useState(null);
+  const [confirmingId, setConfirmingId] = useState(null);
+
+  async function removeProject(projectId) {
+    setRemovingId(projectId);
+    const res = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' });
+    setRemovingId(null);
+    setConfirmingId(null);
+    if (!res.ok) return;
+    setRows((prev) => prev.filter((r) => r.projectId !== projectId));
+  }
 
   useEffect(() => {
     if (!overview) return;
@@ -411,6 +422,17 @@ function OngoingProjectsPanel({ overview }) {
                   <div className="project-card-title">{r.projectName}</div>
                   <div className="shot-meta">Admin: {r.managerName}</div>
                 </div>
+                {confirmingId === r.projectId ? (
+                  <div className="inline-form" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                    <span className="shot-meta">Deletes its tasks too?</span>
+                    <button className="btn-small btn-danger" disabled={removingId === r.projectId} onClick={() => removeProject(r.projectId)}>
+                      {removingId === r.projectId ? 'Removing…' : 'Yes, remove'}
+                    </button>
+                    <button className="btn-small" onClick={() => setConfirmingId(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <button className="btn-small btn-danger" onClick={() => setConfirmingId(r.projectId)}>Remove project</button>
+                )}
               </div>
               <div className="progress-row">
                 <div className="progress-track">
@@ -535,7 +557,7 @@ function AssignTab({ overview }) {
           {projects.length === 0 ? (
             <div className="empty">None yet.</div>
           ) : (
-            <AdminProjectsPanel managerId={managerId} key={`${managerId}-${refreshKey}`} />
+            <AdminProjectsPanel managerId={managerId} key={`${managerId}-${refreshKey}`} canRemove={false} />
           )}
         </>
       )}
