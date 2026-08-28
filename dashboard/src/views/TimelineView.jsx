@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Calendar, ChevronDown, Globe, Info, Lock, TrendingDown, TrendingUp } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronRight, Globe, Info, Lock, TrendingDown, TrendingUp } from 'lucide-react';
 import { fmtTime, fmtMinutes } from '../format.js';
 import ProgressRing from '../components/ProgressRing.jsx';
 
@@ -220,8 +220,9 @@ export default function TimelineView({ selectedUserId, date, setDate }) {
             </table>
             {topApps.length > APPS_PAGE_SIZE && (
               <div className="view-all-row">
-                <button className="btn-small" onClick={() => setShowAllApps((v) => !v)}>
+                <button className="btn-outline" onClick={() => setShowAllApps((v) => !v)}>
                   {showAllApps ? 'Show less' : 'View all applications'}
+                  <ChevronRight size={14} />
                 </button>
               </div>
             )}

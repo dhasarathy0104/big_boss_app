@@ -986,6 +986,18 @@ button:disabled { opacity: .5; cursor: not-allowed; transform: none !important; 
   box-shadow: 0 4px 16px rgba(225, 29, 72, .3);
 }
 
+.btn-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  color: var(--brand);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.btn-outline:hover { background: var(--tint-6); box-shadow: none; }
+
 /* ---------- Status badges ---------- */
 
 .status-badge {
@@ -1193,6 +1205,34 @@ button:disabled { opacity: .5; cursor: not-allowed; transform: none !important; 
   font-size: 13px;
   font-weight: 600;
   margin-top: 12px;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 1024px) {
+  .sidebar { width: 200px; padding: 16px 12px; }
+  .main { padding: 20px 18px; }
+  .nav-item { padding: 9px 10px; font-size: 12.5px; }
+}
+
+@media (max-width: 720px) {
+  .sidebar {
+    width: 72px;
+    padding: 14px 8px;
+    align-items: center;
+  }
+  .brand-name, .nav-item span, .profile-info, .profile-role,
+  .profile-logout span, .sidebar-illustration, .user-item span {
+    display: none;
+  }
+  .brand { justify-content: center; padding-bottom: 14px; }
+  .nav-item { justify-content: center; padding: 10px; }
+  .profile-card { justify-content: center; padding: 0; }
+  .profile-logout { padding: 8px; }
+  .stat-row { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+  .score-row { flex-wrap: wrap; }
+  .card-head { flex-direction: column; align-items: stretch; }
+  table { font-size: 12.5px; }
 }
 
 .lightbox-close {
