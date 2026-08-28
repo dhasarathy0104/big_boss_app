@@ -7,7 +7,7 @@ import ScreenshotsView, { TrackingHoursControl } from './ScreenshotsView.jsx';
 
 const TASK_STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', review: 'Review', done: 'Done' };
 
-function AdminProjectsPanel({ managerId }) {
+function AdminProjectsPanel({ managerId, canRemove = true }) {
   const [projects, setProjects] = useState(null);
   const [tasksByProject, setTasksByProject] = useState({});
   const [removingId, setRemovingId] = useState(null);
@@ -53,16 +53,18 @@ function AdminProjectsPanel({ managerId }) {
                 <div className="project-card-title">{p.name}</div>
                 {p.client_name && <div className="shot-meta">{p.client_name}</div>}
               </div>
-              {confirmingId === p.id ? (
-                <div className="inline-form" style={{ gap: 6, flexWrap: 'nowrap' }}>
-                  <span className="shot-meta">Deletes its tasks too?</span>
-                  <button className="btn-small btn-danger" disabled={removingId === p.id} onClick={() => removeProject(p.id)}>
-                    {removingId === p.id ? 'Removing…' : 'Yes, remove'}
-                  </button>
-                  <button className="btn-small" onClick={() => setConfirmingId(null)}>Cancel</button>
-                </div>
-              ) : (
-                <button className="btn-small btn-danger" onClick={() => setConfirmingId(p.id)}>Remove project</button>
+              {canRemove && (
+                confirmingId === p.id ? (
+                  <div className="inline-form" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                    <span className="shot-meta">Deletes its tasks too?</span>
+                    <button className="btn-small btn-danger" disabled={removingId === p.id} onClick={() => removeProject(p.id)}>
+                      {removingId === p.id ? 'Removing…' : 'Yes, remove'}
+                    </button>
+                    <button className="btn-small" onClick={() => setConfirmingId(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <button className="btn-small btn-danger" onClick={() => setConfirmingId(p.id)}>Remove project</button>
+                )
               )}
             </div>
 
@@ -103,7 +105,7 @@ const TABS = [
   { key: 'live', label: 'Live', icon: Activity },
   { key: 'timeline', label: 'Timeline', icon: Clock },
   { key: 'screenshots', label: 'Screenshots', icon: Camera },
-  { key: 'assign', label: 'Assign Project', icon: KanbanSquare },
+  { key: 'assign', label: 'Project', icon: KanbanSquare },
   { key: 'manage', label: 'Manage Admins', icon: UserCog },
 ];
 
@@ -249,6 +251,11 @@ function OverviewTab({ overview, onSelectMember }) {
               )
             )}
           </div>
+
+          <div className="panel">
+            <h2>Projects &amp; progress</h2>
+            <AdminProjectsPanel managerId={selectedAdmin.id} canRemove={false} />
+          </div>
         </>
       )}
     </>
@@ -313,7 +320,7 @@ function LiveTab({ onSelectMember }) {
           <div className="empty">{loading ? 'Loading…' : 'No employees anywhere yet.'}</div>
         ) : (
           <table>
-            <thead><tr><th>Name</th><th>Manager</th><th>Department</th></tr></thead>
+            <thead><tr><th>Name</th><th>Role</th><th>Manager</th><th>Department</th></tr></thead>
             <tbody>
               {members.map((m) => (
                 <tr key={m.id} onClick={() => onSelectMember(m.id)} style={{ cursor: 'pointer' }}>
@@ -329,6 +336,7 @@ function LiveTab({ onSelectMember }) {
                       </div>
                     </div>
                   </td>
+                  <td>{m.jobRole || '—'}</td>
                   <td>{m.managerName}</td>
                   <td>{m.department || '—'}</td>
                 </tr>
@@ -338,6 +346,99 @@ function LiveTab({ onSelectMember }) {
         )}
       </div>
     </>
+  );
+}
+
+// Every project across every manager, each showing which employees have
+// tasks on it and their own individual progress — the org-wide view,
+// independent of whichever single admin is selected in the form above.
+function OngoingProjectsPanel({ overview }) {
+  const [rows, setRows] = useState(null);
+
+  useEffect(() => {
+    if (!overview) return;
+    let cancelled = false;
+    (async () => {
+      const allRows = [];
+      for (const admin of overview.admins) {
+        const projects = await fetch(`/api/projects?managerId=${admin.id}`).then((r) => r.json());
+        for (const p of projects) {
+          const tasks = await fetch(`/api/tasks?projectId=${p.id}`).then((r) => r.json());
+          const byEmployee = new Map();
+          for (const t of tasks) {
+            if (!t.assignee_user_id) continue;
+            if (!byEmployee.has(t.assignee_user_id)) byEmployee.set(t.assignee_user_id, { total: 0, done: 0 });
+            const bucket = byEmployee.get(t.assignee_user_id);
+            bucket.total += 1;
+            if (t.status === 'done') bucket.done += 1;
+          }
+          const employees = [...byEmployee.entries()].map(([userId, c]) => {
+            const employee = admin.employees.find((e) => e.id === userId);
+            return { name: employee?.name ?? admin.name, done: c.done, total: c.total };
+          });
+          allRows.push({
+            projectId: p.id,
+            projectName: p.name,
+            managerName: admin.name,
+            taskTotal: tasks.length,
+            taskDone: tasks.filter((t) => t.status === 'done').length,
+            employees,
+          });
+        }
+      }
+      if (!cancelled) setRows(allRows);
+    })();
+    return () => { cancelled = true; };
+  }, [overview]);
+
+  if (rows === null) return <div className="panel"><div className="empty">Loading…</div></div>;
+
+  return (
+    <div className="panel">
+      <h2>Ongoing projects, org-wide</h2>
+      <p className="join-sub" style={{ marginTop: 0 }}>
+        Every project across every admin, with each assigned employee's own task progress on it.
+      </p>
+      {rows.length === 0 ? (
+        <div className="empty">No projects assigned to anyone yet.</div>
+      ) : (
+        rows.map((r) => {
+          const pct = r.taskTotal > 0 ? Math.round((r.taskDone / r.taskTotal) * 100) : 0;
+          return (
+            <div className="project-card" key={r.projectId}>
+              <div className="project-card-head">
+                <div>
+                  <div className="project-card-title">{r.projectName}</div>
+                  <div className="shot-meta">Admin: {r.managerName}</div>
+                </div>
+              </div>
+              <div className="progress-row">
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: `${pct}%` }} />
+                </div>
+                <div className="progress-label">{r.taskTotal === 0 ? 'No tasks' : `${r.taskDone}/${r.taskTotal} · ${pct}%`}</div>
+              </div>
+              {r.employees.length > 0 && (
+                <>
+                  <div className="shot-meta" style={{ marginBottom: 2, fontWeight: 700, letterSpacing: '.02em', textTransform: 'uppercase', fontSize: 10.5 }}>
+                    By employee
+                  </div>
+                  {r.employees.map((e, i) => {
+                    const ePct = e.total > 0 ? Math.round((e.done / e.total) * 100) : 0;
+                    return (
+                      <div className="task-row" key={i}>
+                        <span>{e.name}</span>
+                        <span className="shot-meta">{e.done}/{e.total} tasks · {ePct}%</span>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
   );
 }
 
@@ -394,6 +495,7 @@ function AssignTab({ overview }) {
   }
 
   return (
+    <>
     <div className="panel">
       <h2>Assign a project to an admin</h2>
       <p className="join-sub" style={{ marginTop: 0 }}>
@@ -438,6 +540,9 @@ function AssignTab({ overview }) {
         </>
       )}
     </div>
+
+    <OngoingProjectsPanel overview={overview} />
+    </>
   );
 }
 

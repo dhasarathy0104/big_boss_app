@@ -9,7 +9,7 @@ import MyTasksView from './MyTasksView.jsx';
 
 const TABS = [
   { key: 'timeline', label: 'My Timeline', icon: Clock },
-  { key: 'projects', label: 'Projects', icon: KanbanSquare },
+  { key: 'projects', label: 'Tasks', icon: KanbanSquare },
   { key: 'logtime', label: 'Log Time', icon: PlayCircle },
   { key: 'attendance', label: 'Attendance & Leave', icon: CalendarCheck },
 ];
