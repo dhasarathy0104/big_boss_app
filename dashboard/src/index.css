@@ -957,6 +957,11 @@ button:disabled { opacity: .5; cursor: not-allowed; transform: none !important; 
   min-height: 120px;
 }
 
+.kanban-col-todo { background: rgba(91, 33, 182, .05); }
+.kanban-col-in_progress { background: rgba(79, 124, 240, .07); }
+.kanban-col-review { background: rgba(245, 158, 11, .07); }
+.kanban-col-done { background: rgba(16, 185, 129, .07); }
+
 .kanban-col h3 {
   font-size: 10.5px;
   color: var(--muted);
@@ -964,6 +969,77 @@ button:disabled { opacity: .5; cursor: not-allowed; transform: none !important; 
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kanban-col-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.kanban-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  padding: 20px 8px;
+  color: var(--muted-2);
+}
+
+.kanban-empty-title {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--text);
+  margin-top: 4px;
+}
+
+.kanban-empty-sub {
+  font-size: 11px;
+  color: var(--muted-2);
+}
+
+.kanban-add-btn {
+  width: 100%;
+  justify-content: center;
+  font-size: 12px;
+  padding: 8px 6px;
+}
+
+.kanban-quick-add input {
+  width: 100%;
+  font-size: 12.5px;
+  padding: 8px 10px;
+}
+
+.mini-stat {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #fff;
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  padding: 10px 16px;
+  box-shadow: var(--shadow-sm);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.mini-stat-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+.mini-stat-label {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .kanban-card {

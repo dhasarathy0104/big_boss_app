@@ -1,5 +1,7 @@
-// Small decorative graphic for the "Assign a project" card header.
-export default function FolderIllustration({ width = 96 }) {
+// Small decorative graphic for project-related card headers. `badge`
+// switches the bottom-right accent between a checkmark (assigned/done) and
+// a plus (create-new), so one graphic covers both contexts.
+export default function FolderIllustration({ width = 96, badge = 'check' }) {
   return (
     <svg viewBox="0 0 120 110" width={width} xmlns="http://www.w3.org/2000/svg">
       <circle cx="18" cy="20" r="3" fill="#c7bdf0" />
@@ -11,7 +13,11 @@ export default function FolderIllustration({ width = 96 }) {
       <line x1="58" y1="28" x2="76" y2="26" stroke="#c7bdf0" strokeWidth="2.4" strokeLinecap="round" transform="rotate(6 67 37)" />
       <line x1="58" y1="35" x2="76" y2="33" stroke="#e3daf7" strokeWidth="2.4" strokeLinecap="round" transform="rotate(6 67 37)" />
       <circle cx="94" cy="76" r="13" fill="#10b981" />
-      <path d="M88 76 l4 4 l8 -9" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+      {badge === 'plus' ? (
+        <path d="M94 69 v14 M87 76 h14" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" />
+      ) : (
+        <path d="M88 76 l4 4 l8 -9" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+      )}
     </svg>
   );
 }
