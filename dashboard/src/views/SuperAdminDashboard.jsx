@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Coffee, MoonStar, Users, ShieldCheck,
   ChevronDown, ChevronRight, UserCog, Send, Building2, ListChecks, BarChart3, FolderOpen, Trash2, Users2,
+  UserPlus, Lock, Eye, EyeOff, Mail, Phone, ArrowRightLeft, AlertCircle, Clock4, User,
 } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
 import DeskIllustration from '../components/DeskIllustration.jsx';
 import FolderIllustration from '../components/FolderIllustration.jsx';
+import AdminCardIllustration from '../components/AdminCardIllustration.jsx';
+import PasswordIllustration from '../components/PasswordIllustration.jsx';
 import TimelineView from './TimelineView.jsx';
 import ScreenshotsView, { TrackingHoursControl } from './ScreenshotsView.jsx';
 
@@ -632,7 +635,9 @@ function AssignTab({ overview }) {
 }
 
 function CreateAdminPanel({ onCreated }) {
-  const [form, setForm] = useState({ name: '', email: '', mobile: '', department: '', jobRole: '', password: '' });
+  const emptyForm = { name: '', email: '', mobile: '', department: '', jobRole: '', password: '' };
+  const [form, setForm] = useState(emptyForm);
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -656,34 +661,90 @@ function CreateAdminPanel({ onCreated }) {
     setSubmitting(false);
     if (!res.ok) { setError((await res.json()).error); return; }
     const admin = await res.json();
-    setSuccess(`Created admin account for ${admin.name} (${admin.email}). Give them their email and password to log in.`);
-    setForm({ name: '', email: '', mobile: '', department: '', jobRole: '', password: '' });
+    setSuccess(`Created admin account for ${admin.name} (${admin.email}). Give them their email and password directly — no email is sent automatically.`);
+    setForm(emptyForm);
     onCreated?.();
+  }
+
+  function reset() {
+    setForm(emptyForm);
+    setError(''); setSuccess('');
   }
 
   return (
     <div className="panel">
-      <h2>Create a new admin</h2>
-      <p className="join-sub" style={{ marginTop: 0 }}>
-        You set the password directly — hand it to them along with their email so they can log in.
-      </p>
-      <form className="stacked-form" onSubmit={submit}>
-        <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-        <input placeholder="Mobile number" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
-        <input placeholder="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
-        <input placeholder="Role (e.g. Manager)" value={form.jobRole} onChange={(e) => setForm({ ...form, jobRole: e.target.value })} />
-        <input
-          type="password"
-          placeholder="Password (8+ characters)"
-          value={form.password}
-          onChange={(e) => setForm({ ...form, password: e.target.value })}
-        />
-        {error && <div style={{ color: '#e07070', fontSize: 12 }}>{error}</div>}
-        {success && <div style={{ color: 'var(--status-good)', fontSize: 12 }}>{success}</div>}
-        <button type="submit" disabled={submitting} style={{ alignSelf: 'flex-start' }}>
-          {submitting ? 'Creating…' : 'Create admin account'}
-        </button>
+      <div className="section-head">
+        <div className="section-icon"><UserPlus size={22} /></div>
+        <div>
+          <h2 className="card-title">Create a new admin</h2>
+          <p className="card-subtitle">
+            Add a new admin to your workspace. You set their password directly — hand it to them along with their
+            email so they can log in.
+          </p>
+        </div>
+        <div className="section-illustration"><AdminCardIllustration /></div>
+      </div>
+      <form onSubmit={submit}>
+        <div className="form-grid">
+          <div className="field">
+            <label>Full name</label>
+            <div className="input-icon-wrap">
+              <User size={15} />
+              <input placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Department</label>
+            <div className="input-icon-wrap">
+              <Building2 size={15} />
+              <input placeholder="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Email address</label>
+            <div className="input-icon-wrap">
+              <Mail size={15} />
+              <input type="email" placeholder="Email address" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Role</label>
+            <div className="input-icon-wrap">
+              <Users size={15} />
+              <input placeholder="Role (e.g. Manager)" value={form.jobRole} onChange={(e) => setForm({ ...form, jobRole: e.target.value })} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Mobile number</label>
+            <div className="input-icon-wrap">
+              <Phone size={15} />
+              <input placeholder="Mobile number" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Password</label>
+            <div className="input-icon-wrap has-toggle">
+              <Lock size={15} />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Password (8+ characters)"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+              />
+              <button type="button" className="input-icon-toggle" onClick={() => setShowPassword((v) => !v)} title={showPassword ? 'Hide password' : 'Show password'}>
+                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+          </div>
+        </div>
+        {error && <div style={{ color: '#e07070', fontSize: 12, marginBottom: 12 }}>{error}</div>}
+        {success && <div style={{ color: 'var(--status-good)', fontSize: 12, marginBottom: 12 }}>{success}</div>}
+        <div className="inline-form">
+          <button type="submit" disabled={submitting}>
+            <UserPlus size={14} />{submitting ? 'Creating…' : 'Create admin account'}
+          </button>
+          <button type="button" className="btn-text" onClick={reset}>Reset</button>
+        </div>
       </form>
     </div>
   );
@@ -693,6 +754,7 @@ function ChangeAdminPasswordPanel({ overview }) {
   const [managerId, setManagerId] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -713,35 +775,71 @@ function ChangeAdminPasswordPanel({ overview }) {
     setEmail(''); setPassword('');
   }
 
+  function reset() {
+    setManagerId(''); setEmail(''); setPassword('');
+    setError(''); setSuccess('');
+  }
+
   return (
     <div className="panel">
-      <h2>Change an admin's password</h2>
-      <p className="join-sub" style={{ marginTop: 0 }}>
-        Direct override — for an admin who's locked out, or an older account with no email attached yet (leave email
-        blank to just change the password). This is the "forgot password" fix for admins.
-      </p>
-      <form className="stacked-form" onSubmit={submit}>
-        <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
-          <option value="">Select admin…</option>
-          {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-        <input
-          type="email"
-          placeholder="Set/fix their email (leave blank to keep as-is)"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <input
-          type="password"
-          placeholder="New password (8+ characters)"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        {error && <div style={{ color: '#e07070', fontSize: 12 }}>{error}</div>}
-        {success && <div style={{ color: 'var(--status-good)', fontSize: 12 }}>{success}</div>}
-        <button type="submit" disabled={submitting} style={{ alignSelf: 'flex-start' }}>
-          {submitting ? 'Saving…' : 'Set new password'}
-        </button>
+      <div className="section-head">
+        <div className="section-icon"><Lock size={22} /></div>
+        <div>
+          <h2 className="card-title">Change an admin's password</h2>
+          <p className="card-subtitle">
+            Update the password for an admin who is locked out or needs a reset. This is the "forgot password" fix for admins.
+          </p>
+        </div>
+        <div className="section-illustration"><PasswordIllustration /></div>
+      </div>
+      <form onSubmit={submit}>
+        <div className="form-grid">
+          <div className="field">
+            <label>Select admin</label>
+            <div className="input-icon-wrap">
+              <User size={15} />
+              <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
+                <option value="">Select admin…</option>
+                {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="field">
+            <label>New password</label>
+            <div className="input-icon-wrap has-toggle">
+              <Lock size={15} />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="New password (8+ characters)"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button type="button" className="input-icon-toggle" onClick={() => setShowPassword((v) => !v)} title={showPassword ? 'Hide password' : 'Show password'}>
+                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+          </div>
+          <div className="field" style={{ gridColumn: '1 / -1' }}>
+            <label>Email (optional)</label>
+            <div className="input-icon-wrap">
+              <Mail size={15} />
+              <input
+                type="email"
+                placeholder="Set/fix their email (leave blank to keep as-is)"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+        {error && <div style={{ color: '#e07070', fontSize: 12, marginBottom: 12 }}>{error}</div>}
+        {success && <div style={{ color: 'var(--status-good)', fontSize: 12, marginBottom: 12 }}>{success}</div>}
+        <div className="inline-form">
+          <button type="submit" disabled={submitting}>
+            <Lock size={14} />{submitting ? 'Saving…' : 'Set new password'}
+          </button>
+          <button type="button" className="btn-text" onClick={reset}>Reset</button>
+        </div>
       </form>
     </div>
   );
@@ -775,26 +873,51 @@ function TransferEmployeePanel({ overview, onTransferred }) {
     onTransferred?.();
   }
 
+  function reset() {
+    setEmployeeId(''); setTargetManagerId('');
+    setError(''); setSuccess('');
+  }
+
   return (
     <div className="panel">
-      <h2>Transfer an employee to another admin</h2>
-      <p className="join-sub" style={{ marginTop: 0 }}>
-        Org-wide — unlike an admin moving their own team members, you can move anyone to any admin.
-      </p>
-      <form className="stacked-form" onSubmit={submit}>
-        <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
-          <option value="">Select employee…</option>
-          {allEmployees.map((e) => <option key={e.id} value={e.id}>{e.name} (reports to {e.managerName})</option>)}
-        </select>
-        <select value={targetManagerId} onChange={(e) => setTargetManagerId(e.target.value)}>
-          <option value="">Move to admin…</option>
-          {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
-        {error && <div style={{ color: '#e07070', fontSize: 12 }}>{error}</div>}
-        {success && <div style={{ color: 'var(--status-good)', fontSize: 12 }}>{success}</div>}
-        <button type="submit" disabled={submitting} style={{ alignSelf: 'flex-start' }}>
-          {submitting ? 'Moving…' : 'Transfer employee'}
-        </button>
+      <div className="section-head">
+        <div className="section-icon"><ArrowRightLeft size={22} /></div>
+        <div>
+          <h2 className="card-title">Transfer an employee to another admin</h2>
+          <p className="card-subtitle">Org-wide — unlike an admin moving their own team members, you can move anyone to any admin.</p>
+        </div>
+      </div>
+      <form onSubmit={submit}>
+        <div className="form-grid">
+          <div className="field">
+            <label>Employee</label>
+            <div className="input-icon-wrap">
+              <User size={15} />
+              <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
+                <option value="">Select employee…</option>
+                {allEmployees.map((e) => <option key={e.id} value={e.id}>{e.name} (reports to {e.managerName})</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="field">
+            <label>Move to admin</label>
+            <div className="input-icon-wrap">
+              <UserCog size={15} />
+              <select value={targetManagerId} onChange={(e) => setTargetManagerId(e.target.value)}>
+                <option value="">Move to admin…</option>
+                {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+        {error && <div style={{ color: '#e07070', fontSize: 12, marginBottom: 12 }}>{error}</div>}
+        {success && <div style={{ color: 'var(--status-good)', fontSize: 12, marginBottom: 12 }}>{success}</div>}
+        <div className="inline-form">
+          <button type="submit" disabled={submitting}>
+            <ArrowRightLeft size={14} />{submitting ? 'Moving…' : 'Transfer employee'}
+          </button>
+          <button type="button" className="btn-text" onClick={reset}>Reset</button>
+        </div>
       </form>
     </div>
   );
@@ -805,15 +928,26 @@ function SetTrackingHoursPanel({ overview }) {
   return (
     <>
       <div className="panel">
-        <h2>Set an admin's tracking hours</h2>
-        <p className="join-sub" style={{ marginTop: 0 }}>
-          Same effect as an admin setting this for themselves — outside the window, activity and
-          screenshots are discarded on arrival rather than stored. No agent update needed.
-        </p>
-        <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
-          <option value="">Select admin…</option>
-          {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
+        <div className="section-head">
+          <div className="section-icon"><Clock4 size={22} /></div>
+          <div>
+            <h2 className="card-title">Set an admin's tracking hours</h2>
+            <p className="card-subtitle">
+              Same effect as an admin setting this for themselves — outside the window, activity and
+              screenshots are discarded on arrival rather than stored. No agent update needed.
+            </p>
+          </div>
+        </div>
+        <div className="field" style={{ maxWidth: 280 }}>
+          <label>Select admin</label>
+          <div className="input-icon-wrap">
+            <User size={15} />
+            <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
+              <option value="">Select admin…</option>
+              {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+        </div>
       </div>
       {managerId && (
         <TrackingHoursControl managerId={managerId} settingsUrl={`/api/superadmin/managers/${managerId}/settings`} />
@@ -828,11 +962,16 @@ function ManageTab({ overview, onChanged }) {
     <>
       {requested.length > 0 && (
         <div className="panel">
-          <h2>Password reset requested ({requested.length})</h2>
-          <p className="join-sub" style={{ marginTop: 0 }}>
-            These admins clicked "Forgot password?" on the login screen. Use "Change an admin's password" below to set
-            them a new one and tell them directly.
-          </p>
+          <div className="section-head">
+            <div className="section-icon"><AlertCircle size={22} /></div>
+            <div>
+              <h2 className="card-title">Password reset requested ({requested.length})</h2>
+              <p className="card-subtitle">
+                These admins clicked "Forgot password?" on the login screen. Use "Change an admin's password" below to set
+                them a new one and tell them directly.
+              </p>
+            </div>
+          </div>
           <div className="chip-row">
             {requested.map((a) => <div className="chip" key={a.id}>{a.name}</div>)}
           </div>

@@ -1102,6 +1102,25 @@ button:disabled { opacity: .5; cursor: not-allowed; transform: none !important; 
   padding-left: 34px;
 }
 
+.input-icon-wrap.has-toggle input {
+  padding-right: 34px;
+}
+
+.input-icon-toggle {
+  position: absolute;
+  right: 6px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  color: var(--muted-2);
+  padding: 4px;
+  width: auto;
+  min-width: 0;
+  border-radius: 8px;
+}
+
+.input-icon-toggle:hover { background: var(--tint-6); box-shadow: none; transform: none; color: var(--brand); }
+
 .mini-table-head {
   display: flex;
   justify-content: space-between;
