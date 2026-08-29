@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
-  LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Coffee, MoonStar, Users,
-  UserCog, Send, Building2, ListChecks, BarChart3, FolderOpen, Trash2, Users2,
+  LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Coffee, MoonStar, Users, ShieldCheck,
+  ChevronDown, ChevronRight, UserCog, Send, Building2, ListChecks, BarChart3, FolderOpen, Trash2, Users2,
   UserPlus, Lock, Eye, EyeOff, Mail, Phone, ArrowRightLeft, AlertCircle, User, Pencil,
-  Bell, Search, Filter, MoreHorizontal, Calendar,
 } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
@@ -123,176 +122,161 @@ const TABS = [
 const STATUS_LABEL = { active: 'Active', idle: 'Idle', offline: 'Offline' };
 const REFRESH_MS = 15_000;
 
-// Home dashboard: welcome header, four at-a-glance stat cards, and a
-// searchable/filterable live roster. Editing/removing people now lives in
-// the dedicated Employee Management and Manage Admins tabs — this tab is
-// purely "what's happening right now."
-function OverviewTab({ user, overview, onSelectMember }) {
-  const [members, setMembers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [menuOpenId, setMenuOpenId] = useState(null);
+// Four-level drill-down, mirroring the card look of the manager's own Live
+// tab: pick an admin (name only) -> see that admin's own details -> open
+// their employees (name + summary each) -> click one to see THEIR full
+// details too, with an explicit choice to jump to Timeline/Screenshots
+// rather than navigating away the instant you click a name.
+function OverviewTab({ overview, onSelectMember, onChanged }) {
+  const [selectedAdminId, setSelectedAdminId] = useState(null);
+  const [employeesOpen, setEmployeesOpen] = useState(false);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
+  if (!overview) return null;
 
-  function load() {
-    fetch('/api/superadmin/live-status').then((r) => r.json()).then((data) => {
-      setMembers(data);
-      setLoading(false);
-    });
+  const selectedAdmin = overview.admins.find((a) => a.id === selectedAdminId) ?? null;
+  const selectedEmployee = selectedAdmin?.employees.find((e) => e.id === selectedEmployeeId) ?? null;
+
+  if (selectedEmployee) {
+    return (
+      <div className="panel">
+        <button className="btn-small" onClick={() => setSelectedEmployeeId(null)} style={{ marginBottom: 14 }}>
+          &larr; {selectedAdmin.name}'s team
+        </button>
+        <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Avatar name={selectedEmployee.name} size={26} />
+          {selectedEmployee.name}
+        </h2>
+        <table>
+          <tbody>
+            <tr><th style={{ width: 110 }}>Email</th><td>{selectedEmployee.email || '—'}</td></tr>
+            <tr><th>Mobile</th><td>{selectedEmployee.mobile || '—'}</td></tr>
+            <tr><th>Role</th><td>{selectedEmployee.jobRole || 'Employee'}</td></tr>
+            <tr><th>Department</th><td>{selectedEmployee.department || '—'}</td></tr>
+            <tr><th>Reports to</th><td>{selectedAdmin.name}</td></tr>
+          </tbody>
+        </table>
+        <div className="inline-form" style={{ marginTop: 16 }}>
+          <button onClick={() => onSelectMember(selectedEmployee.id, 'timeline')}>View Timeline</button>
+          <button onClick={() => onSelectMember(selectedEmployee.id, 'screenshots')}>View Screenshots</button>
+        </div>
+      </div>
+    );
   }
-
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, REFRESH_MS);
-    return () => clearInterval(interval);
-  }, []);
-
-  const counts = members.reduce(
-    (acc, m) => { acc[m.status] = (acc[m.status] ?? 0) + 1; return acc; },
-    { active: 0, idle: 0, offline: 0 },
-  );
-
-  const q = search.trim().toLowerCase();
-  const filtered = members.filter((m) => {
-    if (statusFilter !== 'all' && m.status !== statusFilter) return false;
-    if (!q) return true;
-    return [m.name, m.jobRole, m.department, m.managerName].some((v) => (v ?? '').toLowerCase().includes(q));
-  });
-
-  const pendingReset = (overview?.admins ?? []).filter((a) => a.passwordResetRequested);
-  const now = new Date();
-  const dateLabel = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  const dayLabel = now.toLocaleDateString('en-US', { weekday: 'long' });
-
-  const STAT_CARDS = [
-    { key: 'total', value: members.length, label: 'Employees', sub: 'Total team members', icon: Users, cls: 'overview-stat-purple' },
-    { key: 'active', value: counts.active, label: 'Active now', sub: 'Currently online', icon: Zap, cls: 'overview-stat-green' },
-    { key: 'idle', value: counts.idle, label: 'Idle', sub: 'Away or inactive', icon: Coffee, cls: 'overview-stat-amber' },
-    { key: 'offline', value: counts.offline, label: 'Offline', sub: 'Not currently online', icon: MoonStar, cls: 'overview-stat-blue' },
-  ];
 
   return (
     <>
-      <div className="panel welcome-panel">
-        <div>
-          <div className="welcome-eyebrow">Welcome back,</div>
-          <h1 className="welcome-name">{user.name} <span>👋</span></h1>
-          <p className="card-subtitle">Here's what's happening with your team today.</p>
+      <div className="stat-row">
+        <div className="stat-tile">
+          <div className="stat-tile-icon" style={{ background: 'rgba(57,135,229,0.15)' }}>
+            <ShieldCheck size={18} color="var(--brand)" />
+          </div>
+          <div>
+            <div className="stat-tile-value">{overview.totalAdmins}</div>
+            <div className="stat-tile-label">Admins</div>
+          </div>
         </div>
-        <div className="welcome-actions">
-          <button
-            type="button"
-            className="bell-btn"
-            title={pendingReset.length > 0 ? `${pendingReset.length} password reset request${pendingReset.length === 1 ? '' : 's'}` : 'No notifications'}
-          >
-            <Bell size={18} />
-            {pendingReset.length > 0 && <span className="bell-dot" />}
-          </button>
-          <div className="date-pill">
-            <Calendar size={15} />
-            <div>
-              <div style={{ fontWeight: 800 }}>{dateLabel}</div>
-              <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>{dayLabel}</div>
-            </div>
+        <div className="stat-tile">
+          <div className="stat-tile-icon" style={{ background: 'rgba(57,135,229,0.15)' }}>
+            <Users size={18} color="var(--brand)" />
+          </div>
+          <div>
+            <div className="stat-tile-value">{overview.totalEmployees}</div>
+            <div className="stat-tile-label">Employees (org-wide)</div>
           </div>
         </div>
       </div>
 
-      <div className="overview-stat-grid">
-        {STAT_CARDS.map((c) => (
-          <div className={`overview-stat-card ${c.cls}`} key={c.key}>
-            <div className="section-icon section-icon-sm"><c.icon size={18} /></div>
-            <div className="overview-stat-value">{c.value}</div>
-            <div className="overview-stat-label">{c.label}</div>
-            <div className="overview-stat-sub">{c.sub}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="panel">
-        <div className="section-head" style={{ alignItems: 'center', marginBottom: 18 }}>
-          <h2 className="card-title" style={{ margin: 0 }}>Everyone, right now</h2>
-          <div style={{ display: 'flex', gap: 10, marginLeft: 'auto', flexWrap: 'wrap' }}>
-            <div className="input-icon-wrap" style={{ minWidth: 240 }}>
-              <Search size={15} />
-              <input placeholder="Search by name, role or department…" value={search} onChange={(e) => setSearch(e.target.value)} />
-            </div>
-            <div style={{ position: 'relative' }}>
-              <button type="button" className="btn-outline" onClick={() => setFilterOpen((v) => !v)}>
-                <Filter size={14} />Filter
-              </button>
-              {filterOpen && (
-                <div className="row-menu" style={{ right: 0, left: 'auto' }}>
-                  {['all', 'active', 'idle', 'offline'].map((s) => (
-                    <div
-                      key={s}
-                      className="row-menu-item"
-                      style={statusFilter === s ? { color: 'var(--brand)', fontWeight: 800 } : undefined}
-                      onClick={() => { setStatusFilter(s); setFilterOpen(false); }}
-                    >
-                      {s === 'all' ? 'All' : STATUS_LABEL[s]}
+      {!selectedAdmin ? (
+        <div className="panel">
+          <h2>Admins</h2>
+          {overview.admins.length === 0 ? (
+            <div className="empty">No admins yet.</div>
+          ) : (
+            <div className="live-grid">
+              {overview.admins.map((admin) => (
+                <div
+                  key={admin.id}
+                  className="live-card"
+                  onClick={() => { setSelectedAdminId(admin.id); setEmployeesOpen(false); setSelectedEmployeeId(null); }}
+                >
+                  <div className="live-card-top">
+                    <Avatar name={admin.name} size={30} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{admin.name}</div>
+                      <div className="shot-meta">{admin.employeeCount} employee{admin.employeeCount === 1 ? '' : 's'}</div>
                     </div>
-                  ))}
+                  </div>
                 </div>
-              )}
+              ))}
             </div>
-          </div>
+          )}
         </div>
-        {members.length === 0 ? (
-          <div className="empty">{loading ? 'Loading…' : 'No employees anywhere yet.'}</div>
-        ) : filtered.length === 0 ? (
-          <div className="empty">No matches.</div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
+      ) : (
+        <>
+          <div className="panel">
+            <button className="btn-small" onClick={() => setSelectedAdminId(null)} style={{ marginBottom: 14 }}>
+              &larr; All admins
+            </button>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Avatar name={selectedAdmin.name} size={26} />
+              {selectedAdmin.name}
+            </h2>
             <table>
-              <thead>
-                <tr><th>Name</th><th>Role</th><th>Manager</th><th>Department</th><th>Status</th><th></th></tr>
-              </thead>
               <tbody>
-                {filtered.map((m) => (
-                  <tr key={m.id}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Avatar name={m.name} size={30} />
-                        <div>
-                          <div>{m.name}</div>
-                          <div className="shot-meta">{m.email || '—'}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td>{m.jobRole ? <span className="badge-role">{m.jobRole}</span> : '—'}</td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <User size={13} style={{ opacity: 0.6 }} />
-                        <div>
-                          <div>{m.managerName}</div>
-                          <div className="shot-meta">Manager</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td>{m.department ? <span className="badge-dept">{m.department}</span> : '—'}</td>
-                    <td>
-                      <span className={`status-dot status-dot-${m.status}`} /> {STATUS_LABEL[m.status]}
-                    </td>
-                    <td style={{ position: 'relative' }}>
-                      <button className="row-icon-btn" title="More" onClick={() => setMenuOpenId(menuOpenId === m.id ? null : m.id)}>
-                        <MoreHorizontal size={14} />
-                      </button>
-                      {menuOpenId === m.id && (
-                        <div className="row-menu">
-                          <div className="row-menu-item" onClick={() => { setMenuOpenId(null); onSelectMember(m.id, 'timeline'); }}>View Timeline</div>
-                          <div className="row-menu-item" onClick={() => { setMenuOpenId(null); onSelectMember(m.id, 'screenshots'); }}>View Screenshots</div>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                <tr><th style={{ width: 110 }}>Email</th><td>{selectedAdmin.email || '—'}</td></tr>
+                <tr><th>Mobile</th><td>{selectedAdmin.mobile || '—'}</td></tr>
+                <tr><th>Role</th><td>Manager</td></tr>
+                <tr><th>Department</th><td>{selectedAdmin.department || '—'}</td></tr>
               </tbody>
             </table>
+
+            <h2
+              style={{ marginTop: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+              onClick={() => setEmployeesOpen(!employeesOpen)}
+            >
+              {employeesOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              Employees ({selectedAdmin.employeeCount})
+            </h2>
+            {employeesOpen && (
+              <EmployeeManagementTable
+                employees={selectedAdmin.employees.map((e) => ({ ...e, managerId: selectedAdmin.id }))}
+                managerName={selectedAdmin.name}
+                otherManagers={overview.admins.filter((a) => a.id !== selectedAdmin.id)}
+                onRowClick={(e) => setSelectedEmployeeId(e.id)}
+                onSave={async (employeeId, fields) => {
+                  const res = await fetch(`/api/superadmin/employees/${employeeId}`, {
+                    method: 'PATCH',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify(fields),
+                  });
+                  if (!res.ok) return (await res.json()).error;
+                  onChanged?.();
+                  return null;
+                }}
+                onDelete={async (employeeId) => {
+                  const res = await fetch(`/api/superadmin/employees/${employeeId}`, { method: 'DELETE' });
+                  if (res.ok) onChanged?.();
+                }}
+                onTransfer={async (employeeId, targetManagerId) => {
+                  const res = await fetch(`/api/superadmin/employees/${employeeId}/transfer`, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ targetManagerId }),
+                  });
+                  if (!res.ok) return (await res.json()).error;
+                  onChanged?.();
+                  return null;
+                }}
+              />
+            )}
           </div>
-        )}
-      </div>
+
+          <div className="panel">
+            <h2>Projects &amp; progress</h2>
+            <AdminProjectsPanel managerId={selectedAdmin.id} canRemove={false} />
+          </div>
+        </>
+      )}
     </>
   );
 }
@@ -1193,7 +1177,7 @@ export default function SuperAdminDashboard({ user, onLogout }) {
 
       <main className="main">
         {activeTab === 'overview' && (
-          <OverviewTab user={user} overview={overview} onSelectMember={(id, tab = 'timeline') => { setSelectedUserId(id); setActiveTab(tab); }} />
+          <OverviewTab overview={overview} onChanged={reloadOverview} onSelectMember={(id, tab = 'timeline') => { setSelectedUserId(id); setActiveTab(tab); }} />
         )}
         {activeTab === 'live' && (
           <LiveTab onSelectMember={(id) => { setSelectedUserId(id); setActiveTab('timeline'); }} />
