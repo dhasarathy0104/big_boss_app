@@ -4,7 +4,7 @@ import { db, randomToken } from '../db.js';
 import { requireManager, requireManagerSelf, hashPassword } from '../auth.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
-import { deleteEmployeeCascade } from '../deleteEmployee.js';
+import { deleteEmployeeCascade } from '../deleteUser.js';
 
 export const managersRouter = Router();
 

@@ -968,6 +968,19 @@ function EditManagerModal({ manager, allManagers, onSaved, onClose }) {
 
 function AdminsListPanel({ overview, onChanged }) {
   const [editing, setEditing] = useState(null);
+  const [confirmingId, setConfirmingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
+
+  async function handleDelete(id) {
+    setDeleteError('');
+    setDeletingId(id);
+    const res = await fetch(`/api/superadmin/managers/${id}`, { method: 'DELETE' });
+    setDeletingId(null);
+    if (!res.ok) { setDeleteError((await res.json()).error); return; }
+    setConfirmingId(null);
+    onChanged?.();
+  }
 
   return (
     <div className="panel">
@@ -976,10 +989,11 @@ function AdminsListPanel({ overview, onChanged }) {
         <div>
           <h2 className="card-title">Admins</h2>
           <p className="card-subtitle">
-            Click the pencil to edit an admin's details or password, set their tracking hours, or transfer one of their employees.
+            Click the pencil to edit an admin's details or password, set their tracking hours, or transfer one of their employees. The trash icon removes an admin with no employees left on their team.
           </p>
         </div>
       </div>
+      {deleteError && <div style={{ color: '#e07070', fontSize: 12, marginBottom: 10 }}>{deleteError}</div>}
       {overview.admins.length === 0 ? (
         <div className="empty">No admins yet.</div>
       ) : (
@@ -1002,9 +1016,23 @@ function AdminsListPanel({ overview, onChanged }) {
                   <td><span className="badge-role">{a.jobRole || 'Manager'}</span></td>
                   <td>{a.department ? <span className="badge-dept">{a.department}</span> : '—'}</td>
                   <td>
-                    <button className="row-icon-btn" title="Edit" onClick={() => setEditing(a)}>
-                      <Pencil size={14} />
-                    </button>
+                    {confirmingId === a.id ? (
+                      <div className="inline-form" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                        <button className="btn-small btn-danger" disabled={deletingId === a.id} onClick={() => handleDelete(a.id)}>
+                          {deletingId === a.id ? 'Removing…' : 'Yes, remove'}
+                        </button>
+                        <button className="btn-small" onClick={() => setConfirmingId(null)}>Cancel</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="row-icon-btn" title="Edit" onClick={() => setEditing(a)}>
+                          <Pencil size={14} />
+                        </button>
+                        <button className="row-icon-btn row-icon-btn-danger" title="Remove" onClick={() => { setDeleteError(''); setConfirmingId(a.id); }}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

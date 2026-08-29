@@ -5,7 +5,7 @@ import { requireSuperAdmin, hashPassword } from '../auth.js';
 import { buildOverrideMaps, computeProductivity } from '../productivity.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
-import { deleteEmployeeCascade } from '../deleteEmployee.js';
+import { deleteEmployeeCascade, deleteManagerCascade } from '../deleteUser.js';
 
 export const superadminRouter = Router();
 
@@ -91,6 +91,22 @@ superadminRouter.patch('/managers/:id', requireSuperAdmin, ah(async (req, res) =
     FROM users WHERE id = ?
   `).get(manager.id);
   res.json(updated);
+}));
+
+// Removes a manager account entirely — refuses while they still have
+// employees attached (transfer or remove those first) so nobody is left
+// pointing at a manager_id that no longer exists.
+superadminRouter.delete('/managers/:id', requireSuperAdmin, ah(async (req, res) => {
+  const manager = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(req.params.id);
+  if (!manager) return res.status(404).json({ error: 'manager not found' });
+
+  const { count } = await db.prepare("SELECT COUNT(*)::int AS count FROM users WHERE manager_id = ? AND role = 'employee'").get(manager.id);
+  if (count > 0) {
+    return res.status(400).json({ error: `This admin still has ${count} employee${count === 1 ? '' : 's'} — transfer or remove them first.` });
+  }
+
+  await deleteManagerCascade(manager.id);
+  res.json({ ok: true });
 }));
 
 // Full profile edit for one employee, org-wide (any manager's team) —
