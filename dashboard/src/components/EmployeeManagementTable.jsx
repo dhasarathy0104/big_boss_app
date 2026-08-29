@@ -102,7 +102,7 @@ function EditEmployeeModal({ employee, managerName, otherManagers, onSave, onTra
         </div>
       </form>
 
-      {otherManagers && otherManagers.length > 0 && (
+      {otherManagers && otherManagers.filter((m) => m.id !== employee.managerId).length > 0 && (
         <>
           <hr className="modal-divider" />
           <p className="modal-section-title">Transfer to another manager</p>
@@ -111,7 +111,7 @@ function EditEmployeeModal({ employee, managerName, otherManagers, onSave, onTra
               <ArrowRightLeft size={15} />
               <select value={targetManagerId} onChange={(e) => setTargetManagerId(e.target.value)}>
                 <option value="">Select manager…</option>
-                {otherManagers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {otherManagers.filter((m) => m.id !== employee.managerId).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
             </div>
             <button type="button" className="btn-outline-danger" disabled={!targetManagerId || transferring} onClick={doTransfer}>

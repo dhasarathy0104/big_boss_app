@@ -1470,10 +1470,11 @@ button:disabled { opacity: .5; cursor: not-allowed; transform: none !important; 
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 200;
-  padding: 24px;
+  padding: 40px 24px;
+  overflow-y: auto;
 }
 
 .modal-card {
@@ -1482,8 +1483,7 @@ button:disabled { opacity: .5; cursor: not-allowed; transform: none !important; 
   box-shadow: var(--shadow-lg);
   padding: 24px 26px;
   width: 100%;
-  max-height: 88vh;
-  overflow-y: auto;
+  flex-shrink: 0;
 }
 
 .modal-head {

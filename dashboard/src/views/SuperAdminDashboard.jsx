@@ -114,6 +114,7 @@ const TABS = [
   { key: 'live', label: 'Live', icon: Activity },
   { key: 'timeline', label: 'Timeline', icon: Clock },
   { key: 'screenshots', label: 'Screenshots', icon: Camera },
+  { key: 'employees', label: 'Employee Management', icon: Users },
   { key: 'assign', label: 'Project', icon: KanbanSquare },
   { key: 'manage', label: 'Manage Admins', icon: UserCog },
 ];
@@ -238,7 +239,7 @@ function OverviewTab({ overview, onSelectMember, onChanged }) {
             </h2>
             {employeesOpen && (
               <EmployeeManagementTable
-                employees={selectedAdmin.employees}
+                employees={selectedAdmin.employees.map((e) => ({ ...e, managerId: selectedAdmin.id }))}
                 managerName={selectedAdmin.name}
                 otherManagers={overview.admins.filter((a) => a.id !== selectedAdmin.id)}
                 onRowClick={(e) => setSelectedEmployeeId(e.id)}
@@ -277,6 +278,57 @@ function OverviewTab({ overview, onSelectMember, onChanged }) {
         </>
       )}
     </>
+  );
+}
+
+// Flat, org-wide version of the same employee table — every employee across
+// every admin in one list, instead of having to open each admin first (as
+// the Overview tab's drill-down still requires).
+function SuperAdminEmployeesTab({ overview, onChanged }) {
+  if (!overview) return null;
+  const allEmployees = overview.admins.flatMap((a) =>
+    a.employees.map((e) => ({ ...e, managerId: a.id, managerName: a.name })));
+
+  return (
+    <div className="panel">
+      <div className="section-head">
+        <div className="section-icon"><Users size={22} /></div>
+        <div>
+          <h2 className="card-title">Employees ({allEmployees.length})</h2>
+          <p className="card-subtitle">
+            Every employee, org-wide. Click the pencil to edit their details or set a new password, or the trash icon to remove them.
+          </p>
+        </div>
+      </div>
+      <EmployeeManagementTable
+        employees={allEmployees}
+        otherManagers={overview.admins}
+        onSave={async (employeeId, fields) => {
+          const res = await fetch(`/api/superadmin/employees/${employeeId}`, {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(fields),
+          });
+          if (!res.ok) return (await res.json()).error;
+          onChanged?.();
+          return null;
+        }}
+        onDelete={async (employeeId) => {
+          const res = await fetch(`/api/superadmin/employees/${employeeId}`, { method: 'DELETE' });
+          if (res.ok) onChanged?.();
+        }}
+        onTransfer={async (employeeId, targetManagerId) => {
+          const res = await fetch(`/api/superadmin/employees/${employeeId}/transfer`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ targetManagerId }),
+          });
+          if (!res.ok) return (await res.json()).error;
+          onChanged?.();
+          return null;
+        }}
+      />
+    </div>
   );
 }
 
@@ -1071,6 +1123,7 @@ export default function SuperAdminDashboard({ user, onLogout }) {
           <TimelineView selectedUserId={selectedUserId} date={date} setDate={setDate} />
         )}
         {activeTab === 'screenshots' && <ScreenshotsView selectedUserId={selectedUserId} managerId={null} canDelete />}
+        {activeTab === 'employees' && <SuperAdminEmployeesTab overview={overview} onChanged={reloadOverview} />}
         {activeTab === 'manage' && <ManageTab overview={overview} onChanged={reloadOverview} />}
         {activeTab === 'assign' && <AssignTab overview={overview} />}
       </main>

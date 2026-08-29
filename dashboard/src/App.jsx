@@ -113,7 +113,6 @@ function AuthScreen({ onAuthed }) {
     e.preventDefault();
     setError('');
     if (bootstrap.state === 'register' && !name.trim()) { setError('Name required.'); return; }
-    if (bootstrap.state === 'login' && !superAdminMode && !name.trim()) { setError('Name required.'); return; }
     if (bootstrap.state !== 'claim-manager' && !email.trim()) { setError('Email required.'); return; }
     if (password.length < (bootstrap.state === 'login' ? 1 : 8)) {
       setError('Password must be at least 8 characters.');
@@ -122,7 +121,7 @@ function AuthScreen({ onAuthed }) {
     setSubmitting(true);
     const path = bootstrap.state === 'register' ? 'register' : bootstrap.state === 'claim-manager' ? 'claim-manager' : 'login';
     const body = bootstrap.state === 'login'
-      ? (superAdminMode ? { email, password } : { name, email, password })
+      ? { email, password }
       : bootstrap.state === 'register' ? { name, email, password } : { password };
     const res = await fetch(`/api/auth/${path}`, {
       method: 'POST',
@@ -181,9 +180,6 @@ function AuthScreen({ onAuthed }) {
           )}
           {bootstrap.state === 'register' && (
             <input type="email" placeholder="Your email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          )}
-          {bootstrap.state === 'login' && !superAdminMode && (
-            <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
           )}
           {bootstrap.state === 'login' && (
             <input
