@@ -17,23 +17,24 @@ const INTERVAL_OPTIONS = [
   { value: 60, label: 'Every hour' },
 ];
 
-function IntervalControl({ managerId }) {
+export function IntervalControl({ managerId, settingsUrl }) {
+  const url = settingsUrl ?? `/api/managers/${managerId}/settings`;
   const [interval, setInterval_] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (!managerId) return;
-    fetch(`/api/managers/${managerId}/settings`)
+    fetch(url)
       .then((r) => r.json())
       .then((d) => setInterval_(d.screenshotIntervalMinutes));
-  }, [managerId]);
+  }, [managerId, url]);
 
   async function save(value) {
     setInterval_(value);
     setSaving(true);
     setSaved(false);
-    await fetch(`/api/managers/${managerId}/settings`, {
+    await fetch(url, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ screenshotIntervalMinutes: value }),

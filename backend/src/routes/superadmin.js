@@ -170,16 +170,33 @@ superadminRouter.patch('/managers/:id/settings', requireSuperAdmin, ah(async (re
   const manager = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'manager'").get(req.params.id);
   if (!manager) return res.status(404).json({ error: 'manager not found' });
 
-  const start = req.body.trackingStartTime ?? null;
-  const end = req.body.trackingEndTime ?? null;
-  if (!isValidHHMMOrEmpty(start) || !isValidHHMMOrEmpty(end)) {
-    return res.status(400).json({ error: 'tracking hours must be in HH:MM (24-hour) format, or blank' });
+  const updates = [];
+  const values = [];
+
+  if ('screenshotIntervalMinutes' in req.body) {
+    const minutes = Number(req.body.screenshotIntervalMinutes);
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 240) {
+      return res.status(400).json({ error: 'screenshotIntervalMinutes must be an integer between 0 (off) and 240' });
+    }
+    updates.push('screenshot_interval_minutes = ?');
+    values.push(minutes);
   }
-  if ((start && !end) || (!start && end)) {
-    return res.status(400).json({ error: 'set both a start and end time, or leave both blank' });
+  if ('trackingStartTime' in req.body || 'trackingEndTime' in req.body) {
+    const start = req.body.trackingStartTime ?? null;
+    const end = req.body.trackingEndTime ?? null;
+    if (!isValidHHMMOrEmpty(start) || !isValidHHMMOrEmpty(end)) {
+      return res.status(400).json({ error: 'tracking hours must be in HH:MM (24-hour) format, or blank' });
+    }
+    if ((start && !end) || (!start && end)) {
+      return res.status(400).json({ error: 'set both a start and end time, or leave both blank' });
+    }
+    updates.push('tracking_start_time = ?', 'tracking_end_time = ?');
+    values.push(start || null, end || null);
   }
-  await db.prepare('UPDATE users SET tracking_start_time = ?, tracking_end_time = ? WHERE id = ?')
-    .run(start || null, end || null, manager.id);
+  if (updates.length === 0) return res.status(400).json({ error: 'nothing to update' });
+
+  values.push(manager.id);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
 
   const updated = await db.prepare(
     'SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE id = ?'
