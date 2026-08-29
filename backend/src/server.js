@@ -14,6 +14,8 @@ import { tasksRouter } from './routes/tasks.js';
 import { timeEntriesRouter } from './routes/timeEntries.js';
 import { categoryRulesRouter } from './routes/categoryRules.js';
 import { liveStatusRouter } from './routes/liveStatus.js';
+import { liveStreamRouter } from './routes/liveStream.js';
+import { findPendingSessionForEmployee, getSession, deleteSession } from './liveSessions.js';
 import { attendanceRouter } from './routes/attendance.js';
 import { leaveRequestsRouter } from './routes/leaveRequests.js';
 import { billingRouter } from './routes/billing.js';
@@ -186,6 +188,42 @@ app.get('/api/agent-settings', authUser, ah(async (req, res) => {
   });
 }));
 
+// --- Live-view signaling, agent side ---
+// Polled every couple of seconds (fast — this is what makes "Watch Live" feel
+// close to instant, unlike the 10-60s cadence of the other agent loops), but
+// only ever returns a truthy sessionId while a manager/superadmin is actually
+// waiting, so an agent that's never watched costs nothing beyond one small
+// request per poll. See routes/liveStream.js for the viewer-facing half.
+app.get('/api/agent/live-session-request', authUser, ah(async (req, res) => {
+  const session = findPendingSessionForEmployee(req.user.id);
+  res.json({ sessionId: session?.id ?? null });
+}));
+
+app.get('/api/agent/live-sessions/:id', authUser, ah(async (req, res) => {
+  const session = getSession(req.params.id);
+  if (!session || session.employeeId !== req.user.id) {
+    return res.status(404).json({ error: 'session not found or expired' });
+  }
+  res.json(session);
+}));
+
+app.post('/api/agent/live-sessions/:id/offer', authUser, ah(async (req, res) => {
+  const session = getSession(req.params.id);
+  if (!session || session.employeeId !== req.user.id) {
+    return res.status(404).json({ error: 'session not found or expired' });
+  }
+  if (!req.body.sdp) return res.status(400).json({ error: 'sdp required' });
+  session.offer = req.body.sdp;
+  session.status = 'offered';
+  res.json({ ok: true });
+}));
+
+app.post('/api/agent/live-sessions/:id/stop', authUser, ah(async (req, res) => {
+  const session = getSession(req.params.id);
+  if (session && session.employeeId === req.user.id) deleteSession(session.id);
+  res.json({ ok: true });
+}));
+
 // --- Dashboard read endpoints ---
 // All scoped to: the user viewing their own data, or the manager who owns them.
 
@@ -269,6 +307,7 @@ app.use('/api/tasks', tasksRouter);
 app.use('/api/time-entries', timeEntriesRouter);
 app.use('/api/category-rules', categoryRulesRouter);
 app.use('/api/managers', liveStatusRouter);
+app.use('/api', liveStreamRouter);
 app.use('/api/attendance', attendanceRouter);
 app.use('/api/leave-requests', leaveRequestsRouter);
 app.use('/api', billingRouter);

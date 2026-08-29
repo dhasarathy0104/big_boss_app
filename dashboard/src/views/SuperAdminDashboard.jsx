@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Coffee, MoonStar, Users, ShieldCheck,
   ChevronDown, ChevronRight, UserCog, Send, Building2, ListChecks, BarChart3, FolderOpen, Trash2, Users2,
-  UserPlus, Lock, Eye, EyeOff, Mail, Phone, ArrowRightLeft, AlertCircle, User, Pencil,
+  UserPlus, Lock, Eye, EyeOff, Mail, Phone, ArrowRightLeft, AlertCircle, User, Pencil, Video,
 } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
@@ -11,6 +11,7 @@ import FolderIllustration from '../components/FolderIllustration.jsx';
 import AdminCardIllustration from '../components/AdminCardIllustration.jsx';
 import EmployeeManagementTable from '../components/EmployeeManagementTable.jsx';
 import Modal from '../components/Modal.jsx';
+import WebRTCViewer from '../components/WebRTCViewer.jsx';
 import TimelineView from './TimelineView.jsx';
 import ScreenshotsView, { TrackingHoursControl, IntervalControl } from './ScreenshotsView.jsx';
 
@@ -366,6 +367,7 @@ function SuperAdminEmployeesTab({ overview, onChanged }) {
 function LiveTab({ onSelectMember }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [watching, setWatching] = useState(null); // { id, name } | null
 
   function load() {
     fetch('/api/superadmin/live-status').then((r) => r.json()).then((data) => {
@@ -421,11 +423,11 @@ function LiveTab({ onSelectMember }) {
           <div className="empty">{loading ? 'Loading…' : 'No employees anywhere yet.'}</div>
         ) : (
           <table>
-            <thead><tr><th>Name</th><th>Role</th><th>Manager</th><th>Department</th></tr></thead>
+            <thead><tr><th>Name</th><th>Role</th><th>Manager</th><th>Department</th><th></th></tr></thead>
             <tbody>
               {members.map((m) => (
-                <tr key={m.id} onClick={() => onSelectMember(m.id)} style={{ cursor: 'pointer' }}>
-                  <td>
+                <tr key={m.id}>
+                  <td style={{ cursor: 'pointer' }} onClick={() => onSelectMember(m.id)}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Avatar name={m.name} size={24} />
                       <div>
@@ -440,12 +442,26 @@ function LiveTab({ onSelectMember }) {
                   <td>{m.jobRole || '—'}</td>
                   <td>{m.managerName}</td>
                   <td>{m.department || '—'}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn-small btn-outline"
+                      disabled={m.status === 'offline'}
+                      onClick={() => setWatching({ id: m.id, name: m.name })}
+                    >
+                      <Video size={12} />{m.status === 'offline' ? 'Offline' : 'Watch Live'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {watching && (
+        <WebRTCViewer employeeId={watching.id} employeeName={watching.name} onClose={() => setWatching(null)} />
+      )}
     </>
   );
 }

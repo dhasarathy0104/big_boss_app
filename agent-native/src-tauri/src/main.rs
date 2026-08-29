@@ -3,6 +3,7 @@
 mod agent;
 mod backend;
 mod context;
+mod livestream;
 mod local_server;
 mod screenshot;
 

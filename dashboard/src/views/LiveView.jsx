@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Zap, Coffee, MoonStar, Users } from 'lucide-react';
+import { Zap, Coffee, MoonStar, Users, Video } from 'lucide-react';
 import { fmtMinutes } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
+import WebRTCViewer from '../components/WebRTCViewer.jsx';
 
 const STATUS_LABEL = { active: 'Active', idle: 'Idle', offline: 'Offline' };
 const REFRESH_MS = 15_000;
@@ -15,6 +16,7 @@ const STAT_TILES = [
 export default function LiveView({ managerId, onSelectMember }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [watching, setWatching] = useState(null); // { id, name } | null
 
   function load() {
     fetch(`/api/managers/${managerId}/live-status`)
@@ -69,8 +71,8 @@ export default function LiveView({ managerId, onSelectMember }) {
         ) : (
           <div className="live-grid">
             {members.map((m) => (
-              <div key={m.id} className="live-card" onClick={() => onSelectMember?.(m.id)}>
-                <div className="live-card-top">
+              <div key={m.id} className="live-card">
+                <div className="live-card-top" style={{ cursor: 'pointer' }} onClick={() => onSelectMember?.(m.id)}>
                   <Avatar name={m.name} size={30} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</div>
@@ -84,11 +86,23 @@ export default function LiveView({ managerId, onSelectMember }) {
                   <span>{m.todayScore}% today</span>
                   <span>{fmtMinutes(m.todayActiveMinutes)} tracked</span>
                 </div>
+                <button
+                  type="button"
+                  className="watch-live-btn"
+                  disabled={m.status === 'offline'}
+                  onClick={(e) => { e.stopPropagation(); setWatching({ id: m.id, name: m.name }); }}
+                >
+                  <Video size={13} />{m.status === 'offline' ? 'Offline' : 'Watch Live'}
+                </button>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {watching && (
+        <WebRTCViewer employeeId={watching.id} employeeName={watching.name} onClose={() => setWatching(null)} />
+      )}
     </>
   );
 }

@@ -177,6 +177,7 @@ pub async fn start_tracking<F: Fn(String) + Send + Sync + 'static>(
     };
     status_cb(enrolled_label);
 
+    let backend_url_for_watch = backend_url.clone();
     let domain_state: SharedDomain = Arc::new(Mutex::new(None));
     let enrolled_name = Arc::new(Mutex::new(Some(agent_name)));
 
@@ -255,6 +256,12 @@ pub async fn start_tracking<F: Fn(String) + Send + Sync + 'static>(
                 Err(e) => eprintln!("screenshot capture failed: {e}"),
             }
         }
+    });
+
+    let watch_agent_key = cfg.agent_key.clone();
+    let watch_backend_url = backend_url_for_watch;
+    tokio::spawn(async move {
+        crate::livestream::run_watch_loop(watch_agent_key, watch_backend_url).await;
     });
 
     // Keep this task alive; the spawned loops above run for the process lifetime.

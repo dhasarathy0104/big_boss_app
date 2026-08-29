@@ -256,3 +256,82 @@ pub struct AgentSettings {
     #[serde(rename = "screenshotIntervalMinutes")]
     pub screenshot_interval_minutes: u32,
 }
+
+use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
+
+#[derive(Debug, Deserialize)]
+pub struct LiveSessionRequest {
+    #[serde(rename = "sessionId")]
+    pub session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LiveSession {
+    pub status: String,
+    pub answer: Option<RTCSessionDescription>,
+}
+
+impl BackendClient {
+    // Polled every couple of seconds — this is the one loop in the whole
+    // agent fast enough to make "Watch Live" feel close to instant. Returns
+    // Ok(None) whenever nobody's asking, which is the overwhelmingly common
+    // case, so this stays a cheap request even left running all day.
+    pub async fn poll_live_session_request(&self, agent_key: &str) -> Result<Option<String>, String> {
+        let res = self
+            .http
+            .get(format!("{}/api/agent/live-session-request", self.base_url))
+            .header("x-agent-key", agent_key)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !res.status().is_success() {
+            return Err(format!("live-session-request poll failed: {}", res.status()));
+        }
+        Ok(res.json::<LiveSessionRequest>().await.map_err(|e| e.to_string())?.session_id)
+    }
+
+    // 404 (Ok(None)) means the session was stopped or expired — the caller
+    // treats that the same as an explicit stop.
+    pub async fn get_live_session(&self, agent_key: &str, session_id: &str) -> Result<Option<LiveSession>, String> {
+        let res = self
+            .http
+            .get(format!("{}/api/agent/live-sessions/{}", self.base_url, session_id))
+            .header("x-agent-key", agent_key)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !res.status().is_success() {
+            return Err(format!("live session fetch failed: {}", res.status()));
+        }
+        Ok(Some(res.json::<LiveSession>().await.map_err(|e| e.to_string())?))
+    }
+
+    pub async fn post_live_offer(&self, agent_key: &str, session_id: &str, sdp: &RTCSessionDescription) -> Result<(), String> {
+        #[derive(Serialize)]
+        struct Body<'a> { sdp: &'a RTCSessionDescription }
+        let res = self
+            .http
+            .post(format!("{}/api/agent/live-sessions/{}/offer", self.base_url, session_id))
+            .header("x-agent-key", agent_key)
+            .json(&Body { sdp })
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !res.status().is_success() {
+            return Err(format!("posting offer failed: {}", res.status()));
+        }
+        Ok(())
+    }
+
+    pub async fn stop_live_session(&self, agent_key: &str, session_id: &str) {
+        let _ = self
+            .http
+            .post(format!("{}/api/agent/live-sessions/{}/stop", self.base_url, session_id))
+            .header("x-agent-key", agent_key)
+            .send()
+            .await;
+    }
+}

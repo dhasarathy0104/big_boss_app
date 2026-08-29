@@ -10,7 +10,11 @@ use xcap::Monitor;
 const MAX_WIDTH: u32 = 1280;
 const JPEG_QUALITY: u8 = 65;
 
-pub fn capture_primary_as_base64_jpeg() -> Result<String, String> {
+// Shared by the periodic screenshot uploader (base64-in-JSON, see below) and
+// the live-view data channel (raw bytes, no base64 — see livestream.rs),
+// which sends far more frequently and can't afford the ~33% size and CPU
+// overhead of base64 on every frame.
+pub fn capture_primary_as_jpeg_bytes() -> Result<Vec<u8>, String> {
     let monitors = Monitor::all().map_err(|e| e.to_string())?;
     let monitor = monitors
         .into_iter()
@@ -34,5 +38,10 @@ pub fn capture_primary_as_base64_jpeg() -> Result<String, String> {
     let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, JPEG_QUALITY);
     rgb.write_with_encoder(encoder).map_err(|e| e.to_string())?;
 
+    Ok(bytes)
+}
+
+pub fn capture_primary_as_base64_jpeg() -> Result<String, String> {
+    let bytes = capture_primary_as_jpeg_bytes()?;
     Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
 }

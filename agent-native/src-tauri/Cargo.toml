@@ -28,6 +28,8 @@ windows = { version = "0.58", features = [
 chrono = "0.4"
 dirs = "5"
 base64 = "0.22"
+webrtc = "0.11"
+bytes = "1"
 
 [[bin]]
 name = "desklog-agent"
