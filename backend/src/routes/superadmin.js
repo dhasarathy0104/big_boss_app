@@ -5,6 +5,7 @@ import { requireSuperAdmin, hashPassword } from '../auth.js';
 import { buildOverrideMaps, computeProductivity } from '../productivity.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
+import { deleteEmployeeCascade } from '../deleteEmployee.js';
 
 export const superadminRouter = Router();
 
@@ -52,6 +53,85 @@ superadminRouter.post('/managers/:id/change-password', requireSuperAdmin, ah(asy
   } else {
     await db.prepare('UPDATE users SET password_hash = ?, password_reset_requested_at = NULL WHERE id = ?').run(hashPassword(password), manager.id);
   }
+  res.json({ ok: true });
+}));
+
+// Full profile edit for one manager — the "click the pencil" form on the
+// Manage Admins list. Password is optional; leave blank to keep it as-is.
+superadminRouter.patch('/managers/:id', requireSuperAdmin, ah(async (req, res) => {
+  const manager = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(req.params.id);
+  if (!manager) return res.status(404).json({ error: 'manager not found' });
+
+  const { name, mobile, department, jobRole, password } = req.body;
+  const email = req.body.email !== undefined ? normalizeEmail(req.body.email) : undefined;
+  if (name !== undefined && !name.trim()) return res.status(400).json({ error: 'name cannot be blank' });
+  if (password !== undefined && password !== '' && password.length < 8) {
+    return res.status(400).json({ error: 'password must be at least 8 characters' });
+  }
+  if (email) {
+    const emailTaken = await db.prepare('SELECT 1 FROM users WHERE email = ? AND id != ?').get(email, manager.id);
+    if (emailTaken) return res.status(409).json({ error: 'that email is already registered' });
+  }
+
+  const updates = [];
+  const values = [];
+  if (name !== undefined) { updates.push('name = ?'); values.push(name.trim()); }
+  if (email !== undefined) { updates.push('email = ?'); values.push(email || null); }
+  if (mobile !== undefined) { updates.push('mobile = ?'); values.push(mobile.trim() || null); }
+  if (department !== undefined) { updates.push('department = ?'); values.push(department.trim() || null); }
+  if (jobRole !== undefined) { updates.push('job_role = ?'); values.push(jobRole.trim() || null); }
+  if (password) { updates.push('password_hash = ?', 'password_reset_requested_at = NULL'); values.push(hashPassword(password)); }
+  if (updates.length === 0) return res.status(400).json({ error: 'nothing to update' });
+
+  values.push(manager.id);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  const updated = await db.prepare(`
+    SELECT id, name, email, mobile, department, job_role AS "jobRole", created_at,
+      (password_reset_requested_at IS NOT NULL) AS "passwordResetRequested"
+    FROM users WHERE id = ?
+  `).get(manager.id);
+  res.json(updated);
+}));
+
+// Full profile edit for one employee, org-wide (any manager's team) —
+// mirrors the manager's own PATCH .../team/:employeeId but without the
+// same-team restriction, since the super admin can edit anyone.
+superadminRouter.patch('/employees/:id', requireSuperAdmin, ah(async (req, res) => {
+  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'").get(req.params.id);
+  if (!employee) return res.status(404).json({ error: 'employee not found' });
+
+  const { name, email, mobile, department, jobRole, password } = req.body;
+  if (name !== undefined && !name.trim()) return res.status(400).json({ error: 'name cannot be blank' });
+  if (password !== undefined && password !== '' && password.length < 8) {
+    return res.status(400).json({ error: 'password must be at least 8 characters' });
+  }
+
+  const updates = [];
+  const values = [];
+  if (name !== undefined) { updates.push('name = ?'); values.push(name.trim()); }
+  if (email !== undefined) { updates.push('email = ?'); values.push(email.trim() || null); }
+  if (mobile !== undefined) { updates.push('mobile = ?'); values.push(mobile.trim() || null); }
+  if (department !== undefined) { updates.push('department = ?'); values.push(department.trim() || null); }
+  if (jobRole !== undefined) { updates.push('job_role = ?'); values.push(jobRole.trim() || null); }
+  if (password) { updates.push('password_hash = ?', 'password_reset_requested_at = NULL'); values.push(hashPassword(password)); }
+  if (updates.length === 0) return res.status(400).json({ error: 'nothing to update' });
+
+  values.push(employee.id);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  const updated = await db.prepare(`
+    SELECT id, name, email, mobile, department, job_role AS "jobRole"
+    FROM users WHERE id = ?
+  `).get(employee.id);
+  res.json(updated);
+}));
+
+// Permanently removes an employee org-wide, along with all their tracked
+// data — same cascade the manager's own delete uses.
+superadminRouter.delete('/employees/:id', requireSuperAdmin, ah(async (req, res) => {
+  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'").get(req.params.id);
+  if (!employee) return res.status(404).json({ error: 'employee not found' });
+
+  await deleteEmployeeCascade(employee.id);
   res.json({ ok: true });
 }));
 

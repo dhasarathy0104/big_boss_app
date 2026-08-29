@@ -2,14 +2,15 @@ import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Coffee, MoonStar, Users, ShieldCheck,
   ChevronDown, ChevronRight, UserCog, Send, Building2, ListChecks, BarChart3, FolderOpen, Trash2, Users2,
-  UserPlus, Lock, Eye, EyeOff, Mail, Phone, ArrowRightLeft, AlertCircle, Clock4, User,
+  UserPlus, Lock, Eye, EyeOff, Mail, Phone, ArrowRightLeft, AlertCircle, User, Pencil,
 } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
 import DeskIllustration from '../components/DeskIllustration.jsx';
 import FolderIllustration from '../components/FolderIllustration.jsx';
 import AdminCardIllustration from '../components/AdminCardIllustration.jsx';
-import PasswordIllustration from '../components/PasswordIllustration.jsx';
+import EmployeeManagementTable from '../components/EmployeeManagementTable.jsx';
+import Modal from '../components/Modal.jsx';
 import TimelineView from './TimelineView.jsx';
 import ScreenshotsView, { TrackingHoursControl } from './ScreenshotsView.jsx';
 
@@ -125,7 +126,7 @@ const REFRESH_MS = 15_000;
 // their employees (name + summary each) -> click one to see THEIR full
 // details too, with an explicit choice to jump to Timeline/Screenshots
 // rather than navigating away the instant you click a name.
-function OverviewTab({ overview, onSelectMember }) {
+function OverviewTab({ overview, onSelectMember, onChanged }) {
   const [selectedAdminId, setSelectedAdminId] = useState(null);
   const [employeesOpen, setEmployeesOpen] = useState(false);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
@@ -236,27 +237,36 @@ function OverviewTab({ overview, onSelectMember }) {
               Employees ({selectedAdmin.employeeCount})
             </h2>
             {employeesOpen && (
-              selectedAdmin.employees.length === 0 ? (
-                <div className="empty">No employees under this admin yet.</div>
-              ) : (
-                <div className="live-grid">
-                  {selectedAdmin.employees.map((e) => (
-                    <div key={e.id} className="live-card" onClick={() => setSelectedEmployeeId(e.id)}>
-                      <div className="live-card-top">
-                        <Avatar name={e.name} size={28} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</div>
-                          <div className="shot-meta">{e.jobRole || 'Employee'}{e.department ? ` · ${e.department}` : ''}</div>
-                        </div>
-                      </div>
-                      <div className="live-card-stats">
-                        <span>{e.email || '—'}</span>
-                        <span>{e.mobile || '—'}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )
+              <EmployeeManagementTable
+                employees={selectedAdmin.employees}
+                managerName={selectedAdmin.name}
+                otherManagers={overview.admins.filter((a) => a.id !== selectedAdmin.id)}
+                onRowClick={(e) => setSelectedEmployeeId(e.id)}
+                onSave={async (employeeId, fields) => {
+                  const res = await fetch(`/api/superadmin/employees/${employeeId}`, {
+                    method: 'PATCH',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify(fields),
+                  });
+                  if (!res.ok) return (await res.json()).error;
+                  onChanged?.();
+                  return null;
+                }}
+                onDelete={async (employeeId) => {
+                  const res = await fetch(`/api/superadmin/employees/${employeeId}`, { method: 'DELETE' });
+                  if (res.ok) onChanged?.();
+                }}
+                onTransfer={async (employeeId, targetManagerId) => {
+                  const res = await fetch(`/api/superadmin/employees/${employeeId}/transfer`, {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ targetManagerId }),
+                  });
+                  if (!res.ok) return (await res.json()).error;
+                  onChanged?.();
+                  return null;
+                }}
+              />
             )}
           </div>
 
@@ -750,209 +760,210 @@ function CreateAdminPanel({ onCreated }) {
   );
 }
 
-function ChangeAdminPasswordPanel({ overview }) {
-  const [managerId, setManagerId] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+// Consolidated "click the pencil" edit form for one admin — profile fields
+// and password (both PATCH /api/superadmin/managers/:id) plus, in the same
+// dialog, their tracking hours and a way to transfer one of their employees
+// elsewhere. Replaces what used to be three separate always-visible panels
+// each with their own "select an admin" dropdown.
+function EditManagerModal({ manager, allManagers, onSaved, onClose }) {
+  const [form, setForm] = useState({
+    name: manager.name ?? '', email: manager.email ?? '', mobile: manager.mobile ?? '',
+    department: manager.department ?? '', jobRole: manager.jobRole ?? '', password: '',
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  async function submit(e) {
+  const [employeeId, setEmployeeId] = useState('');
+  const [targetManagerId, setTargetManagerId] = useState('');
+  const [transferring, setTransferring] = useState(false);
+  const [transferError, setTransferError] = useState('');
+  const [transferSuccess, setTransferSuccess] = useState('');
+
+  async function save(e) {
     e.preventDefault();
-    setError(''); setSuccess('');
-    if (!managerId || password.length < 8) { setError('Pick an admin and enter a password of at least 8 characters.'); return; }
-    setSubmitting(true);
-    const res = await fetch(`/api/superadmin/managers/${managerId}/change-password`, {
-      method: 'POST',
+    setError('');
+    if (!form.name.trim()) { setError('Name is required.'); return; }
+    if (form.password && form.password.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    setSaving(true);
+    const res = await fetch(`/api/superadmin/managers/${manager.id}`, {
+      method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: email.trim() || undefined, password }),
+      body: JSON.stringify({
+        name: form.name, email: form.email, mobile: form.mobile, department: form.department, jobRole: form.jobRole,
+        ...(form.password ? { password: form.password } : {}),
+      }),
     });
-    setSubmitting(false);
+    setSaving(false);
     if (!res.ok) { setError((await res.json()).error); return; }
-    setSuccess('Saved. Hand the new password (and email, if you set one) to that admin.');
-    setEmail(''); setPassword('');
+    onSaved?.();
+    onClose();
   }
 
-  function reset() {
-    setManagerId(''); setEmail(''); setPassword('');
-    setError(''); setSuccess('');
+  async function doTransfer() {
+    if (!employeeId || !targetManagerId) return;
+    setTransferError(''); setTransferSuccess('');
+    setTransferring(true);
+    const res = await fetch(`/api/superadmin/employees/${employeeId}/transfer`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ targetManagerId }),
+    });
+    setTransferring(false);
+    if (!res.ok) { setTransferError((await res.json()).error); return; }
+    const data = await res.json();
+    setTransferSuccess(`Moved to ${data.newManagerName}'s team.`);
+    setEmployeeId(''); setTargetManagerId('');
+    onSaved?.();
   }
 
   return (
-    <div className="panel">
-      <div className="section-head">
-        <div className="section-icon"><Lock size={22} /></div>
-        <div>
-          <h2 className="card-title">Change an admin's password</h2>
-          <p className="card-subtitle">
-            Update the password for an admin who is locked out or needs a reset. This is the "forgot password" fix for admins.
-          </p>
-        </div>
-        <div className="section-illustration"><PasswordIllustration /></div>
-      </div>
-      <form onSubmit={submit}>
+    <Modal title={`Edit ${manager.name}`} onClose={onClose} width={640}>
+      <form onSubmit={save}>
         <div className="form-grid">
           <div className="field">
-            <label>Select admin</label>
+            <label>Full name</label>
             <div className="input-icon-wrap">
               <User size={15} />
-              <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
-                <option value="">Select admin…</option>
-                {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
+              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
           </div>
           <div className="field">
-            <label>New password</label>
+            <label>Department</label>
+            <div className="input-icon-wrap">
+              <Building2 size={15} />
+              <input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Email address</label>
+            <div className="input-icon-wrap">
+              <Mail size={15} />
+              <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Role</label>
+            <div className="input-icon-wrap">
+              <Users size={15} />
+              <input value={form.jobRole} onChange={(e) => setForm({ ...form, jobRole: e.target.value })} />
+            </div>
+          </div>
+          <div className="field">
+            <label>Mobile number</label>
+            <div className="input-icon-wrap">
+              <Phone size={15} />
+              <input value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
+            </div>
+          </div>
+          <div className="field">
+            <label>New password (optional)</label>
             <div className="input-icon-wrap has-toggle">
               <Lock size={15} />
               <input
                 type={showPassword ? 'text' : 'password'}
-                placeholder="New password (8+ characters)"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Leave blank to keep as-is"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
               />
               <button type="button" className="input-icon-toggle" onClick={() => setShowPassword((v) => !v)} title={showPassword ? 'Hide password' : 'Show password'}>
                 {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
             </div>
           </div>
-          <div className="field" style={{ gridColumn: '1 / -1' }}>
-            <label>Email (optional)</label>
-            <div className="input-icon-wrap">
-              <Mail size={15} />
-              <input
-                type="email"
-                placeholder="Set/fix their email (leave blank to keep as-is)"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-          </div>
         </div>
         {error && <div style={{ color: '#e07070', fontSize: 12, marginBottom: 12 }}>{error}</div>}
-        {success && <div style={{ color: 'var(--status-good)', fontSize: 12, marginBottom: 12 }}>{success}</div>}
         <div className="inline-form">
-          <button type="submit" disabled={submitting}>
-            <Lock size={14} />{submitting ? 'Saving…' : 'Set new password'}
-          </button>
-          <button type="button" className="btn-text" onClick={reset}>Reset</button>
+          <button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+          <button type="button" className="btn-outline" onClick={onClose}>Cancel</button>
         </div>
       </form>
-    </div>
+
+      <hr className="modal-divider" />
+      <p className="modal-section-title">Tracking hours</p>
+      <TrackingHoursControl managerId={manager.id} settingsUrl={`/api/superadmin/managers/${manager.id}/settings`} />
+
+      {manager.employees?.length > 0 && (
+        <>
+          <hr className="modal-divider" />
+          <p className="modal-section-title">Transfer one of their employees</p>
+          <div className="inline-form">
+            <div className="input-icon-wrap" style={{ minWidth: 180 }}>
+              <User size={15} />
+              <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
+                <option value="">Select employee…</option>
+                {manager.employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </div>
+            <div className="input-icon-wrap" style={{ minWidth: 180 }}>
+              <ArrowRightLeft size={15} />
+              <select value={targetManagerId} onChange={(e) => setTargetManagerId(e.target.value)}>
+                <option value="">Move to admin…</option>
+                {allManagers.filter((m) => m.id !== manager.id).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+            <button type="button" className="btn-outline-danger" disabled={!employeeId || !targetManagerId || transferring} onClick={doTransfer}>
+              {transferring ? 'Transferring…' : 'Transfer'}
+            </button>
+          </div>
+          {transferError && <div style={{ color: '#e07070', fontSize: 12, marginTop: 8 }}>{transferError}</div>}
+          {transferSuccess && <div style={{ color: 'var(--status-good)', fontSize: 12, marginTop: 8 }}>{transferSuccess}</div>}
+        </>
+      )}
+    </Modal>
   );
 }
 
-function TransferEmployeePanel({ overview, onTransferred }) {
-  const [employeeId, setEmployeeId] = useState('');
-  const [targetManagerId, setTargetManagerId] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  const allEmployees = (overview?.admins ?? []).flatMap((a) =>
-    a.employees.map((e) => ({ ...e, managerId: a.id, managerName: a.name })));
-
-  async function submit(e) {
-    e.preventDefault();
-    setError(''); setSuccess('');
-    if (!employeeId || !targetManagerId) { setError('Pick an employee and a destination admin.'); return; }
-    setSubmitting(true);
-    const res = await fetch(`/api/superadmin/employees/${employeeId}/transfer`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ targetManagerId }),
-    });
-    setSubmitting(false);
-    if (!res.ok) { setError((await res.json()).error); return; }
-    const data = await res.json();
-    setSuccess(`Moved to ${data.newManagerName}'s team.`);
-    setEmployeeId(''); setTargetManagerId('');
-    onTransferred?.();
-  }
-
-  function reset() {
-    setEmployeeId(''); setTargetManagerId('');
-    setError(''); setSuccess('');
-  }
+function AdminsListPanel({ overview, onChanged }) {
+  const [editing, setEditing] = useState(null);
 
   return (
     <div className="panel">
       <div className="section-head">
-        <div className="section-icon"><ArrowRightLeft size={22} /></div>
+        <div className="section-icon"><Users2 size={22} /></div>
         <div>
-          <h2 className="card-title">Transfer an employee to another admin</h2>
-          <p className="card-subtitle">Org-wide — unlike an admin moving their own team members, you can move anyone to any admin.</p>
+          <h2 className="card-title">Admins</h2>
+          <p className="card-subtitle">
+            Click the pencil to edit an admin's details or password, set their tracking hours, or transfer one of their employees.
+          </p>
         </div>
       </div>
-      <form onSubmit={submit}>
-        <div className="form-grid">
-          <div className="field">
-            <label>Employee</label>
-            <div className="input-icon-wrap">
-              <User size={15} />
-              <select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
-                <option value="">Select employee…</option>
-                {allEmployees.map((e) => <option key={e.id} value={e.id}>{e.name} (reports to {e.managerName})</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="field">
-            <label>Move to admin</label>
-            <div className="input-icon-wrap">
-              <UserCog size={15} />
-              <select value={targetManagerId} onChange={(e) => setTargetManagerId(e.target.value)}>
-                <option value="">Move to admin…</option>
-                {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </div>
-          </div>
+      {overview.admins.length === 0 ? (
+        <div className="empty">No admins yet.</div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Mobile</th><th>Role</th><th>Department</th><th></th></tr>
+            </thead>
+            <tbody>
+              {overview.admins.map((a) => (
+                <tr key={a.id}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Avatar name={a.name} size={26} />
+                      {a.name}
+                    </div>
+                  </td>
+                  <td>{a.email || '—'}</td>
+                  <td>{a.mobile || '—'}</td>
+                  <td><span className="badge-role">{a.jobRole || 'Manager'}</span></td>
+                  <td>{a.department ? <span className="badge-dept">{a.department}</span> : '—'}</td>
+                  <td>
+                    <button className="row-icon-btn" title="Edit" onClick={() => setEditing(a)}>
+                      <Pencil size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        {error && <div style={{ color: '#e07070', fontSize: 12, marginBottom: 12 }}>{error}</div>}
-        {success && <div style={{ color: 'var(--status-good)', fontSize: 12, marginBottom: 12 }}>{success}</div>}
-        <div className="inline-form">
-          <button type="submit" disabled={submitting}>
-            <ArrowRightLeft size={14} />{submitting ? 'Moving…' : 'Transfer employee'}
-          </button>
-          <button type="button" className="btn-text" onClick={reset}>Reset</button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function SetTrackingHoursPanel({ overview }) {
-  const [managerId, setManagerId] = useState('');
-  return (
-    <>
-      <div className="panel">
-        <div className="section-head">
-          <div className="section-icon"><Clock4 size={22} /></div>
-          <div>
-            <h2 className="card-title">Set an admin's tracking hours</h2>
-            <p className="card-subtitle">
-              Same effect as an admin setting this for themselves — outside the window, activity and
-              screenshots are discarded on arrival rather than stored. No agent update needed.
-            </p>
-          </div>
-        </div>
-        <div className="field" style={{ maxWidth: 280 }}>
-          <label>Select admin</label>
-          <div className="input-icon-wrap">
-            <User size={15} />
-            <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
-              <option value="">Select admin…</option>
-              {overview?.admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-          </div>
-        </div>
-      </div>
-      {managerId && (
-        <TrackingHoursControl managerId={managerId} settingsUrl={`/api/superadmin/managers/${managerId}/settings`} />
       )}
-    </>
+      {editing && (
+        <EditManagerModal manager={editing} allManagers={overview.admins} onSaved={onChanged} onClose={() => setEditing(null)} />
+      )}
+    </div>
   );
 }
 
@@ -967,8 +978,7 @@ function ManageTab({ overview, onChanged }) {
             <div>
               <h2 className="card-title">Password reset requested ({requested.length})</h2>
               <p className="card-subtitle">
-                These admins clicked "Forgot password?" on the login screen. Use "Change an admin's password" below to set
-                them a new one and tell them directly.
+                These admins clicked "Forgot password?" on the login screen. Click their row's pencil icon below to set them a new one.
               </p>
             </div>
           </div>
@@ -978,9 +988,7 @@ function ManageTab({ overview, onChanged }) {
         </div>
       )}
       <CreateAdminPanel onCreated={onChanged} />
-      <ChangeAdminPasswordPanel overview={overview} />
-      <SetTrackingHoursPanel overview={overview} />
-      <TransferEmployeePanel overview={overview} onTransferred={onChanged} />
+      <AdminsListPanel overview={overview} onChanged={onChanged} />
     </>
   );
 }
@@ -1054,7 +1062,7 @@ export default function SuperAdminDashboard({ user, onLogout }) {
 
       <main className="main">
         {activeTab === 'overview' && (
-          <OverviewTab overview={overview} onSelectMember={(id, tab = 'timeline') => { setSelectedUserId(id); setActiveTab(tab); }} />
+          <OverviewTab overview={overview} onChanged={reloadOverview} onSelectMember={(id, tab = 'timeline') => { setSelectedUserId(id); setActiveTab(tab); }} />
         )}
         {activeTab === 'live' && (
           <LiveTab onSelectMember={(id) => { setSelectedUserId(id); setActiveTab('timeline'); }} />

@@ -126,7 +126,7 @@ export default function ManagerDashboard({ manager, onLogout }) {
         )}
         {activeTab === 'screenshots' && <ScreenshotsView selectedUserId={selectedUserId} managerId={managerId} />}
         {activeTab === 'projects' && <ProjectsView managerId={managerId} team={team} />}
-        {activeTab === 'employees' && <EmployeeManagementView managerId={managerId} team={team} onTeamChanged={loadTeam} />}
+        {activeTab === 'employees' && <EmployeeManagementView managerId={managerId} managerName={manager.name} team={team} onTeamChanged={loadTeam} />}
         {activeTab === 'attendance' && <AttendanceReviewView managerId={managerId} />}
         {activeTab === 'categories' && <CategoriesView managerId={managerId} />}
         {activeTab === 'team' && <TeamView managerId={managerId} />}

@@ -4,6 +4,7 @@ import { db, randomToken } from '../db.js';
 import { requireManager, requireManagerSelf, hashPassword } from '../auth.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
+import { deleteEmployeeCascade } from '../deleteEmployee.js';
 
 export const managersRouter = Router();
 
@@ -60,6 +61,53 @@ managersRouter.post('/:id/team/:employeeId/set-password', requireManagerSelf, ah
 
   await db.prepare('UPDATE users SET password_hash = ?, password_reset_requested_at = NULL WHERE id = ?')
     .run(hashPassword(password), employee.id);
+  res.json({ ok: true });
+}));
+
+// Edits an employee's own profile fields, and optionally their password in
+// the same request — the "click the pencil, edit everything, Save" flow
+// replaces the old separate set-password/claim-link buttons for this view.
+managersRouter.patch('/:id/team/:employeeId', requireManagerSelf, ah(async (req, res) => {
+  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND manager_id = ? AND role = 'employee'")
+    .get(req.params.employeeId, req.params.id);
+  if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
+
+  const { name, email, mobile, department, jobRole, password } = req.body;
+  if (name !== undefined && !name.trim()) return res.status(400).json({ error: 'name cannot be blank' });
+  if (password !== undefined && password !== '' && password.length < 8) {
+    return res.status(400).json({ error: 'password must be at least 8 characters' });
+  }
+
+  const updates = [];
+  const values = [];
+  if (name !== undefined) { updates.push('name = ?'); values.push(name.trim()); }
+  if (email !== undefined) { updates.push('email = ?'); values.push(email.trim() || null); }
+  if (mobile !== undefined) { updates.push('mobile = ?'); values.push(mobile.trim() || null); }
+  if (department !== undefined) { updates.push('department = ?'); values.push(department.trim() || null); }
+  if (jobRole !== undefined) { updates.push('job_role = ?'); values.push(jobRole.trim() || null); }
+  if (password) { updates.push('password_hash = ?', 'password_reset_requested_at = NULL'); values.push(hashPassword(password)); }
+  if (updates.length === 0) return res.status(400).json({ error: 'nothing to update' });
+
+  values.push(employee.id);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  const updated = await db.prepare(`
+    SELECT id, name, email, mobile, department, job_role AS "jobRole", created_at,
+      (claim_token IS NOT NULL) AS "hasPendingClaim", (password_hash IS NOT NULL) AS "hasDashboardLogin",
+      (password_reset_requested_at IS NOT NULL) AS "passwordResetRequested"
+    FROM users WHERE id = ?
+  `).get(employee.id);
+  res.json(updated);
+}));
+
+// Permanently removes an employee and all their tracked data (activity,
+// screenshots, timesheets, attendance, leave). Irreversible — the UI should
+// confirm before calling this.
+managersRouter.delete('/:id/team/:employeeId', requireManagerSelf, ah(async (req, res) => {
+  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND manager_id = ? AND role = 'employee'")
+    .get(req.params.employeeId, req.params.id);
+  if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
+
+  await deleteEmployeeCascade(employee.id);
   res.json({ ok: true });
 }));
 
