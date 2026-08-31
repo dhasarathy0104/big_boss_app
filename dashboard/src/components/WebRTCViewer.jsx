@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Modal from './Modal.jsx';
 
 const POLL_MS = 1000;
-const CONNECT_TIMEOUT_MS = 20_000;
+const CONNECT_TIMEOUT_MS = 30_000;
 
 // Direct peer-to-peer WebRTC viewer for "Watch Live" — the backend only ever
 // relays the small SDP offer/answer exchange (see /api/live-sessions/*);

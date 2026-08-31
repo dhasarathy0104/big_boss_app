@@ -24,15 +24,25 @@ use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
 use webrtc::api::APIBuilder;
 use webrtc::data_channel::data_channel_init::RTCDataChannelInit;
+use webrtc::data_channel::RTCDataChannel;
 use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::interceptor::registry::Registry;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
+use webrtc::peer_connection::RTCPeerConnection;
 
 const POLL_FOR_REQUEST_SECS: u64 = 2;
 const POLL_FOR_ANSWER_SECS: u64 = 1;
 const FRAME_INTERVAL_MS: u64 = 150; // ~6-7 fps, matches the JPEG quality/size already used for screenshots
 const SESSION_CHECK_EVERY_N_FRAMES: u32 = 20; // roughly every 3s at 150ms/frame
+// Bounds the entire "set up the connection" phase (ICE gathering + waiting
+// for the viewer's answer). Without this, a stuck ICE gathering step (e.g.
+// STUN traffic silently dropped somewhere on the network, well past the
+// Windows Firewall prompt) would hang this task forever — and since the
+// outer watch-loop treats "streaming" as busy until this task finishes, a
+// stuck connection here used to silently block every future watch request
+// too, with no error and no way to recover short of restarting the agent.
+const CONNECT_TIMEOUT_SECS: u64 = 25;
 
 // Runs for the lifetime of the agent, alongside the activity/screenshot
 // loops. Costs one small HTTP request every couple of seconds while idle;
@@ -62,6 +72,9 @@ pub async fn run_watch_loop(agent_key: String, backend_url: String) {
                     if let Err(e) = handle_session(agent_key, backend_url, session_id).await {
                         eprintln!("live session {sid} ended: {e}");
                     }
+                    // However handle_session finished — success, error, or the
+                    // connect-timeout below — this always runs, so a stuck or
+                    // failed session can never permanently block the next one.
                     streaming.store(false, Ordering::Relaxed);
                 });
             }
@@ -74,6 +87,74 @@ pub async fn run_watch_loop(agent_key: String, backend_url: String) {
 async fn handle_session(agent_key: String, backend_url: String, session_id: String) -> Result<(), String> {
     let client = BackendClient::new(backend_url);
 
+    let setup = tokio::time::timeout(
+        Duration::from_secs(CONNECT_TIMEOUT_SECS),
+        negotiate(&client, &agent_key, &session_id),
+    )
+    .await;
+
+    let (pc, dc, dc_open, closed) = match setup {
+        Ok(Ok(parts)) => parts,
+        Ok(Err(e)) => {
+            client.stop_live_session(&agent_key, &session_id).await;
+            return Err(e);
+        }
+        Err(_) => {
+            client.stop_live_session(&agent_key, &session_id).await;
+            return Err(format!(
+                "connection setup timed out after {CONNECT_TIMEOUT_SECS}s (ICE negotiation never completed — \
+                 likely a network blocking the STUN/UDP traffic needed for a direct connection, not just the \
+                 one-time Windows Firewall prompt)"
+            ));
+        }
+    };
+
+    // Give the data channel a few seconds to actually open before the main
+    // loop starts — no point burning CPU on frames nobody can receive yet.
+    for _ in 0..50 {
+        if dc_open.load(Ordering::Relaxed) || closed.load(Ordering::Relaxed) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    let mut frame_count: u32 = 0;
+    while !closed.load(Ordering::Relaxed) {
+        if dc_open.load(Ordering::Relaxed) {
+            match capture_primary_as_jpeg_bytes() {
+                Ok(bytes) => {
+                    let _ = dc.send(&Bytes::from(bytes)).await;
+                }
+                Err(e) => eprintln!("live frame capture failed: {e}"),
+            }
+        }
+
+        frame_count += 1;
+        if frame_count % SESSION_CHECK_EVERY_N_FRAMES == 0 {
+            match client.get_live_session(&agent_key, &session_id).await {
+                Ok(None) => break, // manager clicked Stop, or the session expired
+                Ok(Some(_)) => {}
+                Err(e) => eprintln!("live session check failed: {e}"),
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(FRAME_INTERVAL_MS)).await;
+    }
+
+    client.stop_live_session(&agent_key, &session_id).await;
+    let _ = pc.close().await;
+    Ok(())
+}
+
+// Everything from "build the peer connection" through "the viewer answered
+// and we've applied it" — wrapped in the CONNECT_TIMEOUT_SECS timeout above,
+// so nothing in here can hang the agent indefinitely no matter what the
+// network does.
+async fn negotiate(
+    client: &BackendClient,
+    agent_key: &str,
+    session_id: &str,
+) -> Result<(Arc<RTCPeerConnection>, Arc<RTCDataChannel>, Arc<AtomicBool>, Arc<AtomicBool>), String> {
     let mut media_engine = MediaEngine::default();
     media_engine.register_default_codecs().map_err(|e| e.to_string())?;
     let mut registry = Registry::new();
@@ -82,9 +163,9 @@ async fn handle_session(agent_key: String, backend_url: String, session_id: Stri
 
     // Public STUN only, no TURN, for this MVP — enough to attempt a direct
     // connection. If a test machine sits behind a NAT strict enough to need
-    // a relay, the connection will simply fail to establish; that's the
-    // real-world signal for whether TURN becomes necessary, not something
-    // worth pre-building.
+    // a relay, ICE gathering below will time out rather than hang forever;
+    // that's the real-world signal for whether TURN becomes necessary, not
+    // something worth pre-building.
     let config = RTCConfiguration {
         ice_servers: vec![RTCIceServer {
             urls: vec!["stun:stun.l.google.com:19302".to_owned()],
@@ -130,10 +211,10 @@ async fn handle_session(agent_key: String, backend_url: String, session_id: Stri
     let _ = gather_complete.recv().await;
     let local_desc = pc.local_description().await.ok_or("no local description after ICE gathering")?;
 
-    client.post_live_offer(&agent_key, &session_id, &local_desc).await?;
+    client.post_live_offer(agent_key, session_id, &local_desc).await?;
 
     let answer = loop {
-        match client.get_live_session(&agent_key, &session_id).await? {
+        match client.get_live_session(agent_key, session_id).await? {
             None => return Err("session stopped before the viewer answered".to_string()),
             Some(session) => {
                 if let Some(answer) = session.answer {
@@ -145,39 +226,5 @@ async fn handle_session(agent_key: String, backend_url: String, session_id: Stri
     };
     pc.set_remote_description(answer).await.map_err(|e| e.to_string())?;
 
-    // Give the data channel a few seconds to actually open before the main
-    // loop starts — no point burning CPU on frames nobody can receive yet.
-    for _ in 0..50 {
-        if dc_open.load(Ordering::Relaxed) || closed.load(Ordering::Relaxed) {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-
-    let mut frame_count: u32 = 0;
-    while !closed.load(Ordering::Relaxed) {
-        if dc_open.load(Ordering::Relaxed) {
-            match capture_primary_as_jpeg_bytes() {
-                Ok(bytes) => {
-                    let _ = dc.send(&Bytes::from(bytes)).await;
-                }
-                Err(e) => eprintln!("live frame capture failed: {e}"),
-            }
-        }
-
-        frame_count += 1;
-        if frame_count % SESSION_CHECK_EVERY_N_FRAMES == 0 {
-            match client.get_live_session(&agent_key, &session_id).await {
-                Ok(None) => break, // manager clicked Stop, or the session expired
-                Ok(Some(_)) => {}
-                Err(e) => eprintln!("live session check failed: {e}"),
-            }
-        }
-
-        tokio::time::sleep(Duration::from_millis(FRAME_INTERVAL_MS)).await;
-    }
-
-    client.stop_live_session(&agent_key, &session_id).await;
-    let _ = pc.close().await;
-    Ok(())
+    Ok((pc, dc, dc_open, closed))
 }
