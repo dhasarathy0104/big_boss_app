@@ -1,27 +1,19 @@
-// Fetches short-lived TURN relay credentials from Metered on demand, one set
-// per watch session. The account's secret key stays server-side only (per
-// Metered's own guidance — it must never reach a browser or the agent); this
-// is the one place it's used, to mint a disposable username/password pair
-// that IS safe to hand to a client.
+// Metered's free tier caps the TOTAL number of TURN credentials that can
+// ever be created at 10 (disabling one does not free that count back up —
+// confirmed the hard way: minting a brand-new credential per watch session,
+// as this originally did, exhausted all 10 within minutes of real testing).
+// The fix is to reuse one long-lived credential for every session instead of
+// minting a new one. It's kept in env vars, not committed here, even though
+// a TURN username/password is lower-stakes than the account secret key —
+// this repo is public, and there's no reason to publish it when an env var
+// costs nothing extra. If usage ever outgrows the free tier, the fix is a
+// paid Metered plan or self-hosting coturn, not more credentials from this one.
 const METERED_SUBDOMAIN = 'dhasarathy';
 
 export async function fetchTurnCredentials() {
-  const secretKey = process.env.METERED_SECRET_KEY;
-  if (!secretKey) return null;
-
-  const label = `bigboss-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  let res;
-  try {
-    res = await fetch(
-      `https://${METERED_SUBDOMAIN}.metered.live/api/v1/turn/credential?secretKey=${encodeURIComponent(secretKey)}`,
-      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ label }) },
-    );
-  } catch {
-    return null;
-  }
-  if (!res.ok) return null;
-  const { username, password } = await res.json();
-  if (!username || !password) return null;
+  const username = process.env.TURN_USERNAME;
+  const password = process.env.TURN_PASSWORD;
+  if (!username || !password) return [{ urls: 'stun:stun.l.google.com:19302' }];
 
   return [
     { urls: `stun:${METERED_SUBDOMAIN}.metered.live:80` },
