@@ -160,11 +160,24 @@ async fn handle_session(agent_key: String, backend_url: String, session_id: Stri
 fn to_ice_servers(entries: Vec<IceServerEntry>) -> Vec<RTCIceServer> {
     let mut servers = vec![RTCIceServer { urls: vec!["stun:stun.l.google.com:19302".to_owned()], ..Default::default() }];
     for entry in entries {
+        let has_credentials = entry.username.is_some() && entry.credential.is_some();
         servers.push(RTCIceServer {
             urls: vec![entry.urls],
             username: entry.username.unwrap_or_default(),
             credential: entry.credential.unwrap_or_default(),
-            ..Default::default()
+            // RTCIceServer's credential_type defaults to Unspecified, which
+            // the crate's own validation rejects for any turn:/turns: URL
+            // with an "invalid turn server credentials" error — regardless
+            // of whether the username/credential themselves are correct.
+            // This was the actual root cause of every "invalid turn server
+            // credentials" failure seen in testing; it never once reached
+            // the network. STUN-only entries have no credentials and don't
+            // need this (Unspecified is fine when there's nothing to check).
+            credential_type: if has_credentials {
+                webrtc::ice_transport::ice_credential_type::RTCIceCredentialType::Password
+            } else {
+                Default::default()
+            },
         });
     }
     servers
