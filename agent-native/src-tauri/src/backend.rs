@@ -271,6 +271,21 @@ pub struct LiveSession {
     pub answer: Option<RTCSessionDescription>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct IceServerEntry {
+    pub urls: String,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub credential: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TurnCredentialsResponse {
+    #[serde(rename = "iceServers")]
+    ice_servers: Vec<IceServerEntry>,
+}
+
 impl BackendClient {
     // Polled every couple of seconds — this is the one loop in the whole
     // agent fast enough to make "Watch Live" feel close to instant. Returns
@@ -333,6 +348,24 @@ impl BackendClient {
             .header("x-agent-key", agent_key)
             .send()
             .await;
+    }
+
+    // Fresh, short-lived TURN credentials for one session — see
+    // backend/src/turnCredentials.js. Empty Vec (not an error) if the
+    // backend has no TURN provider configured yet, or the request to it
+    // failed; the caller just falls back to STUN-only in that case.
+    pub async fn get_turn_credentials(&self, agent_key: &str) -> Vec<IceServerEntry> {
+        let res = match self
+            .http
+            .get(format!("{}/api/agent/turn-credentials", self.base_url))
+            .header("x-agent-key", agent_key)
+            .send()
+            .await
+        {
+            Ok(r) if r.status().is_success() => r,
+            _ => return Vec::new(),
+        };
+        res.json::<TurnCredentialsResponse>().await.map(|r| r.ice_servers).unwrap_or_default()
     }
 
     // Reports why a session failed so the viewer sees something specific

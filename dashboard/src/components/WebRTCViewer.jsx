@@ -3,18 +3,7 @@ import Modal from './Modal.jsx';
 
 const POLL_MS = 1000;
 const CONNECT_TIMEOUT_MS = 30_000;
-
-// Free public test relay (Open Relay Project) — same one the agent uses, see
-// livestream.rs. Only for validating whether TURN fixes real connections;
-// swap for a self-hosted or paid relay once that's confirmed.
-const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  {
-    urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turns:openrelay.metered.ca:443'],
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-];
+const STUN_ONLY = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 // Direct peer-to-peer WebRTC viewer for "Watch Live" — the backend only ever
 // relays the small SDP offer/answer exchange (see /api/live-sessions/*);
@@ -40,7 +29,13 @@ export default function WebRTCViewer({ employeeId, employeeName, onClose }) {
         if (!createRes.ok || cancelled) { if (!cancelled) setState('failed'); return; }
         ({ sessionId } = await createRes.json());
 
-        pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+        const iceServers = await fetch('/api/turn-credentials')
+          .then((r) => (r.ok ? r.json() : { iceServers: [] }))
+          .then((d) => [...STUN_ONLY, ...(d.iceServers ?? [])])
+          .catch(() => STUN_ONLY);
+        if (cancelled) return;
+
+        pc = new RTCPeerConnection({ iceServers });
 
         pc.ondatachannel = (event) => {
           const channel = event.channel;

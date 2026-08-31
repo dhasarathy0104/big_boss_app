@@ -14,7 +14,7 @@
 // instead of once every few minutes, sent unreliable/unordered (a dropped or
 // late frame should be skipped, not retransmitted and cause lag).
 
-use crate::backend::BackendClient;
+use crate::backend::{BackendClient, IceServerEntry};
 use crate::screenshot::capture_primary_as_jpeg_bytes;
 use bytes::Bytes;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -41,20 +41,6 @@ const SESSION_CHECK_EVERY_N_FRAMES: u32 = 20; // roughly every 3s at 150ms/frame
 // busy until this task finishes, a single stuck connection used to
 // permanently block every future watch request too.
 const CONNECT_TIMEOUT_SECS: u64 = 25;
-
-// Free public test relay (Open Relay Project, sponsored by Metered) — used
-// only to check whether TURN fixes real-world connections before committing
-// to self-hosting or paying for one. These access values are openly
-// published (they appear in the project's own public docs and countless
-// WebRTC tutorials) — there is nothing private about this specific relay;
-// swap it for a self-hosted coturn box or a paid provider once this
-// confirms TURN is the actual fix.
-mod public_test_relay {
-    pub const URLS: [&str; 3] =
-        ["turn:openrelay.metered.ca:80", "turn:openrelay.metered.ca:443", "turns:openrelay.metered.ca:443"];
-    pub const USER: &str = "openrelayproject";
-    pub const PASS: &str = "openrelayproject";
-}
 
 // Runs for the lifetime of the agent, alongside the activity/screenshot
 // loops. Costs one small HTTP request every couple of seconds while idle;
@@ -171,16 +157,17 @@ async fn handle_session(agent_key: String, backend_url: String, session_id: Stri
     Ok(())
 }
 
-fn ice_servers() -> Vec<RTCIceServer> {
-    vec![
-        RTCIceServer { urls: vec!["stun:stun.l.google.com:19302".to_owned()], ..Default::default() },
-        RTCIceServer {
-            urls: public_test_relay::URLS.iter().map(|s| s.to_string()).collect(),
-            username: public_test_relay::USER.to_owned(),
-            credential: public_test_relay::PASS.to_owned(),
+fn to_ice_servers(entries: Vec<IceServerEntry>) -> Vec<RTCIceServer> {
+    let mut servers = vec![RTCIceServer { urls: vec!["stun:stun.l.google.com:19302".to_owned()], ..Default::default() }];
+    for entry in entries {
+        servers.push(RTCIceServer {
+            urls: vec![entry.urls],
+            username: entry.username.unwrap_or_default(),
+            credential: entry.credential.unwrap_or_default(),
             ..Default::default()
-        },
-    ]
+        });
+    }
+    servers
 }
 
 // Everything from "build the peer connection" through "the viewer answered
@@ -200,12 +187,15 @@ async fn negotiate(
     registry = register_default_interceptors(registry, &mut media_engine).map_err(|e| e.to_string())?;
     let api = APIBuilder::new().with_media_engine(media_engine).with_interceptor_registry(registry).build();
 
-    // STUN plus a free public TURN relay as a fallback — STUN alone only
-    // helps two computers discover a direct path, which plenty of real
-    // networks (especially office ones) simply don't allow. TURN is a relay
-    // both sides connect *to* instead, and is the fix when a direct
-    // connection can't be established at all.
-    let config = RTCConfiguration { ice_servers: ice_servers(), ..Default::default() };
+    // STUN plus a fresh TURN credential from our own backend (see
+    // backend/src/turnCredentials.js) as a fallback — STUN alone only helps
+    // two computers discover a direct path, which plenty of real networks
+    // (especially office ones) simply don't allow. TURN is a relay both
+    // sides connect *to* instead, and is the fix when a direct connection
+    // can't be established at all. Falls back to STUN-only automatically if
+    // the backend has no TURN provider configured.
+    let turn_entries = client.get_turn_credentials(agent_key).await;
+    let config = RTCConfiguration { ice_servers: to_ice_servers(turn_entries), ..Default::default() };
     let pc = Arc::new(api.new_peer_connection(config).await.map_err(|e| e.to_string())?);
 
     let failure: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));

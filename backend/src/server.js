@@ -16,6 +16,7 @@ import { categoryRulesRouter } from './routes/categoryRules.js';
 import { liveStatusRouter } from './routes/liveStatus.js';
 import { liveStreamRouter } from './routes/liveStream.js';
 import { findPendingSessionForEmployee, getSession, deleteSession } from './liveSessions.js';
+import { fetchTurnCredentials } from './turnCredentials.js';
 import { attendanceRouter } from './routes/attendance.js';
 import { leaveRequestsRouter } from './routes/leaveRequests.js';
 import { billingRouter } from './routes/billing.js';
@@ -237,6 +238,22 @@ app.post('/api/agent/live-sessions/:id/error', authUser, ah(async (req, res) => 
   session.error = req.body.message || 'unknown error';
   session.status = 'failed';
   res.json({ ok: true });
+}));
+
+// Fresh, short-lived TURN credentials for one watch session — used when a
+// direct connection can't be established (STUN alone isn't enough on plenty
+// of real networks). Mirrored for both identities that need it: the agent
+// (x-agent-key) and the human viewer (session token). Degrades to STUN-only
+// if METERED_SECRET_KEY isn't set or the request to Metered fails, rather
+// than erroring the whole session.
+app.get('/api/agent/turn-credentials', authUser, ah(async (req, res) => {
+  const iceServers = await fetchTurnCredentials();
+  res.json({ iceServers: iceServers ?? [] });
+}));
+
+app.get('/api/turn-credentials', requireAuth, ah(async (req, res) => {
+  const iceServers = await fetchTurnCredentials();
+  res.json({ iceServers: iceServers ?? [] });
 }));
 
 // --- Dashboard read endpoints ---
