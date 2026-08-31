@@ -40,7 +40,12 @@ const SESSION_CHECK_EVERY_N_FRAMES: u32 = 20; // roughly every 3s at 150ms/frame
 // this task forever, and since the outer watch-loop treats "streaming" as
 // busy until this task finishes, a single stuck connection used to
 // permanently block every future watch request too.
-const CONNECT_TIMEOUT_SECS: u64 = 25;
+// Real testing showed the viewer's own (browser-side) vanilla ICE gathering
+// alone can take 20+ seconds across two different networks — 25s total for
+// offer + gathering + answer round-trip was cutting it too close and caused
+// live sessions to time out right as the answer arrived. 60s gives that step
+// real breathing room without leaving a truly-stuck connection hanging long.
+const CONNECT_TIMEOUT_SECS: u64 = 60;
 
 // Runs for the lifetime of the agent, alongside the activity/screenshot
 // loops. Costs one small HTTP request every couple of seconds while idle;
