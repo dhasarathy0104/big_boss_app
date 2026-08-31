@@ -15,8 +15,8 @@ import { timeEntriesRouter } from './routes/timeEntries.js';
 import { categoryRulesRouter } from './routes/categoryRules.js';
 import { liveStatusRouter } from './routes/liveStatus.js';
 import { liveStreamRouter } from './routes/liveStream.js';
-import { findPendingSessionForEmployee, getSession, deleteSession } from './liveSessions.js';
-import { fetchTurnCredentials } from './turnCredentials.js';
+import { findPendingSessionForEmployee } from './liveSessions.js';
+import { attachLiveRelay } from './liveRelay.js';
 import { attendanceRouter } from './routes/attendance.js';
 import { leaveRequestsRouter } from './routes/leaveRequests.js';
 import { billingRouter } from './routes/billing.js';
@@ -200,62 +200,6 @@ app.get('/api/agent/live-session-request', authUser, ah(async (req, res) => {
   res.json({ sessionId: session?.id ?? null });
 }));
 
-app.get('/api/agent/live-sessions/:id', authUser, ah(async (req, res) => {
-  const session = getSession(req.params.id);
-  if (!session || session.employeeId !== req.user.id) {
-    return res.status(404).json({ error: 'session not found or expired' });
-  }
-  res.json(session);
-}));
-
-app.post('/api/agent/live-sessions/:id/offer', authUser, ah(async (req, res) => {
-  const session = getSession(req.params.id);
-  if (!session || session.employeeId !== req.user.id) {
-    return res.status(404).json({ error: 'session not found or expired' });
-  }
-  if (!req.body.sdp) return res.status(400).json({ error: 'sdp required' });
-  session.offer = req.body.sdp;
-  session.status = 'offered';
-  res.json({ ok: true });
-}));
-
-app.post('/api/agent/live-sessions/:id/stop', authUser, ah(async (req, res) => {
-  const session = getSession(req.params.id);
-  if (session && session.employeeId === req.user.id) deleteSession(session.id);
-  res.json({ ok: true });
-}));
-
-// Lets the agent report *why* a session failed (setup timeout, ICE
-// connectivity lost after negotiating, etc.) instead of the viewer only ever
-// seeing a generic failure. Deliberately does not delete the session — the
-// viewer reads this once, then calls stop itself; the 2-minute sweep in
-// liveSessions.js cleans it up either way if nobody does.
-app.post('/api/agent/live-sessions/:id/error', authUser, ah(async (req, res) => {
-  const session = getSession(req.params.id);
-  if (!session || session.employeeId !== req.user.id) {
-    return res.status(404).json({ error: 'session not found or expired' });
-  }
-  session.error = req.body.message || 'unknown error';
-  session.status = 'failed';
-  res.json({ ok: true });
-}));
-
-// Fresh, short-lived TURN credentials for one watch session — used when a
-// direct connection can't be established (STUN alone isn't enough on plenty
-// of real networks). Mirrored for both identities that need it: the agent
-// (x-agent-key) and the human viewer (session token). Degrades to STUN-only
-// if METERED_SECRET_KEY isn't set or the request to Metered fails, rather
-// than erroring the whole session.
-app.get('/api/agent/turn-credentials', authUser, ah(async (req, res) => {
-  const iceServers = await fetchTurnCredentials();
-  res.json({ iceServers: iceServers ?? [] });
-}));
-
-app.get('/api/turn-credentials', requireAuth, ah(async (req, res) => {
-  const iceServers = await fetchTurnCredentials();
-  res.json({ iceServers: iceServers ?? [] });
-}));
-
 // --- Dashboard read endpoints ---
 // All scoped to: the user viewing their own data, or the manager who owns them.
 
@@ -375,4 +319,5 @@ cleanupOldScreenshots();
 setInterval(cleanupOldScreenshots, CLEANUP_INTERVAL_MS);
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`desklog backend listening on http://localhost:${PORT}`));
+const server = app.listen(PORT, () => console.log(`desklog backend listening on http://localhost:${PORT}`));
+attachLiveRelay(server);

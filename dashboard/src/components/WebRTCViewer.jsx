@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import Modal from './Modal.jsx';
+import { getToken } from '../api.js';
 
-const POLL_MS = 1000;
-const CONNECT_TIMEOUT_MS = 30_000;
-const STUN_ONLY = [{ urls: 'stun:stun.l.google.com:19302' }];
-
-// Direct peer-to-peer WebRTC viewer for "Watch Live" — the backend only ever
-// relays the small SDP offer/answer exchange (see /api/live-sessions/*);
-// once connected, screen frames flow straight from the employee's agent to
-// this browser tab and are never stored anywhere.
+// "Watch Live" viewer — connects to the backend's relay WebSocket (see
+// backend/src/liveRelay.js) rather than a peer-to-peer WebRTC connection.
+// The employee's agent sends the same JPEG frames over its own WebSocket to
+// that same relay, which forwards them straight through to this one. No
+// STUN/TURN/ICE involved, since neither side needs to reach the other
+// directly — both just need to reach this backend, which they already do
+// for everything else.
 export default function WebRTCViewer({ employeeId, employeeName, onClose }) {
   const [state, setState] = useState('connecting'); // connecting | live | failed
   const [errorMessage, setErrorMessage] = useState('');
@@ -16,7 +16,7 @@ export default function WebRTCViewer({ employeeId, employeeName, onClose }) {
 
   useEffect(() => {
     let cancelled = false;
-    let pc = null;
+    let ws = null;
     let sessionId = null;
 
     async function start() {
@@ -28,85 +28,41 @@ export default function WebRTCViewer({ employeeId, employeeName, onClose }) {
         });
         if (!createRes.ok || cancelled) { if (!cancelled) setState('failed'); return; }
         ({ sessionId } = await createRes.json());
-
-        const iceServers = await fetch('/api/turn-credentials')
-          .then((r) => (r.ok ? r.json() : { iceServers: [] }))
-          .then((d) => [...STUN_ONLY, ...(d.iceServers ?? [])])
-          .catch(() => STUN_ONLY);
         if (cancelled) return;
 
-        pc = new RTCPeerConnection({ iceServers });
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const token = getToken();
+        ws = new WebSocket(
+          `${wsProtocol}//${window.location.host}/live-ws?sessionId=${sessionId}&role=viewer&token=${encodeURIComponent(token)}`
+        );
+        ws.binaryType = 'arraybuffer';
 
-        pc.ondatachannel = (event) => {
-          const channel = event.channel;
-          channel.binaryType = 'arraybuffer';
-          channel.onmessage = (e) => {
-            if (cancelled) return;
-            const url = URL.createObjectURL(new Blob([e.data], { type: 'image/jpeg' }));
-            const img = new Image();
-            img.onload = () => {
-              const canvas = canvasRef.current;
-              if (canvas) {
-                if (canvas.width !== img.width) canvas.width = img.width;
-                if (canvas.height !== img.height) canvas.height = img.height;
-                canvas.getContext('2d').drawImage(img, 0, 0);
-              }
-              URL.revokeObjectURL(url);
-            };
-            img.src = url;
-            setState((s) => (s === 'connecting' ? 'live' : s));
-          };
-        };
-
-        pc.onconnectionstatechange = () => {
-          if (!cancelled && ['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
-            setState('failed');
-            // The agent's own ICE checks fail independently around the same
-            // time — ask it why, so this shows a real reason instead of a
-            // generic message.
-            if (sessionId) {
-              fetch(`/api/live-sessions/${sessionId}`)
-                .then((r) => (r.ok ? r.json() : null))
-                .then((s) => { if (s?.error) setErrorMessage(s.error); })
-                .catch(() => {});
-            }
+        ws.onmessage = (event) => {
+          if (cancelled) return;
+          if (typeof event.data === 'string') {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'error') { setErrorMessage(msg.message); setState('failed'); }
+            return;
           }
+          const url = URL.createObjectURL(new Blob([event.data], { type: 'image/jpeg' }));
+          const img = new Image();
+          img.onload = () => {
+            const canvas = canvasRef.current;
+            if (canvas) {
+              if (canvas.width !== img.width) canvas.width = img.width;
+              if (canvas.height !== img.height) canvas.height = img.height;
+              canvas.getContext('2d').drawImage(img, 0, 0);
+            }
+            URL.revokeObjectURL(url);
+          };
+          img.src = url;
+          setState((s) => (s === 'connecting' ? 'live' : s));
         };
 
-        // Wait for the agent to pick up the request and post its offer.
-        const deadline = Date.now() + CONNECT_TIMEOUT_MS;
-        let offer = null;
-        while (!cancelled && Date.now() < deadline) {
-          const r = await fetch(`/api/live-sessions/${sessionId}`);
-          if (!r.ok) { if (!cancelled) setState('failed'); return; }
-          const session = await r.json();
-          if (session.offer) { offer = session.offer; break; }
-          if (session.error) { setErrorMessage(session.error); setState('failed'); return; }
-          await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-        }
-        if (cancelled) return;
-        if (!offer) { setState('failed'); return; }
-
-        await pc.setRemoteDescription(offer);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        await new Promise((resolve) => {
-          if (pc.iceGatheringState === 'complete') { resolve(); return; }
-          const check = () => {
-            if (pc.iceGatheringState === 'complete') {
-              pc.removeEventListener('icegatheringstatechange', check);
-              resolve();
-            }
-          };
-          pc.addEventListener('icegatheringstatechange', check);
-        });
-        if (cancelled) return;
-
-        await fetch(`/api/live-sessions/${sessionId}/answer`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ sdp: pc.localDescription }),
-        });
+        ws.onclose = () => {
+          if (cancelled) return;
+          setState('failed');
+        };
       } catch {
         if (!cancelled) setState('failed');
       }
@@ -117,7 +73,7 @@ export default function WebRTCViewer({ employeeId, employeeName, onClose }) {
     return () => {
       cancelled = true;
       if (sessionId) fetch(`/api/live-sessions/${sessionId}/stop`, { method: 'POST' }).catch(() => {});
-      pc?.close();
+      ws?.close();
     };
   }, [employeeId]);
 

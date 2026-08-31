@@ -257,40 +257,20 @@ pub struct AgentSettings {
     pub screenshot_interval_minutes: u32,
 }
 
-use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
-
 #[derive(Debug, Deserialize)]
 pub struct LiveSessionRequest {
     #[serde(rename = "sessionId")]
     pub session_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct LiveSession {
-    pub status: String,
-    pub answer: Option<RTCSessionDescription>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct IceServerEntry {
-    pub urls: String,
-    #[serde(default)]
-    pub username: Option<String>,
-    #[serde(default)]
-    pub credential: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TurnCredentialsResponse {
-    #[serde(rename = "iceServers")]
-    ice_servers: Vec<IceServerEntry>,
-}
-
 impl BackendClient {
     // Polled every couple of seconds — this is the one loop in the whole
     // agent fast enough to make "Watch Live" feel close to instant. Returns
     // Ok(None) whenever nobody's asking, which is the overwhelmingly common
-    // case, so this stays a cheap request even left running all day.
+    // case, so this stays a cheap request even left running all day. Once a
+    // sessionId comes back, the caller (see livestream.rs) connects directly
+    // to the backend's WebSocket relay — no further HTTP calls needed for
+    // the rest of that session's lifetime.
     pub async fn poll_live_session_request(&self, agent_key: &str) -> Result<Option<String>, String> {
         let res = self
             .http
@@ -303,84 +283,5 @@ impl BackendClient {
             return Err(format!("live-session-request poll failed: {}", res.status()));
         }
         Ok(res.json::<LiveSessionRequest>().await.map_err(|e| e.to_string())?.session_id)
-    }
-
-    // 404 (Ok(None)) means the session was stopped or expired — the caller
-    // treats that the same as an explicit stop.
-    pub async fn get_live_session(&self, agent_key: &str, session_id: &str) -> Result<Option<LiveSession>, String> {
-        let res = self
-            .http
-            .get(format!("{}/api/agent/live-sessions/{}", self.base_url, session_id))
-            .header("x-agent-key", agent_key)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-        if res.status() == reqwest::StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
-        if !res.status().is_success() {
-            return Err(format!("live session fetch failed: {}", res.status()));
-        }
-        Ok(Some(res.json::<LiveSession>().await.map_err(|e| e.to_string())?))
-    }
-
-    pub async fn post_live_offer(&self, agent_key: &str, session_id: &str, sdp: &RTCSessionDescription) -> Result<(), String> {
-        #[derive(Serialize)]
-        struct Body<'a> { sdp: &'a RTCSessionDescription }
-        let res = self
-            .http
-            .post(format!("{}/api/agent/live-sessions/{}/offer", self.base_url, session_id))
-            .header("x-agent-key", agent_key)
-            .json(&Body { sdp })
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-        if !res.status().is_success() {
-            return Err(format!("posting offer failed: {}", res.status()));
-        }
-        Ok(())
-    }
-
-    pub async fn stop_live_session(&self, agent_key: &str, session_id: &str) {
-        let _ = self
-            .http
-            .post(format!("{}/api/agent/live-sessions/{}/stop", self.base_url, session_id))
-            .header("x-agent-key", agent_key)
-            .send()
-            .await;
-    }
-
-    // Fresh, short-lived TURN credentials for one session — see
-    // backend/src/turnCredentials.js. Empty Vec (not an error) if the
-    // backend has no TURN provider configured yet, or the request to it
-    // failed; the caller just falls back to STUN-only in that case.
-    pub async fn get_turn_credentials(&self, agent_key: &str) -> Vec<IceServerEntry> {
-        let res = match self
-            .http
-            .get(format!("{}/api/agent/turn-credentials", self.base_url))
-            .header("x-agent-key", agent_key)
-            .send()
-            .await
-        {
-            Ok(r) if r.status().is_success() => r,
-            _ => return Vec::new(),
-        };
-        res.json::<TurnCredentialsResponse>().await.map(|r| r.ice_servers).unwrap_or_default()
-    }
-
-    // Reports why a session failed so the viewer sees something specific
-    // ("connection lost: failed") instead of a generic message. Fire-and-
-    // forget, same as stop_live_session — nothing useful to do if this
-    // particular request fails too.
-    pub async fn post_live_error(&self, agent_key: &str, session_id: &str, message: &str) {
-        #[derive(Serialize)]
-        struct Body<'a> { message: &'a str }
-        let _ = self
-            .http
-            .post(format!("{}/api/agent/live-sessions/{}/error", self.base_url, session_id))
-            .header("x-agent-key", agent_key)
-            .json(&Body { message })
-            .send()
-            .await;
     }
 }
