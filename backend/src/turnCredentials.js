@@ -8,18 +8,24 @@
 // this repo is public, and there's no reason to publish it when an env var
 // costs nothing extra. If usage ever outgrows the free tier, the fix is a
 // paid Metered plan or self-hosting coturn, not more credentials from this one.
-const METERED_SUBDOMAIN = 'dhasarathy';
-
+//
+// IMPORTANT: `<subdomain>.metered.live` is ONLY the account/API dashboard
+// domain (it resolves to an Azure Front Door CDN, which is HTTP(S)-only and
+// silently drops raw STUN/TURN UDP/TCP packets sent to it). Every real
+// session tested came back with no relay candidate at all because of this —
+// the actual media-plane TURN/STUN relay lives at a completely different,
+// fixed hostname regardless of account: global.relay.metered.ca /
+// stun.relay.metered.ca. Confirmed against Metered's own docs.
 export async function fetchTurnCredentials() {
   const username = process.env.TURN_USERNAME;
   const password = process.env.TURN_PASSWORD;
   if (!username || !password) return [{ urls: 'stun:stun.l.google.com:19302' }];
 
   return [
-    { urls: `stun:${METERED_SUBDOMAIN}.metered.live:80` },
-    { urls: `turn:${METERED_SUBDOMAIN}.metered.live:80`, username, credential: password },
-    { urls: `turn:${METERED_SUBDOMAIN}.metered.live:80?transport=tcp`, username, credential: password },
-    { urls: `turn:${METERED_SUBDOMAIN}.metered.live:443`, username, credential: password },
-    { urls: `turns:${METERED_SUBDOMAIN}.metered.live:443?transport=tcp`, username, credential: password },
+    { urls: 'stun:stun.relay.metered.ca:80' },
+    { urls: 'turn:global.relay.metered.ca:80', username, credential: password },
+    { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username, credential: password },
+    { urls: 'turn:global.relay.metered.ca:443', username, credential: password },
+    { urls: 'turns:global.relay.metered.ca:443?transport=tcp', username, credential: password },
   ];
 }
