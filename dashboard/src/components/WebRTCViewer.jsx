@@ -4,12 +4,25 @@ import Modal from './Modal.jsx';
 const POLL_MS = 1000;
 const CONNECT_TIMEOUT_MS = 30_000;
 
+// Free public test relay (Open Relay Project) — same one the agent uses, see
+// livestream.rs. Only for validating whether TURN fixes real connections;
+// swap for a self-hosted or paid relay once that's confirmed.
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  {
+    urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turns:openrelay.metered.ca:443'],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
+
 // Direct peer-to-peer WebRTC viewer for "Watch Live" — the backend only ever
 // relays the small SDP offer/answer exchange (see /api/live-sessions/*);
 // once connected, screen frames flow straight from the employee's agent to
 // this browser tab and are never stored anywhere.
 export default function WebRTCViewer({ employeeId, employeeName, onClose }) {
   const [state, setState] = useState('connecting'); // connecting | live | failed
+  const [errorMessage, setErrorMessage] = useState('');
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -27,7 +40,7 @@ export default function WebRTCViewer({ employeeId, employeeName, onClose }) {
         if (!createRes.ok || cancelled) { if (!cancelled) setState('failed'); return; }
         ({ sessionId } = await createRes.json());
 
-        pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+        pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
         pc.ondatachannel = (event) => {
           const channel = event.channel;
@@ -53,6 +66,15 @@ export default function WebRTCViewer({ employeeId, employeeName, onClose }) {
         pc.onconnectionstatechange = () => {
           if (!cancelled && ['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
             setState('failed');
+            // The agent's own ICE checks fail independently around the same
+            // time — ask it why, so this shows a real reason instead of a
+            // generic message.
+            if (sessionId) {
+              fetch(`/api/live-sessions/${sessionId}`)
+                .then((r) => (r.ok ? r.json() : null))
+                .then((s) => { if (s?.error) setErrorMessage(s.error); })
+                .catch(() => {});
+            }
           }
         };
 
@@ -64,6 +86,7 @@ export default function WebRTCViewer({ employeeId, employeeName, onClose }) {
           if (!r.ok) { if (!cancelled) setState('failed'); return; }
           const session = await r.json();
           if (session.offer) { offer = session.offer; break; }
+          if (session.error) { setErrorMessage(session.error); setState('failed'); return; }
           await new Promise((resolve) => setTimeout(resolve, POLL_MS));
         }
         if (cancelled) return;
@@ -109,7 +132,7 @@ export default function WebRTCViewer({ employeeId, employeeName, onClose }) {
         {state === 'connecting' && <div className="empty">Connecting…</div>}
         {state === 'failed' && (
           <div className="empty">
-            Connection failed. The employee may have gone offline, or their network blocked a direct connection.
+            {errorMessage || 'Connection failed. The employee may have gone offline, or their network blocked a direct connection.'}
           </div>
         )}
         <canvas ref={canvasRef} className="live-viewer-canvas" style={{ display: state === 'live' ? 'block' : 'none' }} />

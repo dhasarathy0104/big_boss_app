@@ -18,7 +18,7 @@ use crate::backend::BackendClient;
 use crate::screenshot::capture_primary_as_jpeg_bytes;
 use bytes::Bytes;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
@@ -36,13 +36,25 @@ const POLL_FOR_ANSWER_SECS: u64 = 1;
 const FRAME_INTERVAL_MS: u64 = 150; // ~6-7 fps, matches the JPEG quality/size already used for screenshots
 const SESSION_CHECK_EVERY_N_FRAMES: u32 = 20; // roughly every 3s at 150ms/frame
 // Bounds the entire "set up the connection" phase (ICE gathering + waiting
-// for the viewer's answer). Without this, a stuck ICE gathering step (e.g.
-// STUN traffic silently dropped somewhere on the network, well past the
-// Windows Firewall prompt) would hang this task forever — and since the
-// outer watch-loop treats "streaming" as busy until this task finishes, a
-// stuck connection here used to silently block every future watch request
-// too, with no error and no way to recover short of restarting the agent.
+// for the viewer's answer). Without this, a stuck ICE gathering step hung
+// this task forever, and since the outer watch-loop treats "streaming" as
+// busy until this task finishes, a single stuck connection used to
+// permanently block every future watch request too.
 const CONNECT_TIMEOUT_SECS: u64 = 25;
+
+// Free public test relay (Open Relay Project, sponsored by Metered) — used
+// only to check whether TURN fixes real-world connections before committing
+// to self-hosting or paying for one. These access values are openly
+// published (they appear in the project's own public docs and countless
+// WebRTC tutorials) — there is nothing private about this specific relay;
+// swap it for a self-hosted coturn box or a paid provider once this
+// confirms TURN is the actual fix.
+mod public_test_relay {
+    pub const URLS: [&str; 3] =
+        ["turn:openrelay.metered.ca:80", "turn:openrelay.metered.ca:443", "turns:openrelay.metered.ca:443"];
+    pub const USER: &str = "openrelayproject";
+    pub const PASS: &str = "openrelayproject";
+}
 
 // Runs for the lifetime of the agent, alongside the activity/screenshot
 // loops. Costs one small HTTP request every couple of seconds while idle;
@@ -93,33 +105,39 @@ async fn handle_session(agent_key: String, backend_url: String, session_id: Stri
     )
     .await;
 
-    let (pc, dc, dc_open, closed) = match setup {
+    let (pc, dc, dc_open, failure) = match setup {
         Ok(Ok(parts)) => parts,
         Ok(Err(e)) => {
-            client.stop_live_session(&agent_key, &session_id).await;
+            client.post_live_error(&agent_key, &session_id, &e).await;
             return Err(e);
         }
         Err(_) => {
-            client.stop_live_session(&agent_key, &session_id).await;
-            return Err(format!(
-                "connection setup timed out after {CONNECT_TIMEOUT_SECS}s (ICE negotiation never completed — \
-                 likely a network blocking the STUN/UDP traffic needed for a direct connection, not just the \
-                 one-time Windows Firewall prompt)"
-            ));
+            let msg = format!(
+                "connection setup timed out after {CONNECT_TIMEOUT_SECS}s — likely a network blocking the \
+                 STUN/TURN traffic needed for a connection, not the one-time Windows Firewall prompt"
+            );
+            client.post_live_error(&agent_key, &session_id, &msg).await;
+            return Err(msg);
         }
     };
 
     // Give the data channel a few seconds to actually open before the main
     // loop starts — no point burning CPU on frames nobody can receive yet.
     for _ in 0..50 {
-        if dc_open.load(Ordering::Relaxed) || closed.load(Ordering::Relaxed) {
+        if dc_open.load(Ordering::Relaxed) || failure.lock().unwrap().is_some() {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
     let mut frame_count: u32 = 0;
-    while !closed.load(Ordering::Relaxed) {
+    let mut ended_by_error: Option<String> = None;
+    loop {
+        if let Some(reason) = failure.lock().unwrap().take() {
+            ended_by_error = Some(reason);
+            break;
+        }
+
         if dc_open.load(Ordering::Relaxed) {
             match capture_primary_as_jpeg_bytes() {
                 Ok(bytes) => {
@@ -141,49 +159,67 @@ async fn handle_session(agent_key: String, backend_url: String, session_id: Stri
         tokio::time::sleep(Duration::from_millis(FRAME_INTERVAL_MS)).await;
     }
 
-    client.stop_live_session(&agent_key, &session_id).await;
+    if let Some(reason) = ended_by_error {
+        let message = format!("connection lost after connecting: {reason}");
+        client.post_live_error(&agent_key, &session_id, &message).await;
+    } else {
+        // Normal end (manager clicked Stop) — the session is very likely
+        // already gone server-side, so this is just a harmless no-op safety call.
+        client.stop_live_session(&agent_key, &session_id).await;
+    }
     let _ = pc.close().await;
     Ok(())
+}
+
+fn ice_servers() -> Vec<RTCIceServer> {
+    vec![
+        RTCIceServer { urls: vec!["stun:stun.l.google.com:19302".to_owned()], ..Default::default() },
+        RTCIceServer {
+            urls: public_test_relay::URLS.iter().map(|s| s.to_string()).collect(),
+            username: public_test_relay::USER.to_owned(),
+            credential: public_test_relay::PASS.to_owned(),
+            ..Default::default()
+        },
+    ]
 }
 
 // Everything from "build the peer connection" through "the viewer answered
 // and we've applied it" — wrapped in the CONNECT_TIMEOUT_SECS timeout above,
 // so nothing in here can hang the agent indefinitely no matter what the
-// network does.
+// network does. Returns a shared `failure` slot the caller keeps checking
+// during the frame loop: it's set (once) if the connection is lost *after*
+// this function already returned successfully.
 async fn negotiate(
     client: &BackendClient,
     agent_key: &str,
     session_id: &str,
-) -> Result<(Arc<RTCPeerConnection>, Arc<RTCDataChannel>, Arc<AtomicBool>, Arc<AtomicBool>), String> {
+) -> Result<(Arc<RTCPeerConnection>, Arc<RTCDataChannel>, Arc<AtomicBool>, Arc<Mutex<Option<String>>>), String> {
     let mut media_engine = MediaEngine::default();
     media_engine.register_default_codecs().map_err(|e| e.to_string())?;
     let mut registry = Registry::new();
     registry = register_default_interceptors(registry, &mut media_engine).map_err(|e| e.to_string())?;
     let api = APIBuilder::new().with_media_engine(media_engine).with_interceptor_registry(registry).build();
 
-    // Public STUN only, no TURN, for this MVP — enough to attempt a direct
-    // connection. If a test machine sits behind a NAT strict enough to need
-    // a relay, ICE gathering below will time out rather than hang forever;
-    // that's the real-world signal for whether TURN becomes necessary, not
-    // something worth pre-building.
-    let config = RTCConfiguration {
-        ice_servers: vec![RTCIceServer {
-            urls: vec!["stun:stun.l.google.com:19302".to_owned()],
-            ..Default::default()
-        }],
-        ..Default::default()
-    };
+    // STUN plus a free public TURN relay as a fallback — STUN alone only
+    // helps two computers discover a direct path, which plenty of real
+    // networks (especially office ones) simply don't allow. TURN is a relay
+    // both sides connect *to* instead, and is the fix when a direct
+    // connection can't be established at all.
+    let config = RTCConfiguration { ice_servers: ice_servers(), ..Default::default() };
     let pc = Arc::new(api.new_peer_connection(config).await.map_err(|e| e.to_string())?);
 
-    let closed = Arc::new(AtomicBool::new(false));
+    let failure: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     {
-        let closed = closed.clone();
+        let failure = failure.clone();
         pc.on_peer_connection_state_change(Box::new(move |state: RTCPeerConnectionState| {
             if matches!(
                 state,
                 RTCPeerConnectionState::Disconnected | RTCPeerConnectionState::Failed | RTCPeerConnectionState::Closed
             ) {
-                closed.store(true, Ordering::Relaxed);
+                let mut guard = failure.lock().unwrap();
+                if guard.is_none() {
+                    *guard = Some(format!("{state:?}"));
+                }
             }
             Box::pin(async {})
         }));
@@ -226,5 +262,5 @@ async fn negotiate(
     };
     pc.set_remote_description(answer).await.map_err(|e| e.to_string())?;
 
-    Ok((pc, dc, dc_open, closed))
+    Ok((pc, dc, dc_open, failure))
 }

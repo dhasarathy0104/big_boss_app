@@ -24,9 +24,10 @@ export function createSession({ employeeId, requestedByUserId }) {
     id,
     employeeId,
     requestedByUserId,
-    status: 'pending', // pending -> offered -> answered
+    status: 'pending', // pending -> offered -> answered -> failed
     offer: null,
     answer: null,
+    error: null,
     createdAt: Date.now(),
   };
   sessions.set(id, session);

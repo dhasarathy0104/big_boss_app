@@ -224,6 +224,21 @@ app.post('/api/agent/live-sessions/:id/stop', authUser, ah(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// Lets the agent report *why* a session failed (setup timeout, ICE
+// connectivity lost after negotiating, etc.) instead of the viewer only ever
+// seeing a generic failure. Deliberately does not delete the session — the
+// viewer reads this once, then calls stop itself; the 2-minute sweep in
+// liveSessions.js cleans it up either way if nobody does.
+app.post('/api/agent/live-sessions/:id/error', authUser, ah(async (req, res) => {
+  const session = getSession(req.params.id);
+  if (!session || session.employeeId !== req.user.id) {
+    return res.status(404).json({ error: 'session not found or expired' });
+  }
+  session.error = req.body.message || 'unknown error';
+  session.status = 'failed';
+  res.json({ ok: true });
+}));
+
 // --- Dashboard read endpoints ---
 // All scoped to: the user viewing their own data, or the manager who owns them.
 

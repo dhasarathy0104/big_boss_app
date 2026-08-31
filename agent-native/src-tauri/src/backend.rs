@@ -334,4 +334,20 @@ impl BackendClient {
             .send()
             .await;
     }
+
+    // Reports why a session failed so the viewer sees something specific
+    // ("connection lost: failed") instead of a generic message. Fire-and-
+    // forget, same as stop_live_session — nothing useful to do if this
+    // particular request fails too.
+    pub async fn post_live_error(&self, agent_key: &str, session_id: &str, message: &str) {
+        #[derive(Serialize)]
+        struct Body<'a> { message: &'a str }
+        let _ = self
+            .http
+            .post(format!("{}/api/agent/live-sessions/{}/error", self.base_url, session_id))
+            .header("x-agent-key", agent_key)
+            .json(&Body { message })
+            .send()
+            .await;
+    }
 }
