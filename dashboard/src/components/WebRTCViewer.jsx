@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Maximize, Minimize } from 'lucide-react';
 import Modal from './Modal.jsx';
 import { getToken } from '../api.js';
 
@@ -12,7 +13,23 @@ import { getToken } from '../api.js';
 export default function WebRTCViewer({ employeeId, employeeName, onClose }) {
   const [state, setState] = useState('connecting'); // connecting | live | failed
   const [errorMessage, setErrorMessage] = useState('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const canvasRef = useRef(null);
+  const viewerRef = useRef(null);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === viewerRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      viewerRef.current?.requestFullscreen();
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -79,7 +96,7 @@ export default function WebRTCViewer({ employeeId, employeeName, onClose }) {
 
   return (
     <Modal title={`Watching ${employeeName}`} onClose={onClose} width={880}>
-      <div className="live-viewer">
+      <div className="live-viewer" ref={viewerRef}>
         {state === 'connecting' && <div className="empty">Connecting…</div>}
         {state === 'failed' && (
           <div className="empty">
@@ -88,6 +105,16 @@ export default function WebRTCViewer({ employeeId, employeeName, onClose }) {
         )}
         <canvas ref={canvasRef} className="live-viewer-canvas" style={{ display: state === 'live' ? 'block' : 'none' }} />
         {state === 'live' && <div className="live-badge">🔴 LIVE</div>}
+        {state === 'live' && (
+          <button
+            type="button"
+            className="live-fullscreen-btn"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Exit full screen' : 'Full screen'}
+          >
+            {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+          </button>
+        )}
       </div>
       <div className="inline-form" style={{ marginTop: 14 }}>
         <button type="button" className="btn-outline-danger" onClick={onClose}>Stop Watching</button>

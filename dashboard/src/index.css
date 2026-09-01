@@ -1453,6 +1453,39 @@ button:disabled { opacity: .5; cursor: not-allowed; transform: none !important; 
   display: block;
 }
 
+.live-viewer:fullscreen {
+  border-radius: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+.live-viewer:fullscreen .live-viewer-canvas {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.live-fullscreen-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: auto;
+  margin: 0;
+  background: rgba(0, 0, 0, .55);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.live-fullscreen-btn:hover { background: rgba(0, 0, 0, .75); transform: none; box-shadow: none; }
+
 .live-badge {
   position: absolute;
   top: 12px;

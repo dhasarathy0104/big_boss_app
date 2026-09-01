@@ -92,18 +92,43 @@ function RegisterAdminForm({ onAuthed, onBack }) {
   );
 }
 
-function AuthScreen({ onAuthed }) {
+// Text shown after "Forgot password?" is clicked, tailored to who the
+// backend actually notifies for that role (see /api/auth/forgot-password) —
+// falls back to something neutral when the role isn't known in advance
+// (e.g. a fresh visit to the hosted URL, not a post-logout redisplay).
+function forgotPasswordMessage(role) {
+  if (role === 'employee') return 'Your manager has been notified and will set you a new password.';
+  if (role === 'manager') return 'Your super admin has been notified and will set you a new password.';
+  return "If that email matches an account, the right person has been notified to set you a new password.";
+}
+
+function AuthScreen({ onAuthed, presetRole }) {
   const [bootstrap, setBootstrap] = useState(null); // { state: 'register' | 'claim-manager' | 'login', managerName? }
   const [showRegisterAdmin, setShowRegisterAdmin] = useState(false);
   // Separate super admin mode instead of one combined "email or username"
   // field — that field was the actual source of confusion, since managers
   // and the super admin log in with different kinds of credential entirely.
+  // Never available right after an employee's own logout — there's nothing
+  // for them to do there.
   const [superAdminMode, setSuperAdminMode] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState('');
+
+  async function forgotPassword() {
+    if (!email.trim()) { setError('Enter your email above first, then click this again.'); return; }
+    setError('');
+    setForgotMessage('Notifying…');
+    await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: email.trim() }),
+    }).catch(() => {});
+    setForgotMessage(forgotPasswordMessage(presetRole));
+  }
 
   useEffect(() => {
     fetch('/api/auth/bootstrap').then((r) => r.json()).then(setBootstrap);
@@ -137,6 +162,55 @@ function AuthScreen({ onAuthed }) {
 
   if (!bootstrap) return null;
   if (showRegisterAdmin) return <RegisterAdminForm onAuthed={onAuthed} onBack={() => setShowRegisterAdmin(false)} />;
+
+  // An employee logging back in after their own logout gets just the plain
+  // email/password/forgot-password form they'd see in the native app —
+  // no super admin toggle or "create a manager account" link, neither of
+  // which has anything to do with their account.
+  if (presetRole === 'employee' && bootstrap.state === 'login') {
+    return (
+      <div className="join-page">
+        <div className="join-card">
+          <div className="brand" style={{ border: 'none', marginBottom: 20, paddingBottom: 0 }}>
+            <div className="brand-mark">
+              <svg viewBox="0 0 100 100" width="30" height="30" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <linearGradient id="eyeGrad" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stopColor="#3987e5" />
+                    <stop offset="1" stopColor="#9085e9" />
+                  </linearGradient>
+                </defs>
+                <polygon points="50,7.8 8.8,89.8 91.2,89.8" fill="url(#eyeGrad)" />
+                <ellipse cx="50" cy="68.4" rx="27.3" ry="7.6" fill="#f5f8fc" />
+                <circle cx="50" cy="68.4" r="8.4" fill="#18203a" />
+                <circle cx="50" cy="68.4" r="7.3" fill="none" stroke="#5878dc" strokeWidth="0.6" />
+                <circle cx="50" cy="68.4" r="4.2" fill="#06080f" />
+                <circle cx="47.75" cy="66.15" r="1.37" fill="#fff" />
+                <circle cx="51.66" cy="70.06" r="0.68" fill="#fff" />
+              </svg>
+            </div>
+            <div className="brand-name">BIG BOSS</div>
+          </div>
+          <h1>Log in</h1>
+          <form className="stacked-form" onSubmit={submit}>
+            <input type="email" placeholder="Your email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            {error && <div style={{ color: '#e07070', fontSize: 12 }}>{error}</div>}
+            <button type="submit" disabled={submitting} style={{ alignSelf: 'flex-start' }}>
+              {submitting ? 'Please wait…' : 'Log in'}
+            </button>
+          </form>
+          <button
+            onClick={forgotPassword}
+            style={{ background: 'none', color: '#8b93a3', fontSize: 12, marginTop: 14, padding: 0, textDecoration: 'underline', width: 'auto' }}
+          >
+            Forgot password?
+          </button>
+          {forgotMessage && <div style={{ fontSize: 12, marginTop: 8, color: '#4b5563' }}>{forgotMessage}</div>}
+        </div>
+      </div>
+    );
+  }
 
   const heading = bootstrap.state === 'register'
     ? 'Set up your manager account'
@@ -202,10 +276,21 @@ function AuthScreen({ onAuthed }) {
               : bootstrap.state === 'login' ? 'Log in' : bootstrap.state === 'claim-manager' ? 'Set password' : 'Create account'}
           </button>
         </form>
+        {bootstrap.state === 'login' && !superAdminMode && (
+          <button
+            onClick={forgotPassword}
+            style={{ background: 'none', color: '#8b93a3', fontSize: 12, marginTop: 14, padding: 0, textDecoration: 'underline', width: 'auto', display: 'block' }}
+          >
+            Forgot password?
+          </button>
+        )}
+        {bootstrap.state === 'login' && !superAdminMode && forgotMessage && (
+          <div style={{ fontSize: 12, marginTop: 6, color: '#4b5563' }}>{forgotMessage}</div>
+        )}
         {bootstrap.state === 'login' && (
           <button
-            onClick={() => { setSuperAdminMode(!superAdminMode); setError(''); setName(''); setEmail(''); setPassword(''); }}
-            style={{ background: 'none', color: '#8b93a3', fontSize: 12, marginTop: 14, padding: 0, textDecoration: 'underline', width: 'auto', display: 'block' }}
+            onClick={() => { setSuperAdminMode(!superAdminMode); setError(''); setName(''); setEmail(''); setPassword(''); setForgotMessage(''); }}
+            style={{ background: 'none', color: '#8b93a3', fontSize: 12, marginTop: 8, padding: 0, textDecoration: 'underline', width: 'auto', display: 'block' }}
           >
             {superAdminMode ? '← Log in with email instead' : 'Log in as Super Admin instead'}
           </button>
@@ -225,6 +310,10 @@ function AuthScreen({ onAuthed }) {
 
 function Shell() {
   const [user, setUser] = useState(undefined); // undefined = checking, null = logged out
+  // Remembered across logout so the login screen shown right after can be
+  // tailored to the role that just logged out (see AuthScreen's presetRole)
+  // instead of always falling back to the generic every-role form.
+  const [lastRole, setLastRole] = useState(null);
 
   useEffect(() => {
     // The native app can hand off an already-authenticated session via
@@ -246,6 +335,7 @@ function Shell() {
   }, []);
 
   function logout() {
+    setLastRole(user?.role ?? null);
     fetch('/api/auth/logout', { method: 'POST' }).finally(() => {
       setToken(null);
       setUser(null);
@@ -253,7 +343,7 @@ function Shell() {
   }
 
   if (user === undefined) return null;
-  if (!user) return <AuthScreen onAuthed={setUser} />;
+  if (!user) return <AuthScreen presetRole={lastRole} onAuthed={(u) => { setLastRole(null); setUser(u); }} />;
 
   if (user.role === 'superadmin') return <SuperAdminDashboard user={user} onLogout={logout} />;
   return user.role === 'manager'

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Users } from 'lucide-react';
+import { Users, AlertCircle } from 'lucide-react';
 import EmployeeManagementTable from '../components/EmployeeManagementTable.jsx';
 
 // Profile details, password resets, and transfers now all live inside the
 // per-row edit form (pencil icon) — see EmployeeManagementTable.
 export default function EmployeeManagementView({ managerId, managerName, team, onTeamChanged }) {
   const [otherManagers, setOtherManagers] = useState([]);
+  const requested = team.filter((e) => e.passwordResetRequested);
 
   useEffect(() => {
     if (managerId) {
@@ -42,6 +43,22 @@ export default function EmployeeManagementView({ managerId, managerName, team, o
 
   return (
     <div className="panel">
+      {requested.length > 0 && (
+        <div className="panel" style={{ marginBottom: 16 }}>
+          <div className="section-head">
+            <div className="section-icon"><AlertCircle size={22} /></div>
+            <div>
+              <h2 className="card-title">Password reset requested ({requested.length})</h2>
+              <p className="card-subtitle">
+                These employees clicked "Forgot password?" on the login screen. Click their row's pencil icon below to set them a new one.
+              </p>
+            </div>
+          </div>
+          <div className="chip-row">
+            {requested.map((e) => <div className="chip" key={e.id}>{e.name}</div>)}
+          </div>
+        </div>
+      )}
       <div className="section-head">
         <div className="section-icon"><Users size={22} /></div>
         <div>
