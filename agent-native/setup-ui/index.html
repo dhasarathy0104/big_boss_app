@@ -237,9 +237,6 @@
     <div id="screen-admin" class="screen">
       <h1>Manager login</h1>
 
-      <label for="adminName">Your name</label>
-      <input id="adminName" placeholder="Jane Doe" />
-
       <label for="adminEmail">Email</label>
       <input id="adminEmail" type="email" placeholder="jane@example.com" />
 
@@ -502,7 +499,6 @@
     });
 
     // --- Admin / super admin login ---
-    const adminNameInput = document.getElementById('adminName');
     const adminEmailInput = document.getElementById('adminEmail');
     const adminPasswordInput = document.getElementById('adminPassword');
     const submitAdminBtn = document.getElementById('submitAdmin');
@@ -531,12 +527,11 @@
       statusAdminEl.className = 'status';
 
       const backendUrl = BACKEND_URL;
-      const name = adminNameInput.value.trim();
       const email = adminEmailInput.value.trim();
       const password = adminPasswordInput.value;
 
-      if (!name || !email || !password) {
-        statusAdminEl.textContent = 'Fill in your name, email, and password.';
+      if (!email || !password) {
+        statusAdminEl.textContent = 'Fill in your email and password.';
         statusAdminEl.className = 'status error';
         return;
       }
@@ -545,7 +540,7 @@
       statusAdminEl.textContent = 'Logging in…';
 
       try {
-        await invoke('submit_login', { backendUrl, email, password, name });
+        await invoke('submit_login', { backendUrl, email, password });
         statusAdminEl.textContent = 'Logged in — opening your dashboard…';
         statusAdminEl.className = 'status ok';
       } catch (err) {
