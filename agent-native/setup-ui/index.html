@@ -181,7 +181,7 @@
       <input id="dashboardLoginPassword" type="password" placeholder="Password" />
 
       <button id="submitDashboardLogin">Log in</button>
-      <button class="text-link" id="forgotDashboard">Forgot password? Ask your manager for a new setup link</button>
+      <button class="text-link" id="forgotDashboard">Forgot password?</button>
       <div class="status" id="statusDashboardLogin"></div>
     </div>
 
@@ -332,9 +332,22 @@
     const submitDashboardLoginBtn = document.getElementById('submitDashboardLogin');
     const statusDashboardLoginEl = document.getElementById('statusDashboardLogin');
 
-    document.getElementById('forgotDashboard').addEventListener('click', () => {
-      statusDashboardLoginEl.textContent = 'Ask your manager to send you a new setup link from Team & Invite.';
+    document.getElementById('forgotDashboard').addEventListener('click', async () => {
+      const email = dashboardLoginEmailInput.value.trim();
+      if (!email) {
+        statusDashboardLoginEl.textContent = 'Enter your email above first, then click this again.';
+        statusDashboardLoginEl.className = 'status error';
+        return;
+      }
+      statusDashboardLoginEl.textContent = 'Notifying your manager…';
       statusDashboardLoginEl.className = 'status';
+      await fetch(BACKEND_URL + '/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email }),
+      }).catch(() => {});
+      statusDashboardLoginEl.textContent = 'Your manager has been notified and will set you a new password.';
+      statusDashboardLoginEl.className = 'status ok';
     });
 
     submitDashboardLoginBtn.addEventListener('click', async () => {
