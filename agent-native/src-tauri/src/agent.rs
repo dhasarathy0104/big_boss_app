@@ -19,7 +19,7 @@ const BROWSER_APPS: [&str; 5] = ["chrome", "msedge", "firefox", "brave", "opera"
 // anywhere else is from an old deployment (Lightsail, a dev tunnel, an
 // earlier Render address) and is silently unreachable — better to treat it
 // as unset and show the chooser again than fail invisibly in the background.
-const CANONICAL_BACKEND_URL: &str = "https://big-boss-app.onrender.com";
+const CANONICAL_BACKEND_URL: &str = "http://3.109.197.205";
 
 fn config_dir() -> PathBuf {
     let dir = dirs::data_local_dir()
