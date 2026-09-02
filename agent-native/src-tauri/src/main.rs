@@ -60,10 +60,17 @@ fn open_setup_window(app: &AppHandle) -> tauri::Result<()> {
         let _ = window.set_focus();
         return Ok(());
     }
+    // Tall enough for the longest screen (the employee invite form, which has
+    // the most fields) without needing to scroll in the common case — the
+    // fixed 420x520 size before this cut off that form's bottom half with no
+    // way to reach it (the page can scroll now too, as a fallback for any
+    // screen taller than this on a small display). Resizable so someone on a
+    // cramped display can still shrink/grow it instead of being stuck.
     WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("index.html".into()))
         .title("BIG BOSS")
-        .inner_size(420.0, 520.0)
-        .resizable(false)
+        .inner_size(460.0, 760.0)
+        .min_inner_size(380.0, 480.0)
+        .resizable(true)
         .center()
         .build()?;
     Ok(())
