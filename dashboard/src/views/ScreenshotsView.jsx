@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { todayStr, fmtTime } from '../format.js';
+import { todayStr, fmtTime, localDayRange } from '../format.js';
 import { getToken } from '../api.js';
 
 function shotUrl(filePath) {
@@ -160,7 +160,8 @@ export default function ScreenshotsView({ selectedUserId, managerId, canDelete }
   useEffect(() => {
     if (!selectedUserId) return;
     setLoading(true);
-    fetch(`/api/users/${selectedUserId}/screenshots?date=${date}`)
+    const { start, end } = localDayRange(date);
+    fetch(`/api/users/${selectedUserId}/screenshots?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
       .then((r) => r.json())
       .then((data) => {
         setShots(data);

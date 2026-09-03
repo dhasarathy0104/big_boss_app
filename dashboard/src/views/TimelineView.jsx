@@ -4,7 +4,7 @@ import {
   siGooglechrome, siFirefox, siGithub, siGmail, siZoom, siFigma,
   siNotion, siDiscord, siSpotify, siWhatsapp, siClaude,
 } from 'simple-icons';
-import { fmtTime, fmtMinutes } from '../format.js';
+import { fmtTime, fmtMinutes, localDayRange, prevLocalDateStr } from '../format.js';
 import ProgressRing from '../components/ProgressRing.jsx';
 
 // Real brand icons where simple-icons has one (trademark takedowns mean a
@@ -69,36 +69,35 @@ const CATEGORY_LABEL = {
 const HOUR_AXIS = ['12 AM', '3 AM', '6 AM', '9 AM', '12 PM', '3 PM', '6 PM', '9 PM', '12 AM'];
 const APPS_PAGE_SIZE = 5;
 
-function prevDateStr(date) {
-  const d = new Date(`${date}T00:00:00.000Z`);
-  d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
-
 export default function TimelineView({ selectedUserId, date, setDate }) {
   const [productivity, setProductivity] = useState(null);
   const [prevScore, setPrevScore] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showAllApps, setShowAllApps] = useState(false);
 
+  const { start: dayStartIso, end: dayEndIso } = localDayRange(date);
+
   useEffect(() => {
     if (!selectedUserId) return;
     setLoading(true);
     setShowAllApps(false);
-    fetch(`/api/users/${selectedUserId}/productivity?date=${date}`)
+    const { start, end } = localDayRange(date);
+    fetch(`/api/users/${selectedUserId}/productivity?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
       .then((r) => r.json())
       .then((prod) => {
         setProductivity(prod);
         setLoading(false);
       });
-    fetch(`/api/users/${selectedUserId}/productivity?date=${prevDateStr(date)}`)
+    const prevDate = prevLocalDateStr(date);
+    const prevRange = localDayRange(prevDate);
+    fetch(`/api/users/${selectedUserId}/productivity?start=${encodeURIComponent(prevRange.start)}&end=${encodeURIComponent(prevRange.end)}`)
       .then((r) => r.json())
       .then((prod) => setPrevScore(prod?.events?.length ? prod.score : null))
       .catch(() => setPrevScore(null));
   }, [selectedUserId, date]);
 
-  const dayStart = new Date(`${date}T00:00:00.000Z`).getTime();
-  const dayEnd = new Date(`${date}T23:59:59.999Z`).getTime();
+  const dayStart = new Date(dayStartIso).getTime();
+  const dayEnd = new Date(dayEndIso).getTime();
   const dayMs = dayEnd - dayStart;
 
   if (!selectedUserId) {

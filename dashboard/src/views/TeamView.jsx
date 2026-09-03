@@ -1,5 +1,35 @@
 import { useEffect, useState } from 'react';
 
+// navigator.clipboard only exists in a "secure context" (HTTPS, or
+// localhost) — on a plain-HTTP deployment (no domain/SSL yet) it's simply
+// undefined, so the modern API silently does nothing. document.execCommand
+// is deprecated but still works everywhere, including over plain HTTP, so
+// it's the fallback here rather than the only option.
+function copyToClipboard(text) {
+  if (navigator.clipboard) {
+    return navigator.clipboard.writeText(text).catch(() => legacyCopy(text));
+  }
+  return legacyCopy(text) ? Promise.resolve() : Promise.reject();
+}
+
+function legacyCopy(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  }
+  document.body.removeChild(textarea);
+  return ok;
+}
+
 export default function TeamView({ managerId }) {
   const [invites, setInvites] = useState([]);
   const [copied, setCopied] = useState(false);
@@ -33,9 +63,10 @@ export default function TeamView({ managerId }) {
   const joinUrl = activeInvite ? `${window.location.origin}/join/${activeInvite.token}` : null;
 
   function copyLink() {
-    navigator.clipboard.writeText(joinUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    copyToClipboard(joinUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
   }
 
   async function createPeerManager(e) {
@@ -58,9 +89,10 @@ export default function TeamView({ managerId }) {
   }
 
   function copyManagerLink() {
-    navigator.clipboard.writeText(newManagerLink);
-    setCopiedManagerLink(true);
-    setTimeout(() => setCopiedManagerLink(false), 1500);
+    copyToClipboard(newManagerLink).then(() => {
+      setCopiedManagerLink(true);
+      setTimeout(() => setCopiedManagerLink(false), 1500);
+    });
   }
 
   return (

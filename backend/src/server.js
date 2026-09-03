@@ -214,14 +214,28 @@ async function requireSelfOrOwnEmployee(req, res, next) {
   }
 }
 
-app.get('/api/users/:id/timeline', requireAuth, requireSelfOrOwnEmployee, ah(async (req, res) => {
-  const { date } = req.query; // YYYY-MM-DD
+// The caller's local calendar day almost never lines up with a UTC day
+// (e.g. IST is 5.5 hours ahead), so a plain `${date}T00:00:00.000Z` window
+// covers the wrong slice of the day for anyone not in UTC — activity from
+// their actual morning could get excluded (still "yesterday" in UTC) while
+// activity from what's actually tomorrow morning gets included instead.
+// The dashboard sends explicit `start`/`end` instants marking its own local
+// midnight-to-midnight; `date` alone (UTC-based) is kept only as a fallback
+// for any caller that doesn't pass them.
+function dayWindow(query) {
+  const { date, start, end } = query;
+  if (start && end) return { start, end };
   const day = date || new Date().toISOString().slice(0, 10);
+  return { start: `${day}T00:00:00.000Z`, end: `${day}T23:59:59.999Z` };
+}
+
+app.get('/api/users/:id/timeline', requireAuth, requireSelfOrOwnEmployee, ah(async (req, res) => {
+  const { start, end } = dayWindow(req.query);
   const events = await db.prepare(`
     SELECT * FROM activity_events
     WHERE user_id = ? AND started_at >= ? AND started_at < ?
     ORDER BY started_at
-  `).all(req.params.id, `${day}T00:00:00.000Z`, `${day}T23:59:59.999Z`);
+  `).all(req.params.id, start, end);
   res.json(events);
 }));
 
@@ -229,13 +243,12 @@ app.get('/api/users/:id/productivity', requireAuth, requireSelfOrOwnEmployee, ah
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'user not found' });
 
-  const { date } = req.query;
-  const day = date || new Date().toISOString().slice(0, 10);
+  const { start, end } = dayWindow(req.query);
   const events = await db.prepare(`
     SELECT * FROM activity_events
     WHERE user_id = ? AND started_at >= ? AND started_at < ?
     ORDER BY started_at
-  `).all(req.params.id, `${day}T00:00:00.000Z`, `${day}T23:59:59.999Z`);
+  `).all(req.params.id, start, end);
 
   const rules = user.manager_id
     ? await db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(user.manager_id)
@@ -246,8 +259,7 @@ app.get('/api/users/:id/productivity', requireAuth, requireSelfOrOwnEmployee, ah
 }));
 
 app.get('/api/users/:id/screenshots', requireAuth, requireSelfOrOwnEmployee, ah(async (req, res) => {
-  const { date } = req.query;
-  const day = date || new Date().toISOString().slice(0, 10);
+  const { start: dayStart, end: dayEnd } = dayWindow(req.query);
   // image_data excluded here on purpose — this list can be dozens of rows,
   // and each one's base64 image would make the response huge for no reason.
   // The gallery fetches the actual image per-shot via /api/screenshots/:filename.
@@ -255,7 +267,7 @@ app.get('/api/users/:id/screenshots', requireAuth, requireSelfOrOwnEmployee, ah(
     SELECT id, user_id, captured_at, file_path, app_name, window_title FROM screenshots
     WHERE user_id = ? AND captured_at >= ? AND captured_at < ?
     ORDER BY captured_at DESC
-  `).all(req.params.id, `${day}T00:00:00.000Z`, `${day}T23:59:59.999Z`);
+  `).all(req.params.id, dayStart, dayEnd);
   res.json(shots);
 }));
 
