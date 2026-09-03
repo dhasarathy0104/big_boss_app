@@ -2,12 +2,13 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { hashPassword, verifyPassword, createSession, requireAuth } from '../auth.js';
+import { roleBelow } from '../hierarchy.js';
 import { ah } from '../asyncHandler.js';
 
 export const authRouter = Router();
 
 async function publicUser(u) {
-  const manager = u.manager_id ? await db.prepare('SELECT name FROM users WHERE id = ?').get(u.manager_id) : null;
+  const manager = u.parent_id ? await db.prepare('SELECT name FROM users WHERE id = ?').get(u.parent_id) : null;
   // agentKey/managerName let the native app start background tracking right
   // from a login response — same identity the /api/enroll invite-link flow
   // would have produced, no separate enrollment step needed for an employee
@@ -20,7 +21,7 @@ async function publicUser(u) {
     mobile: u.mobile,
     department: u.department,
     jobRole: u.job_role,
-    managerId: u.manager_id,
+    managerId: u.parent_id,
     managerName: manager?.name ?? null,
     agentKey: u.agent_key,
     passwordResetRequested: !!u.password_reset_requested_at,
@@ -55,7 +56,7 @@ authRouter.post('/register', ah(async (req, res) => {
 
   const agentKey = crypto.randomBytes(16).toString('hex');
   const info = await db.prepare(`
-    INSERT INTO users (name, email, agent_key, role, manager_id, password_hash) VALUES (?, ?, ?, 'manager', NULL, ?) RETURNING id
+    INSERT INTO users (name, email, agent_key, role, parent_id, password_hash) VALUES (?, ?, ?, 'manager', NULL, ?) RETURNING id
   `).run(name.trim(), email, agentKey, hashPassword(password));
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
@@ -112,23 +113,24 @@ authRouter.post('/register-admin', ah(async (req, res) => {
 
   const agentKey = crypto.randomBytes(16).toString('hex');
   const info = await db.prepare(`
-    INSERT INTO users (name, email, agent_key, role, manager_id, password_hash, mobile, department, job_role)
+    INSERT INTO users (name, email, agent_key, role, parent_id, password_hash, mobile, department, job_role)
     VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?) RETURNING id
   `).run(name.trim(), email, agentKey, role, hashPassword(password), mobile, department, jobRole);
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
 }));
 
-// An employee or manager who forgot their password flags their own account
-// from the login screen — no email required, since there's no email sending
-// set up. A manager sees the request in Employee Management and sets a new
-// password directly; a super admin sees a manager's request the same way in
-// Manage Admins. Always responds the same way regardless of whether the
+// Anyone who forgot their password flags their own account from the login
+// screen — no email sending set up, so whoever is directly above them in
+// the reporting chain sees the request (see SupervisorTeamView's team list)
+// and sets a new password directly. Every role has someone above them
+// except Super Admin, which has no email at all and genuinely no recovery
+// path, by design. Always responds the same way regardless of whether the
 // email matched anything, so this can't be used to probe which emails exist.
 authRouter.post('/forgot-password', ah(async (req, res) => {
   const email = normalizeEmail(req.body.email);
   if (email) {
-    const user = await db.prepare("SELECT id FROM users WHERE email = ? AND role IN ('employee', 'manager')").get(email);
+    const user = await db.prepare("SELECT id FROM users WHERE email = ? AND role != 'superadmin'").get(email);
     if (user) {
       await db.prepare("UPDATE users SET password_reset_requested_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') WHERE id = ?").run(user.id);
     }
@@ -201,4 +203,45 @@ authRouter.post('/claim/:token', ah(async (req, res) => {
   await db.prepare('UPDATE users SET password_hash = ?, email = ?, claim_token = NULL WHERE id = ?').run(hashPassword(password), finalEmail, user.id);
   const updated = await db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   res.json({ token: await createSession(updated.id), user: await publicUser(updated) });
+}));
+
+// The generalized invite-link claim for any supervisor tier (GM, AGM,
+// Manager, AM, TL) — the recipient fills in their own details and the
+// account is created right then, unlike /claim/:token above (which only
+// sets a password on a row someone else already pre-created). This is the
+// web /join/:token page's flow. Employees are deliberately excluded here —
+// they're created via the native app's agent-enrollment flow (/api/enroll)
+// instead, since that's the one that also connects the tracking agent; a
+// TL's invite link creating a dashboard-only, untracked account here would
+// silently skip that.
+authRouter.post('/claim-invite/:token', ah(async (req, res) => {
+  const { name, password } = req.body;
+  const email = normalizeEmail(req.body.email);
+  if (!name?.trim() || !email || !password || password.length < 8) {
+    return res.status(400).json({ error: 'name, email, and a password of at least 8 characters are required' });
+  }
+
+  const invite = await db.prepare('SELECT * FROM invite_links WHERE token = ? AND revoked = 0').get(req.params.token);
+  if (!invite) return res.status(404).json({ error: 'invalid or revoked invite link' });
+
+  const inviter = await db.prepare('SELECT id, role FROM users WHERE id = ?').get(invite.inviter_id);
+  const role = roleBelow(inviter?.role);
+  if (!role || role === 'employee') return res.status(400).json({ error: 'this invite link cannot be used here' });
+
+  const emailTaken = await db.prepare('SELECT 1 FROM users WHERE email = ?').get(email);
+  if (emailTaken) return res.status(409).json({ error: 'that email is already registered' });
+
+  const mobile = (req.body.mobile ?? '').trim() || null;
+  const department = (req.body.department ?? '').trim() || null;
+  const jobRole = (req.body.jobRole ?? '').trim() || null;
+
+  const agentKey = crypto.randomBytes(16).toString('hex');
+  const info = await db.prepare(`
+    INSERT INTO users (name, email, agent_key, role, parent_id, password_hash, mobile, department, job_role)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+  `).run(name.trim(), email, agentKey, role, inviter.id, hashPassword(password), mobile, department, jobRole);
+  await db.prepare('UPDATE invite_links SET use_count = use_count + 1 WHERE id = ?').run(invite.id);
+
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
+  res.json({ token: await createSession(user.id), user: await publicUser(user) });
 }));

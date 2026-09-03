@@ -6,6 +6,7 @@ import { buildOverrideMaps, computeProductivity } from '../productivity.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
 import { deleteEmployeeCascade, deleteManagerCascade } from '../deleteUser.js';
+import { getAncestorIdWithRole, getDescendantIds, roleAbove } from '../hierarchy.js';
 
 export const superadminRouter = Router();
 
@@ -26,7 +27,7 @@ superadminRouter.post('/create-admin', requireSuperAdmin, ah(async (req, res) =>
 
   const agentKey = crypto.randomBytes(16).toString('hex');
   const info = await db.prepare(`
-    INSERT INTO users (name, email, agent_key, role, manager_id, password_hash) VALUES (?, ?, ?, 'manager', NULL, ?) RETURNING id
+    INSERT INTO users (name, email, agent_key, role, parent_id, password_hash) VALUES (?, ?, ?, 'manager', NULL, ?) RETURNING id
   `).run(name.trim(), email, agentKey, hashPassword(password));
   const user = await db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(info.lastInsertRowid);
   res.json(user);
@@ -100,7 +101,7 @@ superadminRouter.delete('/managers/:id', requireSuperAdmin, ah(async (req, res) 
   const manager = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(req.params.id);
   if (!manager) return res.status(404).json({ error: 'manager not found' });
 
-  const { count } = await db.prepare("SELECT COUNT(*)::int AS count FROM users WHERE manager_id = ? AND role = 'employee'").get(manager.id);
+  const { count } = await db.prepare("SELECT COUNT(*)::int AS count FROM users WHERE parent_id = ? AND role = 'employee'").get(manager.id);
   if (count > 0) {
     return res.status(400).json({ error: `This admin still has ${count} employee${count === 1 ? '' : 's'} — transfer or remove them first.` });
   }
@@ -221,13 +222,77 @@ superadminRouter.post('/employees/:id/transfer', requireSuperAdmin, ah(async (re
   const targetManager = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(targetManagerId);
   if (!targetManager) return res.status(404).json({ error: 'target manager not found' });
 
-  await db.prepare('UPDATE users SET manager_id = ? WHERE id = ?').run(targetManager.id, employee.id);
+  await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(targetManager.id, employee.id);
   res.json({ ok: true, employeeId: employee.id, newManagerId: targetManager.id, newManagerName: targetManager.name });
+}));
+
+// Every account in the org except the super admin themselves, flat — the
+// super admin has no per-level view of everyone yet (see the /overview
+// KNOWN LIMITATION below), so a general "reassign anyone" picker needs its
+// own full listing rather than reusing that route.
+superadminRouter.get('/users', requireSuperAdmin, ah(async (req, res) => {
+  const users = await db.prepare(
+    "SELECT id, name, email, role, department FROM users WHERE role != 'superadmin' ORDER BY role, name"
+  ).all();
+  res.json(users);
+}));
+
+// Valid new-parent candidates for reassigning this one person to anywhere
+// else in the org: whoever holds the role directly above them, minus their
+// current parent (already there) and anyone already in their own subtree
+// (which would create a cycle — you can't become your own descendant's
+// report).
+superadminRouter.get('/users/:id/reassign-candidates', requireSuperAdmin, ah(async (req, res) => {
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'user not found' });
+  const parentRole = roleAbove(user.role);
+  if (!parentRole) return res.json([]); // superadmin has nobody above it
+
+  const excludeIds = new Set([user.id, user.parent_id, ...(await getDescendantIds(user.id))]);
+  const candidates = await db.prepare('SELECT id, name FROM users WHERE role = ? ORDER BY name').all(parentRole);
+  res.json(candidates.filter((c) => !excludeIds.has(c.id)));
+}));
+
+// Reassigns any one person (and their whole subtree, which moves with them —
+// see the manager-only transfer route above for the same reasoning) to a
+// new parent anywhere else in the org, as long as the new parent's role is
+// exactly the one role above this person's — the fixed-level invariant the
+// whole hierarchy depends on (see hierarchy.js's ROLE_ORDER) still has to
+// hold after an arbitrary-level move, not just at invite time.
+superadminRouter.post('/users/:id/reassign', requireSuperAdmin, ah(async (req, res) => {
+  const { newParentId } = req.body;
+  if (!newParentId) return res.status(400).json({ error: 'newParentId required' });
+
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'user not found' });
+  if (user.role === 'superadmin') return res.status(400).json({ error: "can't reassign the super admin" });
+  if (Number(newParentId) === user.parent_id) return res.status(400).json({ error: 'already reports there' });
+
+  const newParent = await db.prepare('SELECT * FROM users WHERE id = ?').get(newParentId);
+  if (!newParent) return res.status(404).json({ error: 'new parent not found' });
+  if (newParent.role !== roleAbove(user.role)) {
+    return res.status(400).json({ error: `new parent must be a ${roleAbove(user.role)}` });
+  }
+  const descendantIds = await getDescendantIds(user.id);
+  if (newParent.id === user.id || descendantIds.includes(newParent.id)) {
+    return res.status(400).json({ error: "can't reassign someone under their own report" });
+  }
+
+  await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(newParent.id, user.id);
+  res.json({ ok: true, userId: user.id, newParentId: newParent.id, newParentName: newParent.name });
 }));
 
 // Org structure: how many admins, how many employees, and who reports to
 // whom. No screenshot/activity data here — that's an employee-monitoring
 // concept, not something extended to overseeing admins themselves.
+//
+// KNOWN LIMITATION (tracked for the dashboard rework): this still only
+// surfaces Manager-role accounts and their direct employees, the same
+// two-level shape as before the hierarchy rework. GM/AGM/AM/TL accounts and
+// employees more than one level below a Manager exist and are fully
+// functional (see hierarchy.js), but won't show up in this particular
+// overview until the "Manage Admins"-equivalent view is redesigned to walk
+// the whole tree instead of one fixed level.
 superadminRouter.get('/overview', requireSuperAdmin, ah(async (req, res) => {
   const managers = await db.prepare(`
     SELECT id, name, email, mobile, department, job_role AS "jobRole", created_at,
@@ -237,7 +302,7 @@ superadminRouter.get('/overview', requireSuperAdmin, ah(async (req, res) => {
   const admins = await Promise.all(managers.map(async (m) => {
     const employees = await db.prepare(`
       SELECT id, name, email, mobile, department, job_role AS "jobRole"
-      FROM users WHERE role = 'employee' AND manager_id = ? ORDER BY name
+      FROM users WHERE role = 'employee' AND parent_id = ? ORDER BY name
     `).all(m.id);
     return {
       id: m.id, name: m.name, email: m.email, mobile: m.mobile, department: m.department, jobRole: m.jobRole,
@@ -261,9 +326,9 @@ function statusFor(latestEvent) {
 superadminRouter.get('/live-status', requireSuperAdmin, ah(async (req, res) => {
   const employees = await db.prepare(`
     SELECT e.id, e.name, e.email, e.mobile, e.department, e.job_role AS "jobRole",
-      e.manager_id AS "managerId", m.name AS "managerName", m.email AS "managerEmail",
+      e.parent_id AS "managerId", m.name AS "managerName", m.email AS "managerEmail",
       m.mobile AS "managerMobile", m.department AS "managerDepartment", m.job_role AS "managerJobRole"
-    FROM users e JOIN users m ON m.id = e.manager_id
+    FROM users e JOIN users m ON m.id = e.parent_id
     WHERE e.role = 'employee'
     ORDER BY m.name, e.name
   `).all();
@@ -271,14 +336,24 @@ superadminRouter.get('/live-status', requireSuperAdmin, ah(async (req, res) => {
   if (employees.length === 0) return res.json([]);
 
   const ids = employees.map((e) => e.id);
-  const managerIds = [...new Set(employees.map((e) => e.managerId))];
   const today = new Date().toISOString().slice(0, 10);
+
+  // Category rules belong to the department Manager specifically — an
+  // employee's direct parent (shown above as managerId/managerName) could
+  // now be a TL or AM instead, several levels below the Manager who
+  // actually owns the rules, so each employee's owning Manager is resolved
+  // individually rather than assumed to be their direct parent.
+  const owningManagerByEmployee = new Map();
+  for (const emp of employees) {
+    owningManagerByEmployee.set(emp.id, await getAncestorIdWithRole(emp.id, 'manager'));
+  }
+  const managerIds = [...new Set([...owningManagerByEmployee.values()].filter(Boolean))];
 
   // Same batching as the manager's own /live-status: a handful of queries
   // for the whole org instead of several per employee, which used to fire
   // hundreds of small round trips per poll at real org sizes.
   const [allRules, latestEvents, todaysEvents] = await Promise.all([
-    db.prepare('SELECT * FROM category_rules WHERE manager_id = ANY(?)').all(managerIds),
+    managerIds.length === 0 ? [] : db.prepare('SELECT * FROM category_rules WHERE manager_id = ANY(?)').all(managerIds),
     db.prepare(`
       SELECT DISTINCT ON (user_id) * FROM activity_events
       WHERE user_id = ANY(?) ORDER BY user_id, ended_at DESC
@@ -304,7 +379,7 @@ superadminRouter.get('/live-status', requireSuperAdmin, ah(async (req, res) => {
   const result = [];
   for (const emp of employees) {
     const latestEvent = latestByUser.get(emp.id);
-    const overrides = rulesByManager.get(emp.managerId);
+    const overrides = rulesByManager.get(owningManagerByEmployee.get(emp.id));
     const productivity = computeProductivity(eventsByUser.get(emp.id) ?? [], overrides);
 
     result.push({

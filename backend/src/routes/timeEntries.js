@@ -38,7 +38,7 @@ timeEntriesRouter.post('/', requireAuth, ah(async (req, res) => {
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
   if (!user || !project) return res.status(404).json({ error: 'user or project not found' });
-  if (project.manager_id !== user.manager_id) {
+  if (project.manager_id !== user.parent_id) {
     return res.status(403).json({ error: "project does not belong to this employee's manager" });
   }
 

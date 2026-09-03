@@ -85,19 +85,19 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   agent_key TEXT UNIQUE NOT NULL,
   role TEXT NOT NULL DEFAULT 'employee',
-  manager_id INTEGER REFERENCES users(id),
+  parent_id INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS'))
 );
 
 CREATE TABLE IF NOT EXISTS invite_links (
   id SERIAL PRIMARY KEY,
   token TEXT UNIQUE NOT NULL,
-  manager_id INTEGER NOT NULL REFERENCES users(id),
+  inviter_id INTEGER NOT NULL REFERENCES users(id),
   revoked INTEGER NOT NULL DEFAULT 0,
   use_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS'))
 );
-CREATE INDEX IF NOT EXISTS idx_invite_links_manager ON invite_links(manager_id);
+CREATE INDEX IF NOT EXISTS idx_invite_links_inviter ON invite_links(inviter_id);
 
 CREATE TABLE IF NOT EXISTS activity_events (
   id SERIAL PRIMARY KEY,
@@ -253,6 +253,27 @@ await ensureColumn('users', 'password_reset_requested_at', 'password_reset_reque
 // stored. NULL on either means no restriction (track around the clock).
 await ensureColumn('users', 'tracking_start_time', 'tracking_start_time TEXT');
 await ensureColumn('users', 'tracking_end_time', 'tracking_end_time TEXT');
+
+async function renameColumn(table, from, to) {
+  const hasFrom = await pool.query(
+    'SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2', [table, from]
+  );
+  const hasTo = await pool.query(
+    'SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2', [table, to]
+  );
+  if (hasFrom.rowCount > 0 && hasTo.rowCount === 0) {
+    await pool.query(`ALTER TABLE ${table} RENAME COLUMN ${from} TO ${to}`);
+  }
+}
+// `manager_id` on `users` used to mean "this employee's one manager" — the
+// org hierarchy now has several levels (see hierarchy.js), so it's just
+// "whoever is directly one level above me" regardless of which of those
+// levels either person is at. Renamed for clarity; same self-referencing
+// column, same foreign key, just a role-neutral name. `invite_links` gets
+// the equivalent rename since invites are no longer manager-only either —
+// every level can invite the level directly below it.
+await renameColumn('users', 'manager_id', 'parent_id');
+await renameColumn('invite_links', 'manager_id', 'inviter_id');
 
 export function randomToken(bytes = 12) {
   return crypto.randomBytes(bytes).toString('hex');

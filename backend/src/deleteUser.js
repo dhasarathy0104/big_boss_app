@@ -33,7 +33,7 @@ export async function deleteManagerCascade(managerId) {
     }
     await tx.prepare('DELETE FROM projects WHERE manager_id = ?').run(managerId);
     await tx.prepare('DELETE FROM category_rules WHERE manager_id = ?').run(managerId);
-    await tx.prepare('DELETE FROM invite_links WHERE manager_id = ?').run(managerId);
+    await tx.prepare('DELETE FROM invite_links WHERE inviter_id = ?').run(managerId);
     await tx.prepare('DELETE FROM sessions WHERE user_id = ?').run(managerId);
     await tx.prepare('DELETE FROM users WHERE id = ?').run(managerId);
   });

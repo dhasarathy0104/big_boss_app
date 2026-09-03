@@ -31,7 +31,7 @@ managersRouter.post('/create-peer', requireManager, ah(async (req, res) => {
   const agentKey = crypto.randomBytes(16).toString('hex');
   const claimToken = randomToken(16);
   const info = await db.prepare(`
-    INSERT INTO users (name, email, agent_key, role, manager_id, claim_token) VALUES (?, ?, ?, 'manager', NULL, ?) RETURNING id
+    INSERT INTO users (name, email, agent_key, role, parent_id, claim_token) VALUES (?, ?, ?, 'manager', NULL, ?) RETURNING id
   `).run(name.trim(), email, agentKey, claimToken);
   res.json({ id: info.lastInsertRowid, name: name.trim(), claimToken });
 }));
@@ -41,7 +41,7 @@ managersRouter.get('/:id/team', requireManagerSelf, ah(async (req, res) => {
     SELECT id, name, email, mobile, department, job_role AS "jobRole", created_at,
       (claim_token IS NOT NULL) AS "hasPendingClaim", (password_hash IS NOT NULL) AS "hasDashboardLogin",
       (password_reset_requested_at IS NOT NULL) AS "passwordResetRequested"
-    FROM users WHERE manager_id = ? AND role = 'employee' ORDER BY name
+    FROM users WHERE parent_id = ? AND role = 'employee' ORDER BY name
   `).all(req.params.id);
   res.json(team);
 }));
@@ -55,7 +55,7 @@ managersRouter.post('/:id/team/:employeeId/set-password', requireManagerSelf, ah
   if (!password || password.length < 8) {
     return res.status(400).json({ error: 'a password of at least 8 characters is required' });
   }
-  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND manager_id = ? AND role = 'employee'")
+  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND parent_id = ? AND role = 'employee'")
     .get(req.params.employeeId, req.params.id);
   if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
 
@@ -68,7 +68,7 @@ managersRouter.post('/:id/team/:employeeId/set-password', requireManagerSelf, ah
 // the same request — the "click the pencil, edit everything, Save" flow
 // replaces the old separate set-password/claim-link buttons for this view.
 managersRouter.patch('/:id/team/:employeeId', requireManagerSelf, ah(async (req, res) => {
-  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND manager_id = ? AND role = 'employee'")
+  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND parent_id = ? AND role = 'employee'")
     .get(req.params.employeeId, req.params.id);
   if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
 
@@ -103,7 +103,7 @@ managersRouter.patch('/:id/team/:employeeId', requireManagerSelf, ah(async (req,
 // screenshots, timesheets, attendance, leave). Irreversible — the UI should
 // confirm before calling this.
 managersRouter.delete('/:id/team/:employeeId', requireManagerSelf, ah(async (req, res) => {
-  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND manager_id = ? AND role = 'employee'")
+  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND parent_id = ? AND role = 'employee'")
     .get(req.params.employeeId, req.params.id);
   if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
 
@@ -113,19 +113,19 @@ managersRouter.delete('/:id/team/:employeeId', requireManagerSelf, ah(async (req
 
 managersRouter.get('/:id/invites', requireManagerSelf, ah(async (req, res) => {
   const invites = await db.prepare(`
-    SELECT * FROM invite_links WHERE manager_id = ? AND revoked = 0 ORDER BY created_at DESC
+    SELECT * FROM invite_links WHERE inviter_id = ? AND revoked = 0 ORDER BY created_at DESC
   `).all(req.params.id);
   res.json(invites);
 }));
 
 managersRouter.post('/:id/invites', requireManagerSelf, ah(async (req, res) => {
   const token = randomToken(12);
-  await db.prepare('INSERT INTO invite_links (token, manager_id) VALUES (?, ?)').run(token, req.params.id);
+  await db.prepare('INSERT INTO invite_links (token, inviter_id) VALUES (?, ?)').run(token, req.params.id);
   res.json(await db.prepare('SELECT * FROM invite_links WHERE token = ?').get(token));
 }));
 
 managersRouter.post('/:id/invites/:inviteId/revoke', requireManagerSelf, ah(async (req, res) => {
-  await db.prepare('UPDATE invite_links SET revoked = 1 WHERE id = ? AND manager_id = ?').run(req.params.inviteId, req.params.id);
+  await db.prepare('UPDATE invite_links SET revoked = 1 WHERE id = ? AND inviter_id = ?').run(req.params.inviteId, req.params.id);
   res.json({ ok: true });
 }));
 
@@ -188,7 +188,7 @@ managersRouter.patch('/:id/settings', requireManagerSelf, ah(async (req, res) =>
 // dashboard password — separate from the invite link, which only connects the
 // background tracking agent. Manager hands this to that specific employee.
 managersRouter.post('/:id/team/:employeeId/claim-link', requireManagerSelf, ah(async (req, res) => {
-  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND manager_id = ? AND role = 'employee'")
+  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND parent_id = ? AND role = 'employee'")
     .get(req.params.employeeId, req.params.id);
   if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
 
@@ -205,7 +205,7 @@ managersRouter.get('/:id/other-managers', requireManagerSelf, ah(async (req, res
 }));
 
 // Moves an employee to a different manager. Their whole record (history,
-// screenshots, attendance, leave) moves with them — manager_id is the one
+// screenshots, attendance, leave) moves with them — parent_id is the one
 // source of truth for "whose team is this employee on", there's no
 // before/after split. The old manager loses access immediately; the new
 // manager gains full access immediately, including past data.
@@ -216,13 +216,13 @@ managersRouter.post('/:id/team/:employeeId/transfer', requireManagerSelf, ah(asy
     return res.status(400).json({ error: 'employee is already on your team' });
   }
 
-  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND manager_id = ? AND role = 'employee'")
+  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND parent_id = ? AND role = 'employee'")
     .get(req.params.employeeId, req.params.id);
   if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
 
   const targetManager = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(targetManagerId);
   if (!targetManager) return res.status(404).json({ error: 'target manager not found' });
 
-  await db.prepare('UPDATE users SET manager_id = ? WHERE id = ?').run(targetManager.id, employee.id);
+  await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(targetManager.id, employee.id);
   res.json({ ok: true, employeeId: employee.id, newManagerId: targetManager.id, newManagerName: targetManager.name });
 }));

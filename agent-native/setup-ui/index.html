@@ -149,7 +149,7 @@
         <span class="title">Employee</span>
       </button>
       <button class="role-btn" id="chooseAdmin" style="margin-top: 10px;">
-        <span class="title">Manager</span>
+        <span class="title">Manager / Supervisor</span>
       </button>
       <button class="role-btn" id="chooseSuperAdmin" style="margin-top: 10px;">
         <span class="title">Super Admin</span>
@@ -221,7 +221,7 @@
     </div>
 
     <div id="screen-admin" class="screen">
-      <h1>Manager login</h1>
+      <h1>Manager / Supervisor login</h1>
 
       <label for="adminEmail">Email</label>
       <input id="adminEmail" type="email" placeholder="jane@example.com" />
@@ -231,7 +231,7 @@
 
       <button id="submitAdmin">Log in</button>
       <button class="text-link" id="goToAdminRegister">New here? Create a manager account</button>
-      <button class="text-link" id="forgotAdmin">Forgot password? Notify your super admin</button>
+      <button class="text-link" id="forgotAdmin">Forgot password?</button>
       <button class="text-link" data-back>&larr; Back</button>
       <div class="status" id="statusAdmin"></div>
     </div>
@@ -497,14 +497,14 @@
         statusAdminEl.className = 'status error';
         return;
       }
-      statusAdminEl.textContent = 'Notifying your super admin…';
+      statusAdminEl.textContent = 'Notifying…';
       statusAdminEl.className = 'status';
       await fetch(BACKEND_URL + '/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email }),
       }).catch(() => {});
-      statusAdminEl.textContent = 'Your super admin has been notified and will set you a new password.';
+      statusAdminEl.textContent = 'Whoever you report to has been notified and will set you a new password.';
       statusAdminEl.className = 'status ok';
     });
 

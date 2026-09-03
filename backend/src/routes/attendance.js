@@ -56,7 +56,7 @@ attendanceRouter.get('/', requireAuth, ah(async (req, res) => {
     SELECT a.*, u.name AS user_name
     FROM attendance_records a
     JOIN users u ON u.id = a.user_id
-    WHERE u.manager_id = ? AND a.clock_in >= ? AND a.clock_in < ?
+    WHERE u.parent_id = ? AND a.clock_in >= ? AND a.clock_in < ?
     ORDER BY a.clock_in DESC
   `).all(managerId, `${day}T00:00:00.000Z`, `${day}T23:59:59.999Z`);
   res.json(records);

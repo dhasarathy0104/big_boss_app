@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import JoinPage from './views/JoinPage.jsx';
 import ClaimAccountPage from './views/ClaimAccountPage.jsx';
 import ManagerDashboard from './views/ManagerDashboard.jsx';
+import SupervisorDashboard from './views/SupervisorDashboard.jsx';
 import EmployeeDashboard from './views/EmployeeDashboard.jsx';
 import SuperAdminDashboard from './views/SuperAdminDashboard.jsx';
 import { getToken, setToken } from './api.js';
@@ -305,9 +306,13 @@ function Shell() {
   if (!user) return <AuthScreen presetRole={lastRole} onAuthed={(u) => { setLastRole(null); setUser(u); }} />;
 
   if (user.role === 'superadmin') return <SuperAdminDashboard user={user} onLogout={logout} />;
-  return user.role === 'manager'
-    ? <ManagerDashboard manager={user} onLogout={logout} />
-    : <EmployeeDashboard employee={user} onLogout={logout} />;
+  if (user.role === 'manager') return <ManagerDashboard manager={user} onLogout={logout} />;
+  // GM, AGM, AM, and TL share one dashboard — none of them existed before
+  // the org-hierarchy rework, and unlike Manager they have no
+  // Projects/Billing/Category-Rules features tying them to their own
+  // bespoke UI, so there's nothing to preserve by giving each its own.
+  if (['gm', 'agm', 'am', 'tl'].includes(user.role)) return <SupervisorDashboard user={user} onLogout={logout} />;
+  return <EmployeeDashboard employee={user} onLogout={logout} />;
 }
 
 export default function App() {
