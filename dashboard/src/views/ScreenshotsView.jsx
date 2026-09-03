@@ -150,7 +150,7 @@ export function TrackingHoursControl({ managerId, settingsUrl }) {
   );
 }
 
-export default function ScreenshotsView({ selectedUserId, managerId, canDelete }) {
+export default function ScreenshotsView({ selectedUserId, managerId, settingsUrl, canDelete }) {
   const [date, setDate] = useState(todayStr());
   const [shots, setShots] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -193,8 +193,8 @@ export default function ScreenshotsView({ selectedUserId, managerId, canDelete }
 
   return (
     <>
-      <IntervalControl managerId={managerId} />
-      {managerId && <TrackingHoursControl managerId={managerId} settingsUrl={`/api/managers/${managerId}/settings`} />}
+      <IntervalControl managerId={managerId} settingsUrl={settingsUrl} />
+      {managerId && <TrackingHoursControl managerId={managerId} settingsUrl={settingsUrl ?? `/api/managers/${managerId}/settings`} />}
 
       {!selectedUserId ? (
         <div className="panel"><div className="empty">Select someone from your team on the left.</div></div>

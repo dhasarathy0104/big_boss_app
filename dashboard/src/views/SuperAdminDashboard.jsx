@@ -1136,6 +1136,14 @@ export default function SuperAdminDashboard({ user, onLogout }) {
 
   useEffect(reloadOverview, [activeTab]);
 
+  // The screenshot interval / tracking-hours settings are per-manager (they
+  // apply to that manager's whole team), so viewing one employee's
+  // screenshots as super admin needs that employee's own manager's id, not
+  // the employee's own id.
+  const selectedEmployeeManagerId = overview?.admins
+    ?.flatMap((a) => a.employees.map((e) => ({ id: e.id, managerId: a.id })))
+    .find((e) => e.id === selectedUserId)?.managerId ?? null;
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -1207,7 +1215,12 @@ export default function SuperAdminDashboard({ user, onLogout }) {
         {activeTab === 'screenshots' && (
           <>
             <EmployeePickerBar overview={overview} selectedUserId={selectedUserId} onSelect={setSelectedUserId} />
-            <ScreenshotsView selectedUserId={selectedUserId} managerId={null} canDelete />
+            <ScreenshotsView
+              selectedUserId={selectedUserId}
+              managerId={selectedEmployeeManagerId}
+              settingsUrl={selectedEmployeeManagerId ? `/api/superadmin/managers/${selectedEmployeeManagerId}/settings` : undefined}
+              canDelete
+            />
           </>
         )}
         {activeTab === 'employees' && <SuperAdminEmployeesTab overview={overview} onChanged={reloadOverview} />}
