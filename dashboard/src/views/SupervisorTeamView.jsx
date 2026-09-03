@@ -47,11 +47,17 @@ export default function SupervisorTeamView({ supervisorId }) {
   const [newPassword, setNewPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
+  const [peers, setPeers] = useState([]);
+  const [transferringFor, setTransferringFor] = useState(null);
+  const [targetParentId, setTargetParentId] = useState('');
+  const [transferError, setTransferError] = useState('');
+  const [transferring, setTransferring] = useState(false);
 
   function load() {
     fetch(`/api/supervisors/${supervisorId}/team`).then((r) => r.json()).then(setTeam);
     fetch(`/api/supervisors/${supervisorId}/invites`).then((r) => r.json()).then(setInvites);
     fetch(`/api/supervisors/${supervisorId}/invite-role`).then((r) => r.json()).then((d) => setInviteRole(d.role));
+    fetch(`/api/supervisors/${supervisorId}/peers`).then((r) => r.json()).then(setPeers);
   }
 
   useEffect(load, [supervisorId]);
@@ -86,6 +92,27 @@ export default function SupervisorTeamView({ supervisorId }) {
     setSavingPassword(false);
     if (!res.ok) { setPasswordError((await res.json()).error); return; }
     setSettingPasswordFor(null);
+    load();
+  }
+
+  function startTransfer(memberId) {
+    setTransferringFor(memberId);
+    setTargetParentId('');
+    setTransferError('');
+  }
+
+  async function saveTransfer(memberId) {
+    if (!targetParentId) return;
+    setTransferring(true);
+    setTransferError('');
+    const res = await fetch(`/api/supervisors/${supervisorId}/team/${memberId}/transfer`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ targetParentId }),
+    });
+    setTransferring(false);
+    if (!res.ok) { setTransferError((await res.json()).error); return; }
+    setTransferringFor(null);
     load();
   }
 
@@ -169,11 +196,30 @@ export default function SupervisorTeamView({ supervisorId }) {
                           </button>
                           <button className="btn-small" onClick={() => setSettingPasswordFor(null)}>Cancel</button>
                         </div>
+                      ) : transferringFor === member.id ? (
+                        <div className="inline-form" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                          <select value={targetParentId} onChange={(e) => setTargetParentId(e.target.value)}>
+                            <option value="">Move to…</option>
+                            {peers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                          <button className="btn-small" disabled={!targetParentId || transferring} onClick={() => saveTransfer(member.id)}>
+                            {transferring ? 'Moving…' : 'Move'}
+                          </button>
+                          <button className="btn-small" onClick={() => setTransferringFor(null)}>Cancel</button>
+                        </div>
                       ) : (
-                        <button className="btn-small" onClick={() => startSetPassword(member.id)}>Set password</button>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn-small" onClick={() => startSetPassword(member.id)}>Set password</button>
+                          {peers.length > 0 && (
+                            <button className="btn-small" onClick={() => startTransfer(member.id)}>Transfer</button>
+                          )}
+                        </div>
                       )}
                       {settingPasswordFor === member.id && passwordError && (
                         <div style={{ color: '#e07070', fontSize: 11, marginTop: 4 }}>{passwordError}</div>
+                      )}
+                      {transferringFor === member.id && transferError && (
+                        <div style={{ color: '#e07070', fontSize: 11, marginTop: 4 }}>{transferError}</div>
                       )}
                     </td>
                   </tr>

@@ -6,7 +6,7 @@ import { buildOverrideMaps, computeProductivity } from '../productivity.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
 import { deleteEmployeeCascade, deleteManagerCascade } from '../deleteUser.js';
-import { getAncestorIdWithRole } from '../hierarchy.js';
+import { getAncestorIdWithRole, getDescendantIds, roleAbove } from '../hierarchy.js';
 
 export const superadminRouter = Router();
 
@@ -224,6 +224,62 @@ superadminRouter.post('/employees/:id/transfer', requireSuperAdmin, ah(async (re
 
   await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(targetManager.id, employee.id);
   res.json({ ok: true, employeeId: employee.id, newManagerId: targetManager.id, newManagerName: targetManager.name });
+}));
+
+// Every account in the org except the super admin themselves, flat — the
+// super admin has no per-level view of everyone yet (see the /overview
+// KNOWN LIMITATION below), so a general "reassign anyone" picker needs its
+// own full listing rather than reusing that route.
+superadminRouter.get('/users', requireSuperAdmin, ah(async (req, res) => {
+  const users = await db.prepare(
+    "SELECT id, name, email, role, department FROM users WHERE role != 'superadmin' ORDER BY role, name"
+  ).all();
+  res.json(users);
+}));
+
+// Valid new-parent candidates for reassigning this one person to anywhere
+// else in the org: whoever holds the role directly above them, minus their
+// current parent (already there) and anyone already in their own subtree
+// (which would create a cycle — you can't become your own descendant's
+// report).
+superadminRouter.get('/users/:id/reassign-candidates', requireSuperAdmin, ah(async (req, res) => {
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'user not found' });
+  const parentRole = roleAbove(user.role);
+  if (!parentRole) return res.json([]); // superadmin has nobody above it
+
+  const excludeIds = new Set([user.id, user.parent_id, ...(await getDescendantIds(user.id))]);
+  const candidates = await db.prepare('SELECT id, name FROM users WHERE role = ? ORDER BY name').all(parentRole);
+  res.json(candidates.filter((c) => !excludeIds.has(c.id)));
+}));
+
+// Reassigns any one person (and their whole subtree, which moves with them —
+// see the manager-only transfer route above for the same reasoning) to a
+// new parent anywhere else in the org, as long as the new parent's role is
+// exactly the one role above this person's — the fixed-level invariant the
+// whole hierarchy depends on (see hierarchy.js's ROLE_ORDER) still has to
+// hold after an arbitrary-level move, not just at invite time.
+superadminRouter.post('/users/:id/reassign', requireSuperAdmin, ah(async (req, res) => {
+  const { newParentId } = req.body;
+  if (!newParentId) return res.status(400).json({ error: 'newParentId required' });
+
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'user not found' });
+  if (user.role === 'superadmin') return res.status(400).json({ error: "can't reassign the super admin" });
+  if (Number(newParentId) === user.parent_id) return res.status(400).json({ error: 'already reports there' });
+
+  const newParent = await db.prepare('SELECT * FROM users WHERE id = ?').get(newParentId);
+  if (!newParent) return res.status(404).json({ error: 'new parent not found' });
+  if (newParent.role !== roleAbove(user.role)) {
+    return res.status(400).json({ error: `new parent must be a ${roleAbove(user.role)}` });
+  }
+  const descendantIds = await getDescendantIds(user.id);
+  if (newParent.id === user.id || descendantIds.includes(newParent.id)) {
+    return res.status(400).json({ error: "can't reassign someone under their own report" });
+  }
+
+  await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(newParent.id, user.id);
+  res.json({ ok: true, userId: user.id, newParentId: newParent.id, newParentName: newParent.name });
 }));
 
 // Org structure: how many admins, how many employees, and who reports to

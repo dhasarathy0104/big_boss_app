@@ -140,3 +140,39 @@ supervisorsRouter.get('/:id/invite-role', requireSupervisorSelf, ah(async (req, 
   const user = await db.prepare('SELECT role FROM users WHERE id = ?').get(req.params.id);
   res.json({ role: roleBelow(user?.role) });
 }));
+
+// Other accounts at this same level, to pick a transfer destination from —
+// the generalized version of routes/managers.js's manager-only
+// /other-managers, usable at any tier (a TL sees other TLs, a GM sees other
+// GMs, and so on).
+supervisorsRouter.get('/:id/peers', requireSupervisorSelf, ah(async (req, res) => {
+  const user = await db.prepare('SELECT role FROM users WHERE id = ?').get(req.params.id);
+  const peers = await db.prepare('SELECT id, name FROM users WHERE role = ? AND id != ? ORDER BY name')
+    .all(user.role, req.params.id);
+  res.json(peers);
+}));
+
+// Moves one direct report to a different same-tier peer — the generalized
+// version of routes/managers.js's employee-only team transfer, usable by any
+// supervisor for whoever reports directly to them. Their whole subtree moves
+// with them, same reasoning as the manager-only version: parent_id is the
+// one source of truth for whose team someone's on.
+supervisorsRouter.post('/:id/team/:memberId/transfer', requireSupervisorSelf, ah(async (req, res) => {
+  const { targetParentId } = req.body;
+  if (!targetParentId) return res.status(400).json({ error: 'targetParentId required' });
+  if (Number(targetParentId) === Number(req.params.id)) {
+    return res.status(400).json({ error: 'already on your team' });
+  }
+
+  const me = await db.prepare('SELECT role FROM users WHERE id = ?').get(req.params.id);
+  const member = await db.prepare('SELECT * FROM users WHERE id = ? AND parent_id = ?')
+    .get(req.params.memberId, req.params.id);
+  if (!member) return res.status(404).json({ error: 'not found in your team' });
+
+  const targetParent = await db.prepare('SELECT * FROM users WHERE id = ? AND role = ?')
+    .get(targetParentId, me.role);
+  if (!targetParent) return res.status(404).json({ error: 'target not found at your level' });
+
+  await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(targetParent.id, member.id);
+  res.json({ ok: true, memberId: member.id, newParentId: targetParent.id, newParentName: targetParent.name });
+}));

@@ -23,6 +23,16 @@ export function isSupervisorRole(role) {
   return ROLE_ORDER.includes(role) && role !== 'employee';
 }
 
+// The one role allowed to be this role's parent, or null for superadmin
+// (nobody's above it). Used by reassignment: moving someone to a new parent
+// is only valid if the new parent's role is exactly this — the inverse of
+// roleBelow, kept as its own function since callers ask both directions.
+export function roleAbove(role) {
+  const i = ROLE_ORDER.indexOf(role);
+  if (i <= 0) return null;
+  return ROLE_ORDER[i - 1];
+}
+
 // Every user id anywhere below `userId` in the reporting chain, no matter
 // how many levels down — a manager's AMs, their TLs, and their employees are
 // all descendants of that manager, for example. A single recursive query

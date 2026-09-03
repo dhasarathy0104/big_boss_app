@@ -1099,6 +1099,91 @@ function AdminsListPanel({ overview, onChanged }) {
   );
 }
 
+const REASSIGN_ROLE_LABEL = { gm: 'GM', agm: 'AGM', manager: 'Manager', am: 'Assistant Manager', tl: 'Team Lead', employee: 'Employee' };
+
+// Reassigns any one account anywhere in the org to a new parent at any
+// level — the super admin's version of the peer-transfer every supervisor
+// tier now has for their own direct reports (see SupervisorTeamView.jsx and
+// backend/src/routes/supervisors.js's /:id/team/:memberId/transfer). Split
+// into its own panel rather than folded into the admins list below, since it
+// needs to reach GM/AGM/AM/TL accounts too, which that list still doesn't
+// show (see the /overview KNOWN LIMITATION in superadmin.js).
+function ReassignPanel() {
+  const [users, setUsers] = useState([]);
+  const [userId, setUserId] = useState('');
+  const [candidates, setCandidates] = useState([]);
+  const [newParentId, setNewParentId] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/superadmin/users').then((r) => r.json()).then(setUsers);
+  }, []);
+
+  useEffect(() => {
+    setNewParentId('');
+    setCandidates([]);
+    if (!userId) return;
+    fetch(`/api/superadmin/users/${userId}/reassign-candidates`).then((r) => r.json()).then(setCandidates);
+  }, [userId]);
+
+  async function submit(e) {
+    e.preventDefault();
+    setError(''); setSuccess('');
+    if (!userId || !newParentId) return;
+    setSubmitting(true);
+    const res = await fetch(`/api/superadmin/users/${userId}/reassign`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ newParentId }),
+    });
+    setSubmitting(false);
+    if (!res.ok) { setError((await res.json()).error); return; }
+    const data = await res.json();
+    setSuccess(`Moved to report to ${data.newParentName}.`);
+    setUserId(''); setNewParentId('');
+  }
+
+  const selectedUser = users.find((u) => u.id === Number(userId));
+
+  return (
+    <div className="panel">
+      <div className="section-head">
+        <div className="section-icon"><UserCog size={22} /></div>
+        <div>
+          <h2 className="card-title">Reassign anyone</h2>
+          <p className="card-subtitle">
+            Move any account — and everyone below them — to a new supervisor at any level. Only accounts
+            one level above their current role are valid destinations, so the reporting chain stays intact.
+          </p>
+        </div>
+      </div>
+      <form className="stacked-form" onSubmit={submit}>
+        <select value={userId} onChange={(e) => setUserId(e.target.value)}>
+          <option value="">Who to move…</option>
+          {users.map((u) => (
+            <option key={u.id} value={u.id}>{u.name} ({REASSIGN_ROLE_LABEL[u.role] ?? u.role})</option>
+          ))}
+        </select>
+        {userId && (
+          <select value={newParentId} onChange={(e) => setNewParentId(e.target.value)} disabled={candidates.length === 0}>
+            <option value="">
+              {candidates.length === 0 ? `No valid destination for a ${REASSIGN_ROLE_LABEL[selectedUser?.role] ?? ''}` : 'Move to report to…'}
+            </option>
+            {candidates.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        )}
+        {error && <div style={{ color: '#e07070', fontSize: 12 }}>{error}</div>}
+        {success && <div style={{ color: 'var(--status-good)', fontSize: 12 }}>{success}</div>}
+        <button type="submit" disabled={!userId || !newParentId || submitting} style={{ alignSelf: 'flex-start' }}>
+          {submitting ? 'Moving…' : 'Move'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function ManageTab({ overview, onChanged }) {
   const requested = (overview?.admins ?? []).filter((a) => a.passwordResetRequested);
   return (
@@ -1120,6 +1205,7 @@ function ManageTab({ overview, onChanged }) {
         </div>
       )}
       <CreateAdminPanel onCreated={onChanged} />
+      <ReassignPanel />
       <AdminsListPanel overview={overview} onChanged={onChanged} />
     </>
   );
