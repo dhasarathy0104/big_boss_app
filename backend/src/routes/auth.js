@@ -7,7 +7,7 @@ import { ah } from '../asyncHandler.js';
 export const authRouter = Router();
 
 async function publicUser(u) {
-  const manager = u.manager_id ? await db.prepare('SELECT name FROM users WHERE id = ?').get(u.manager_id) : null;
+  const manager = u.parent_id ? await db.prepare('SELECT name FROM users WHERE id = ?').get(u.parent_id) : null;
   // agentKey/managerName let the native app start background tracking right
   // from a login response — same identity the /api/enroll invite-link flow
   // would have produced, no separate enrollment step needed for an employee
@@ -20,7 +20,7 @@ async function publicUser(u) {
     mobile: u.mobile,
     department: u.department,
     jobRole: u.job_role,
-    managerId: u.manager_id,
+    managerId: u.parent_id,
     managerName: manager?.name ?? null,
     agentKey: u.agent_key,
     passwordResetRequested: !!u.password_reset_requested_at,
@@ -55,7 +55,7 @@ authRouter.post('/register', ah(async (req, res) => {
 
   const agentKey = crypto.randomBytes(16).toString('hex');
   const info = await db.prepare(`
-    INSERT INTO users (name, email, agent_key, role, manager_id, password_hash) VALUES (?, ?, ?, 'manager', NULL, ?) RETURNING id
+    INSERT INTO users (name, email, agent_key, role, parent_id, password_hash) VALUES (?, ?, ?, 'manager', NULL, ?) RETURNING id
   `).run(name.trim(), email, agentKey, hashPassword(password));
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
@@ -112,7 +112,7 @@ authRouter.post('/register-admin', ah(async (req, res) => {
 
   const agentKey = crypto.randomBytes(16).toString('hex');
   const info = await db.prepare(`
-    INSERT INTO users (name, email, agent_key, role, manager_id, password_hash, mobile, department, job_role)
+    INSERT INTO users (name, email, agent_key, role, parent_id, password_hash, mobile, department, job_role)
     VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?) RETURNING id
   `).run(name.trim(), email, agentKey, role, hashPassword(password), mobile, department, jobRole);
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);

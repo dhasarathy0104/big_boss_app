@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
+import { isSupervisorRole, isSelfOrDescendant } from './hierarchy.js';
 
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -84,9 +85,31 @@ export function requireManagerSelf(req, res, next) {
   });
 }
 
+// requireAuth + must be any level of the reporting chain above Employee
+// (GM, AGM, Manager, AM, TL) — the generalized version of "is a manager,"
+// for the features every one of those levels shares: viewing/managing
+// their own subtree, inviting the level below them, adjusting settings
+// for the people under them.
+export function requireSupervisor(req, res, next) {
+  requireAuth(req, res, () => {
+    if (!isSupervisorRole(req.authUser.role)) return res.status(403).json({ error: 'supervisor access required' });
+    next();
+  });
+}
+
+// requireSupervisor + the :id route param must be their own id.
+export function requireSupervisorSelf(req, res, next) {
+  requireSupervisor(req, res, () => {
+    if (Number(req.params.id) !== req.authUser.id) return res.status(403).json({ error: 'not your account' });
+    next();
+  });
+}
+
 // For routes shared between manager team-wide views (?managerId=) and employee
 // self-views (?userId=): the caller must be that exact manager, or that exact
-// employee, or the manager who owns that employee.
+// employee, or the manager who owns that employee. Deliberately still
+// manager-only on the managerId branch — team-wide timesheet/leave/attendance
+// review hasn't been extended to the other reporting levels (yet).
 export async function authorizeScopedQuery(req, res) {
   const { userId, managerId } = req.query;
   if (managerId !== undefined) {
@@ -104,10 +127,12 @@ export async function authorizeScopedQuery(req, res) {
   return true;
 }
 
+// Generalized across the whole reporting chain, not just a direct manager —
+// true for the person themselves, a super admin (sees everyone), or anyone
+// with targetUserId anywhere below them in the chain (see hierarchy.js).
+// Kept under its original name since it's used throughout the codebase; the
+// behavior is what changed; every existing call site gets the wider
+// (correct) hierarchy check automatically.
 export async function isSelfOrOwnEmployee(authUser, targetUserId) {
-  if (authUser.id === targetUserId) return true;
-  if (authUser.role === 'superadmin') return true;
-  if (authUser.role !== 'manager') return false;
-  const target = await db.prepare('SELECT manager_id FROM users WHERE id = ?').get(targetUserId);
-  return target?.manager_id === authUser.id;
+  return isSelfOrDescendant(authUser, targetUserId);
 }

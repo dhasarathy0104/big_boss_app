@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { buildOverrideMaps, computeProductivity } from '../productivity.js';
-import { requireManager } from '../auth.js';
+import { requireSupervisor } from '../auth.js';
+import { getDescendantIds, getAncestorIdWithRole } from '../hierarchy.js';
 import { ah } from '../asyncHandler.js';
 
 export const liveStatusRouter = Router();
@@ -17,18 +18,36 @@ function statusFor(latestEvent) {
   return latestEvent.is_idle ? 'idle' : 'active';
 }
 
-liveStatusRouter.get('/:managerId/live-status', requireManager, ah(async (req, res) => {
+liveStatusRouter.get('/:managerId/live-status', requireSupervisor, ah(async (req, res) => {
   if (Number(req.params.managerId) !== req.authUser.id) return res.status(403).json({ error: 'not your team' });
 
-  const team = await db.prepare(`
+  // "Team" is now everyone anywhere below this person in the reporting
+  // chain, not just direct reports — a GM's team includes every AGM's,
+  // Manager's, AM's, and TL's employees several levels down.
+  const descendantIds = await getDescendantIds(req.authUser.id);
+  const team = descendantIds.length === 0 ? [] : await db.prepare(`
     SELECT id, name, email, mobile, department, job_role AS "jobRole"
-    FROM users WHERE manager_id = ? AND role = 'employee' ORDER BY name
-  `).all(req.params.managerId);
+    FROM users WHERE id = ANY(?) AND role = 'employee' ORDER BY name
+  `).all(descendantIds);
   if (team.length === 0) return res.json([]);
 
   const ids = team.map((m) => m.id);
-  const rules = await db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(req.params.managerId);
-  const overrides = buildOverrideMaps(rules);
+
+  // Category rules belong to whichever department Manager owns each
+  // employee, and a supervisor above Manager level (AGM, GM) can span
+  // several departments at once — resolve and cache per-manager overrides
+  // rather than assuming one shared set for the whole team.
+  const overridesByManager = new Map();
+  const overridesForEmployee = new Map();
+  for (const member of team) {
+    const managerId = await getAncestorIdWithRole(member.id, 'manager');
+    if (!managerId) { overridesForEmployee.set(member.id, buildOverrideMaps([])); continue; }
+    if (!overridesByManager.has(managerId)) {
+      const rules = await db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(managerId);
+      overridesByManager.set(managerId, buildOverrideMaps(rules));
+    }
+    overridesForEmployee.set(member.id, overridesByManager.get(managerId));
+  }
   const today = new Date().toISOString().slice(0, 10);
 
   // Two queries for the whole team instead of two per member — at team
@@ -56,7 +75,7 @@ liveStatusRouter.get('/:managerId/live-status', requireManager, ah(async (req, r
 
   const result = team.map((member) => {
     const latestEvent = latestByUser.get(member.id);
-    const productivity = computeProductivity(eventsByUser.get(member.id) ?? [], overrides);
+    const productivity = computeProductivity(eventsByUser.get(member.id) ?? [], overridesForEmployee.get(member.id));
 
     return {
       id: member.id,

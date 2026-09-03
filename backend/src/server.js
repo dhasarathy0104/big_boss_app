@@ -23,6 +23,7 @@ import { billingRouter } from './routes/billing.js';
 import { authRouter } from './routes/auth.js';
 import { superadminRouter } from './routes/superadmin.js';
 import { requireAuth, isSelfOrOwnEmployee, hashPassword } from './auth.js';
+import { getAncestorIdWithRole } from './hierarchy.js';
 import { isWithinTrackingWindow } from './trackingWindow.js';
 
 function normalizeEmail(raw) {
@@ -66,7 +67,7 @@ app.post('/api/enroll', ah(async (req, res) => {
   if (inviteToken) {
     const invite = await db.prepare('SELECT * FROM invite_links WHERE token = ? AND revoked = 0').get(inviteToken);
     if (!invite) return res.status(400).json({ error: 'invalid or revoked invite token' });
-    managerId = invite.manager_id;
+    managerId = invite.inviter_id;
     await db.prepare('UPDATE invite_links SET use_count = use_count + 1 WHERE id = ?').run(invite.id);
   }
 
@@ -83,14 +84,14 @@ app.post('/api/enroll', ah(async (req, res) => {
   let userId;
   if (existing) {
     await db.prepare(`
-      UPDATE users SET agent_key = ?, manager_id = COALESCE(?, manager_id),
+      UPDATE users SET agent_key = ?, parent_id = COALESCE(?, parent_id),
         mobile = COALESCE(?, mobile), department = COALESCE(?, department), job_role = COALESCE(?, job_role)
       WHERE id = ?
     `).run(agentKey, managerId, mobile, department, jobRole, existing.id);
     userId = existing.id;
   } else {
     const info = await db.prepare(`
-      INSERT INTO users (name, email, agent_key, role, manager_id, password_hash, mobile, department, job_role)
+      INSERT INTO users (name, email, agent_key, role, parent_id, password_hash, mobile, department, job_role)
       VALUES (?, ?, ?, 'employee', ?, ?, ?, ?, ?) RETURNING id
     `).run(trimmedName, email, agentKey, managerId, hashPassword(password), mobile, department, jobRole);
     userId = info.lastInsertRowid;
@@ -114,8 +115,8 @@ app.post('/api/ingest/activity', authUser, ah(async (req, res) => {
   const { events } = req.body;
   if (!Array.isArray(events)) return res.status(400).json({ error: 'events array required' });
 
-  const manager = req.user.manager_id
-    ? await db.prepare('SELECT tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(req.user.manager_id)
+  const manager = req.user.parent_id
+    ? await db.prepare('SELECT tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(req.user.parent_id)
     : null;
   const inWindow = (startedAt) => isWithinTrackingWindow(startedAt, manager?.tracking_start_time, manager?.tracking_end_time);
   const acceptedEvents = events.filter((e) => inWindow(e.startedAt));
@@ -153,8 +154,8 @@ app.post('/api/ingest/screenshot', authUser, ah(async (req, res) => {
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
 
   const effectiveCapturedAt = capturedAt ?? new Date().toISOString();
-  const manager = req.user.manager_id
-    ? await db.prepare('SELECT tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(req.user.manager_id)
+  const manager = req.user.parent_id
+    ? await db.prepare('SELECT tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(req.user.parent_id)
     : null;
   if (!isWithinTrackingWindow(effectiveCapturedAt, manager?.tracking_start_time, manager?.tracking_end_time)) {
     return res.json({ ok: true, stored: false });
@@ -174,7 +175,7 @@ app.post('/api/ingest/screenshot', authUser, ah(async (req, res) => {
 // Agent checks this periodically so a manager's interval change takes effect
 // without the employee needing to restart their agent.
 app.get('/api/agent-settings', authUser, ah(async (req, res) => {
-  const managerId = req.user.manager_id;
+  const managerId = req.user.parent_id;
   const manager = managerId
     ? await db.prepare('SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(managerId)
     : null;
@@ -250,8 +251,12 @@ app.get('/api/users/:id/productivity', requireAuth, requireSelfOrOwnEmployee, ah
     ORDER BY started_at
   `).all(req.params.id, start, end);
 
-  const rules = user.manager_id
-    ? await db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(user.manager_id)
+  // Category rules belong to the department Manager specifically, not
+  // whichever level directly manages this person (their parent could be a
+  // TL, AM, ...) — walk up the chain to find the Manager that owns them.
+  const owningManagerId = await getAncestorIdWithRole(user.id, 'manager');
+  const rules = owningManagerId
+    ? await db.prepare('SELECT * FROM category_rules WHERE manager_id = ?').all(owningManagerId)
     : [];
   const overrides = buildOverrideMaps(rules);
 

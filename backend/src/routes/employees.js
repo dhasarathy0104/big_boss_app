@@ -8,10 +8,10 @@ export const employeesRouter = Router();
 // Manager-only: their own team, for internal lookups (e.g. project assignee pickers).
 employeesRouter.get('/', requireManager, ah(async (req, res) => {
   const employees = await db.prepare(`
-    SELECT e.id, e.name, e.manager_id AS "managerId", m.name AS "managerName"
+    SELECT e.id, e.name, e.parent_id AS "managerId", m.name AS "managerName"
     FROM users e
-    LEFT JOIN users m ON m.id = e.manager_id
-    WHERE e.role = 'employee' AND e.manager_id = ?
+    LEFT JOIN users m ON m.id = e.parent_id
+    WHERE e.role = 'employee' AND e.parent_id = ?
     ORDER BY e.name
   `).all(req.authUser.id);
   res.json(employees);

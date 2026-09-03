@@ -22,7 +22,7 @@ leaveRequestsRouter.get('/', requireAuth, ah(async (req, res) => {
     SELECT l.*, u.name AS user_name
     FROM leave_requests l
     JOIN users u ON u.id = l.user_id
-    WHERE u.manager_id = ?
+    WHERE u.parent_id = ?
     ORDER BY l.created_at DESC
   `).all(managerId);
   res.json(requests);
@@ -50,7 +50,7 @@ leaveRequestsRouter.patch('/:id/review', requireAuth, ah(async (req, res) => {
     return res.status(400).json({ error: 'decision must be approved or rejected' });
   }
   const request = await db.prepare(`
-    SELECT l.*, u.manager_id AS employee_manager_id FROM leave_requests l
+    SELECT l.*, u.parent_id AS employee_manager_id FROM leave_requests l
     JOIN users u ON u.id = l.user_id WHERE l.id = ?
   `).get(req.params.id);
   if (!request) return res.status(404).json({ error: 'leave request not found' });

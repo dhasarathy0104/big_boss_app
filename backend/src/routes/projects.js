@@ -11,7 +11,7 @@ export const projectsRouter = Router();
 function canSeeManagersProjects(authUser, managerId) {
   if (authUser.role === 'superadmin') return true;
   if (authUser.role === 'manager') return authUser.id === managerId;
-  return authUser.manager_id === managerId;
+  return authUser.parent_id === managerId;
 }
 
 projectsRouter.get('/', requireAuth, ah(async (req, res) => {
