@@ -43,6 +43,10 @@ export default function SupervisorTeamView({ supervisorId }) {
   const [inviteRole, setInviteRole] = useState(null);
   const [creating, setCreating] = useState(false);
   const [copiedToken, setCopiedToken] = useState(null);
+  const [settingPasswordFor, setSettingPasswordFor] = useState(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
 
   function load() {
     fetch(`/api/supervisors/${supervisorId}/team`).then((r) => r.json()).then(setTeam);
@@ -61,6 +65,27 @@ export default function SupervisorTeamView({ supervisorId }) {
 
   async function revokeInvite(inviteId) {
     await fetch(`/api/supervisors/${supervisorId}/invites/${inviteId}/revoke`, { method: 'POST' });
+    load();
+  }
+
+  function startSetPassword(memberId) {
+    setSettingPasswordFor(memberId);
+    setNewPassword('');
+    setPasswordError('');
+  }
+
+  async function saveNewPassword(memberId) {
+    if (newPassword.length < 8) { setPasswordError('Password must be at least 8 characters.'); return; }
+    setSavingPassword(true);
+    setPasswordError('');
+    const res = await fetch(`/api/supervisors/${supervisorId}/team/${memberId}/set-password`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: newPassword }),
+    });
+    setSavingPassword(false);
+    if (!res.ok) { setPasswordError((await res.json()).error); return; }
+    setSettingPasswordFor(null);
     load();
   }
 
@@ -113,7 +138,7 @@ export default function SupervisorTeamView({ supervisorId }) {
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table>
-              <thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Department</th></tr></thead>
+              <thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Department</th><th></th></tr></thead>
               <tbody>
                 {team.map((member) => (
                   <tr key={member.id}>
@@ -129,6 +154,28 @@ export default function SupervisorTeamView({ supervisorId }) {
                     <td><span className="badge-role">{ROLE_LABEL[member.role] ?? member.role}</span></td>
                     <td>{member.email || '—'}</td>
                     <td>{member.department ? <span className="badge-dept">{member.department}</span> : '—'}</td>
+                    <td>
+                      {settingPasswordFor === member.id ? (
+                        <div className="inline-form" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                          <input
+                            type="password"
+                            placeholder="New password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            style={{ width: 140 }}
+                          />
+                          <button className="btn-small" disabled={savingPassword} onClick={() => saveNewPassword(member.id)}>
+                            {savingPassword ? 'Saving…' : 'Save'}
+                          </button>
+                          <button className="btn-small" onClick={() => setSettingPasswordFor(null)}>Cancel</button>
+                        </div>
+                      ) : (
+                        <button className="btn-small" onClick={() => startSetPassword(member.id)}>Set password</button>
+                      )}
+                      {settingPasswordFor === member.id && passwordError && (
+                        <div style={{ color: '#e07070', fontSize: 11, marginTop: 4 }}>{passwordError}</div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

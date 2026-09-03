@@ -120,16 +120,17 @@ authRouter.post('/register-admin', ah(async (req, res) => {
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
 }));
 
-// An employee or manager who forgot their password flags their own account
-// from the login screen — no email required, since there's no email sending
-// set up. A manager sees the request in Employee Management and sets a new
-// password directly; a super admin sees a manager's request the same way in
-// Manage Admins. Always responds the same way regardless of whether the
+// Anyone who forgot their password flags their own account from the login
+// screen — no email sending set up, so whoever is directly above them in
+// the reporting chain sees the request (see SupervisorTeamView's team list)
+// and sets a new password directly. Every role has someone above them
+// except Super Admin, which has no email at all and genuinely no recovery
+// path, by design. Always responds the same way regardless of whether the
 // email matched anything, so this can't be used to probe which emails exist.
 authRouter.post('/forgot-password', ah(async (req, res) => {
   const email = normalizeEmail(req.body.email);
   if (email) {
-    const user = await db.prepare("SELECT id FROM users WHERE email = ? AND role IN ('employee', 'manager')").get(email);
+    const user = await db.prepare("SELECT id FROM users WHERE email = ? AND role != 'superadmin'").get(email);
     if (user) {
       await db.prepare("UPDATE users SET password_reset_requested_at = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') WHERE id = ?").run(user.id);
     }

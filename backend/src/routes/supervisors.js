@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db, randomToken } from '../db.js';
-import { requireSupervisorSelf } from '../auth.js';
+import { requireSupervisorSelf, hashPassword } from '../auth.js';
 import { getDescendantIds, roleBelow } from '../hierarchy.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
@@ -43,6 +43,25 @@ supervisorsRouter.get('/:id/team', requireSupervisorSelf, ah(async (req, res) =>
     FROM users WHERE parent_id = ? ORDER BY name
   `).all(req.params.id);
   res.json(team);
+}));
+
+// Sets a new password for one direct report, any role — the fulfillment
+// side of the generalized forgot-password flow (see routes/auth.js): once
+// someone below you flags a reset request, this is what clears it. The
+// generalized version of routes/managers.js's employee-only set-password
+// and superadmin.js's manager-only change-password.
+supervisorsRouter.post('/:id/team/:memberId/set-password', requireSupervisorSelf, ah(async (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 8) {
+    return res.status(400).json({ error: 'a password of at least 8 characters is required' });
+  }
+  const member = await db.prepare('SELECT * FROM users WHERE id = ? AND parent_id = ?')
+    .get(req.params.memberId, req.params.id);
+  if (!member) return res.status(404).json({ error: 'not found in your team' });
+
+  await db.prepare('UPDATE users SET password_hash = ?, password_reset_requested_at = NULL WHERE id = ?')
+    .run(hashPassword(password), member.id);
+  res.json({ ok: true });
 }));
 
 // Every Employee anywhere below this person, no matter how many levels
