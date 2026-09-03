@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { db, withTransaction } from './db.js';
 import { ah } from './asyncHandler.js';
 import { managersRouter } from './routes/managers.js';
+import { supervisorsRouter } from './routes/supervisors.js';
 import { invitesPublicRouter } from './routes/invites.js';
 import { employeesRouter } from './routes/employees.js';
 import { projectsRouter } from './routes/projects.js';
@@ -23,7 +24,7 @@ import { billingRouter } from './routes/billing.js';
 import { authRouter } from './routes/auth.js';
 import { superadminRouter } from './routes/superadmin.js';
 import { requireAuth, isSelfOrOwnEmployee, hashPassword } from './auth.js';
-import { getAncestorIdWithRole } from './hierarchy.js';
+import { getAncestorIdWithRole, roleBelow } from './hierarchy.js';
 import { isWithinTrackingWindow } from './trackingWindow.js';
 
 function normalizeEmail(raw) {
@@ -67,6 +68,15 @@ app.post('/api/enroll', ah(async (req, res) => {
   if (inviteToken) {
     const invite = await db.prepare('SELECT * FROM invite_links WHERE token = ? AND revoked = 0').get(inviteToken);
     if (!invite) return res.status(400).json({ error: 'invalid or revoked invite token' });
+    const inviter = await db.prepare('SELECT id, role FROM users WHERE id = ?').get(invite.inviter_id);
+    // The agent-enrollment flow is Employee-only (it's the one that also
+    // connects the tracking agent) — only a TL's invite link resolves to
+    // 'employee' one level down (see hierarchy.js's roleBelow). Any other
+    // level's invite link belongs on the web claim-invite flow instead
+    // (see /api/auth/claim-invite/:token), not here.
+    if (roleBelow(inviter?.role) !== 'employee') {
+      return res.status(400).json({ error: 'this invite link is not for an employee account' });
+    }
     managerId = invite.inviter_id;
     await db.prepare('UPDATE invite_links SET use_count = use_count + 1 WHERE id = ?').run(invite.id);
   }
@@ -293,6 +303,7 @@ app.get('/api/screenshots/:filename', requireAuth, ah(async (req, res) => {
 app.use('/api/auth', authRouter);
 app.use('/api/superadmin', superadminRouter);
 app.use('/api/managers', managersRouter);
+app.use('/api/supervisors', supervisorsRouter);
 app.use('/api/invites', invitesPublicRouter);
 app.use('/api/employees', employeesRouter);
 app.use('/api/projects', projectsRouter);

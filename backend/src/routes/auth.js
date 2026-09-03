@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { hashPassword, verifyPassword, createSession, requireAuth } from '../auth.js';
+import { roleBelow } from '../hierarchy.js';
 import { ah } from '../asyncHandler.js';
 
 export const authRouter = Router();
@@ -201,4 +202,45 @@ authRouter.post('/claim/:token', ah(async (req, res) => {
   await db.prepare('UPDATE users SET password_hash = ?, email = ?, claim_token = NULL WHERE id = ?').run(hashPassword(password), finalEmail, user.id);
   const updated = await db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
   res.json({ token: await createSession(updated.id), user: await publicUser(updated) });
+}));
+
+// The generalized invite-link claim for any supervisor tier (GM, AGM,
+// Manager, AM, TL) — the recipient fills in their own details and the
+// account is created right then, unlike /claim/:token above (which only
+// sets a password on a row someone else already pre-created). This is the
+// web /join/:token page's flow. Employees are deliberately excluded here —
+// they're created via the native app's agent-enrollment flow (/api/enroll)
+// instead, since that's the one that also connects the tracking agent; a
+// TL's invite link creating a dashboard-only, untracked account here would
+// silently skip that.
+authRouter.post('/claim-invite/:token', ah(async (req, res) => {
+  const { name, password } = req.body;
+  const email = normalizeEmail(req.body.email);
+  if (!name?.trim() || !email || !password || password.length < 8) {
+    return res.status(400).json({ error: 'name, email, and a password of at least 8 characters are required' });
+  }
+
+  const invite = await db.prepare('SELECT * FROM invite_links WHERE token = ? AND revoked = 0').get(req.params.token);
+  if (!invite) return res.status(404).json({ error: 'invalid or revoked invite link' });
+
+  const inviter = await db.prepare('SELECT id, role FROM users WHERE id = ?').get(invite.inviter_id);
+  const role = roleBelow(inviter?.role);
+  if (!role || role === 'employee') return res.status(400).json({ error: 'this invite link cannot be used here' });
+
+  const emailTaken = await db.prepare('SELECT 1 FROM users WHERE email = ?').get(email);
+  if (emailTaken) return res.status(409).json({ error: 'that email is already registered' });
+
+  const mobile = (req.body.mobile ?? '').trim() || null;
+  const department = (req.body.department ?? '').trim() || null;
+  const jobRole = (req.body.jobRole ?? '').trim() || null;
+
+  const agentKey = crypto.randomBytes(16).toString('hex');
+  const info = await db.prepare(`
+    INSERT INTO users (name, email, agent_key, role, parent_id, password_hash, mobile, department, job_role)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+  `).run(name.trim(), email, agentKey, role, inviter.id, hashPassword(password), mobile, department, jobRole);
+  await db.prepare('UPDATE invite_links SET use_count = use_count + 1 WHERE id = ?').run(invite.id);
+
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
+  res.json({ token: await createSession(user.id), user: await publicUser(user) });
 }));
