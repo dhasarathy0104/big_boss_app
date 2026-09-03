@@ -230,19 +230,43 @@ pub async fn start_tracking<F: Fn(String) + Send + Sync + 'static>(
     tokio::spawn(async move {
         let shot_client = BackendClient::new(backend_url);
         let mut interval_minutes = DEFAULT_SCREENSHOT_INTERVAL_MIN;
+        // Waits in short chunks and re-reads the manager's setting after each
+        // one, rather than one long uninterruptible sleep for the whole
+        // interval — previously, lowering the interval (e.g. 5 minutes down
+        // to 1) had no visible effect until whatever sleep was already in
+        // progress finished on its own, up to 5 minutes later.
+        const CHUNK_SECS: u64 = 5;
         loop {
-            // Re-check the manager's configured interval every cycle — a change (or
-            // turning screenshots off entirely) takes effect without an agent restart.
+            if interval_minutes == 0 {
+                tokio::time::sleep(Duration::from_secs(SETTINGS_RECHECK_SECS)).await;
+            } else {
+                let mut elapsed_secs = 0u64;
+                loop {
+                    let target_secs = interval_minutes as u64 * 60;
+                    if elapsed_secs >= target_secs {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_secs(CHUNK_SECS.min(target_secs - elapsed_secs))).await;
+                    elapsed_secs += CHUNK_SECS;
+                    if let Ok(settings) = shot_client.agent_settings(&shot_cfg.agent_key).await {
+                        interval_minutes = settings.screenshot_interval_minutes;
+                        if interval_minutes == 0 {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Re-check once more right before capturing — covers the case
+            // where the loop above exited because screenshots were just
+            // turned off, so this doesn't capture one anyway on the way out.
             if let Ok(settings) = shot_client.agent_settings(&shot_cfg.agent_key).await {
                 interval_minutes = settings.screenshot_interval_minutes;
             }
-
             if interval_minutes == 0 {
-                tokio::time::sleep(Duration::from_secs(SETTINGS_RECHECK_SECS)).await;
                 continue;
             }
 
-            tokio::time::sleep(Duration::from_secs(interval_minutes as u64 * 60)).await;
             let ctx = get_context();
             match capture_primary_as_base64_jpeg() {
                 Ok(b64) => {

@@ -193,13 +193,14 @@ export default function TimelineView({ selectedUserId, date, setDate }) {
               {events.map((e) => {
                 const start = new Date(e.started_at).getTime();
                 const end = new Date(e.ended_at).getTime();
+                const leftPct = Math.max(0, ((start - dayStart) / dayMs) * 100);
                 const widthPct = Math.max(0.15, ((end - start) / dayMs) * 100);
                 return (
                   <div
                     key={e.id}
                     className="segment"
                     title={`${e.domain ? `${e.app_name} — ${e.domain}` : `${e.app_name} — ${e.window_title}`} · ${CATEGORY_LABEL[e.category]} (${fmtTime(e.started_at)}–${fmtTime(e.ended_at)})`}
-                    style={{ width: `${widthPct}%`, background: CATEGORY_COLOR[e.category] }}
+                    style={{ left: `${leftPct}%`, width: `${widthPct}%`, background: CATEGORY_COLOR[e.category] }}
                   />
                 );
               })}

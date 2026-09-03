@@ -129,7 +129,10 @@ impl BackendClient {
             .map_err(|e| e.to_string())?;
 
         if !res.status().is_success() {
-            return Err(format!("enroll failed: {}", res.status()));
+            #[derive(Deserialize)]
+            struct ErrBody { error: Option<String> }
+            let body: Option<ErrBody> = res.json().await.ok();
+            return Err(body.and_then(|b| b.error).unwrap_or_else(|| "enroll failed".to_string()));
         }
         res.json::<AgentConfig>().await.map_err(|e| e.to_string())
     }

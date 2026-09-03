@@ -102,6 +102,11 @@ body::before {
   border-right: 1px solid var(--border-soft);
   padding: 20px 16px;
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   box-shadow: 1px 0 24px rgba(91, 33, 182, .06);
@@ -614,7 +619,7 @@ body::before {
 }
 
 .timeline {
-  display: flex;
+  position: relative;
   height: 40px;
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -622,6 +627,8 @@ body::before {
 }
 
 .segment {
+  position: absolute;
+  top: 0;
   height: 100%;
   transition: opacity 0.1s ease;
 }

@@ -303,7 +303,7 @@ if (fs.existsSync(dashboardDist)) {
 // than a real cron job since this only needs to be "eventually tidy," not
 // punctual -- and a free Render instance that's spun down from inactivity
 // just catches up whenever it next wakes up.
-const SCREENSHOT_RETENTION_HOURS = 24;
+const SCREENSHOT_RETENTION_HOURS = 48;
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 async function cleanupOldScreenshots() {
   try {
@@ -317,6 +317,21 @@ async function cleanupOldScreenshots() {
 }
 cleanupOldScreenshots();
 setInterval(cleanupOldScreenshots, CLEANUP_INTERVAL_MS);
+
+// Every account-creation route (enroll, register-admin, create-peer,
+// create-admin, claim, ...) shares the same `users.email` unique constraint,
+// so a duplicate email fails the exact same way everywhere — catching it
+// once here means every one of those routes gets a proper "already in use"
+// response instead of a generic 500, without needing to special-case each
+// route's own insert. Must be registered after every other app.use/route
+// (Express only treats a 4-argument function as an error handler).
+app.use((err, req, res, next) => {
+  if (err?.code === '23505' && err?.constraint?.includes('email')) {
+    return res.status(409).json({ error: 'That email is already registered to another account.' });
+  }
+  console.error(err);
+  res.status(500).json({ error: 'Something went wrong. Please try again.' });
+});
 
 const PORT = process.env.PORT || 4000;
 const server = app.listen(PORT, () => console.log(`desklog backend listening on http://localhost:${PORT}`));
