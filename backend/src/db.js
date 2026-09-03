@@ -97,7 +97,6 @@ CREATE TABLE IF NOT EXISTS invite_links (
   use_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS'))
 );
-CREATE INDEX IF NOT EXISTS idx_invite_links_inviter ON invite_links(inviter_id);
 
 CREATE TABLE IF NOT EXISTS activity_events (
   id SERIAL PRIMARY KEY,
@@ -274,6 +273,12 @@ async function renameColumn(table, from, to) {
 // every level can invite the level directly below it.
 await renameColumn('users', 'manager_id', 'parent_id');
 await renameColumn('invite_links', 'manager_id', 'inviter_id');
+
+// Only safe to create once the rename above has definitely happened — on a
+// fresh install the CREATE TABLE above already named the column inviter_id,
+// but on an existing database renameColumn is what gets it there, and this
+// index has to come after that either way.
+await pool.query('CREATE INDEX IF NOT EXISTS idx_invite_links_inviter ON invite_links(inviter_id)');
 
 export function randomToken(bytes = 12) {
   return crypto.randomBytes(bytes).toString('hex');
