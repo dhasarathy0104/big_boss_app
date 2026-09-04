@@ -128,34 +128,39 @@ export default function SupervisorTeamView({ supervisorId }) {
 
   return (
     <>
-      <div className="panel">
-        <h2>Invite {inviteRoleLabel ? `${article} ${inviteRoleLabel}` : 'someone'}</h2>
-        <p className="join-sub" style={{ marginTop: 0 }}>
-          {inviteRole === 'employee'
-            ? 'Share this link — it opens the app\'s "Connect this computer" screen, which also starts tracking automatically.'
-            : `Share this link — whoever opens it sets up their own ${inviteRoleLabel} account and reports to you.`}
-        </p>
-        {invites.length === 0 ? (
-          <button type="button" onClick={generateInvite} disabled={creating}>
-            {creating ? 'Generating…' : 'Generate invite link'}
-          </button>
-        ) : (
-          invites.map((invite) => (
-            <div className="inline-form" key={invite.id} style={{ marginTop: invites.length > 1 ? 10 : 0 }}>
-              <input readOnly value={`${window.location.origin}/join/${invite.token}`} style={{ flex: 1, minWidth: 320 }} />
-              <button type="button" onClick={() => copyLink(invite.token)}>
-                {copiedToken === invite.token ? 'Copied!' : 'Copy'}
-              </button>
-              <button type="button" className="btn-outline-danger" onClick={() => revokeInvite(invite.id)}>Revoke</button>
-            </div>
-          ))
-        )}
-        {invites.length > 0 && (
-          <button type="button" className="btn-outline" style={{ marginTop: 10 }} onClick={generateInvite} disabled={creating}>
-            {creating ? 'Generating…' : 'Generate another link'}
-          </button>
-        )}
-      </div>
+      {/* Only a TL still invites via link — every other level self-registers
+          now (see App.jsx's RegisterAdminForm), so this panel would just be
+          offering a redundant (and, for anything above TL, actually
+          non-functional — /api/enroll only accepts a TL's invite) second
+          path if shown for those roles. */}
+      {inviteRole === 'employee' && (
+        <div className="panel">
+          <h2>Invite {inviteRoleLabel ? `${article} ${inviteRoleLabel}` : 'someone'}</h2>
+          <p className="join-sub" style={{ marginTop: 0 }}>
+            Share this link — it opens the app's "Connect this computer" screen, which also starts tracking automatically.
+          </p>
+          {invites.length === 0 ? (
+            <button type="button" onClick={generateInvite} disabled={creating}>
+              {creating ? 'Generating…' : 'Generate invite link'}
+            </button>
+          ) : (
+            invites.map((invite) => (
+              <div className="inline-form" key={invite.id} style={{ marginTop: invites.length > 1 ? 10 : 0 }}>
+                <input readOnly value={`${window.location.origin}/join/${invite.token}`} style={{ flex: 1, minWidth: 320 }} />
+                <button type="button" onClick={() => copyLink(invite.token)}>
+                  {copiedToken === invite.token ? 'Copied!' : 'Copy'}
+                </button>
+                <button type="button" className="btn-outline-danger" onClick={() => revokeInvite(invite.id)}>Revoke</button>
+              </div>
+            ))
+          )}
+          {invites.length > 0 && (
+            <button type="button" className="btn-outline" style={{ marginTop: 10 }} onClick={generateInvite} disabled={creating}>
+              {creating ? 'Generating…' : 'Generate another link'}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="panel">
         <h2>Your team ({team.length})</h2>

@@ -18,10 +18,15 @@ function Brand() {
 // into its "Connect this computer" screen) — only that app can also start
 // the tracking agent, which is the whole point of an Employee account. This
 // page just points them there instead of duplicating that flow on the web.
-function EmployeeJoinInstructions({ managerName }) {
+function EmployeeJoinInstructions({ managerName, amName, departmentManagerName }) {
   return (
     <>
       <h1>Join {managerName}'s team</h1>
+      <p className="join-sub" style={{ marginBottom: 4 }}>
+        <strong>Team Lead:</strong> {managerName}
+        {amName && <><br /><strong>Assistant Manager:</strong> {amName}</>}
+        {departmentManagerName && <><br /><strong>Department Manager:</strong> {departmentManagerName}</>}
+      </p>
       <p className="join-sub">
         Open the BIG BOSS app on your computer, choose "Employee," then paste this page's link into the
         "Connect this computer" screen. That sets up your login and starts tracking in one step.
@@ -101,7 +106,7 @@ export default function JoinPage({ token }) {
     fetch(`/api/invites/${token}`)
       .then((r) => r.json())
       .then((data) => {
-        if (data.valid) setState({ status: 'valid', role: data.role, managerName: data.managerName });
+        if (data.valid) setState({ status: 'valid', role: data.role, managerName: data.managerName, amName: data.amName, departmentManagerName: data.departmentManagerName });
         else setState({ status: 'invalid' });
       })
       .catch(() => setState({ status: 'invalid' }));
@@ -129,7 +134,7 @@ export default function JoinPage({ token }) {
         {state.status === 'claimed' && <div className="empty">Account created — opening your dashboard…</div>}
 
         {state.status === 'valid' && state.role === 'employee' && (
-          <EmployeeJoinInstructions managerName={state.managerName} />
+          <EmployeeJoinInstructions managerName={state.managerName} amName={state.amName} departmentManagerName={state.departmentManagerName} />
         )}
 
         {state.status === 'valid' && state.role !== 'employee' && (

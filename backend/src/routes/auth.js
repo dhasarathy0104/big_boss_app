@@ -77,26 +77,52 @@ authRouter.post('/claim-manager', ah(async (req, res) => {
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
 }));
 
-// Open self-service signup for manager/superadmin accounts — no invite link
-// or existing-manager approval required, by explicit request. Anyone who can
-// reach this server can create themselves privileged access this way.
+// Public — the open self-registration form's "who do you report to" pickers
+// (see register-admin below). Minimal fields only, reachable before login.
+// AM options carry their own manager's name/department too, since the TL
+// registration form derives Manager read-only from whichever AM is picked
+// rather than letting TL set it independently (see register-admin's tl
+// branch for why).
+authRouter.get('/accounts', ah(async (req, res) => {
+  const { role } = req.query;
+  if (!['gm', 'agm', 'manager', 'am'].includes(role)) {
+    return res.status(400).json({ error: 'role must be one of gm, agm, manager, am' });
+  }
+  if (role === 'am') {
+    const rows = await db.prepare(`
+      SELECT am.id, am.name, mgr.name AS "managerName", mgr.department AS "department"
+      FROM users am
+      LEFT JOIN users mgr ON mgr.id = am.parent_id AND mgr.role = 'manager'
+      WHERE am.role = 'am' ORDER BY am.name
+    `).all();
+    return res.json(rows);
+  }
+  const rows = await db.prepare('SELECT id, name, department FROM users WHERE role = ? ORDER BY name').all(role);
+  res.json(rows);
+}));
+
+// Open self-service signup for every non-employee role — no invite link or
+// existing-supervisor approval required, by the same explicit-request
+// precedent as the original manager/superadmin version below. Extended to
+// cover the whole chain (gm/agm/manager/am/tl) so each level declares their
+// own place in the org by picking their real superior from /accounts above,
+// instead of requiring an invite from that superior.
 authRouter.post('/register-admin', ah(async (req, res) => {
   const { name, password, role } = req.body;
-  if (!['manager', 'superadmin'].includes(role)) {
-    return res.status(400).json({ error: "role must be 'manager' or 'superadmin'" });
+  const VALID_ROLES = ['gm', 'agm', 'manager', 'am', 'tl', 'superadmin'];
+  if (!VALID_ROLES.includes(role)) {
+    return res.status(400).json({ error: `role must be one of ${VALID_ROLES.join(', ')}` });
   }
   // A super admin logs in with just a username (no email, by explicit
-  // request) — everyone else (managers) needs a real email.
+  // request) — everyone else needs a real email.
   const email = role === 'superadmin' ? null : normalizeEmail(req.body.email);
-  if (!name?.trim() || (role === 'manager' && !email) || !password || password.length < 8) {
-    return res.status(400).json({ error: `name${role === 'manager' ? ', email,' : ','} and a password of at least 8 characters are required` });
+  if (!name?.trim() || (role !== 'superadmin' && !email) || !password || password.length < 8) {
+    return res.status(400).json({ error: `name${role === 'superadmin' ? ',' : ', email,'} and a password of at least 8 characters are required` });
   }
-  // Only ever one super admin, by explicit request — everyone else must be a
-  // manager. Unlike manager self-registration, this isn't reopenable via the
-  // UI; someone has to remove the existing super admin first.
+  // Only ever one super admin, by explicit request. Unlike everyone else's
+  // self-registration, this isn't reopenable via the UI; someone has to
+  // remove the existing super admin first.
   if (role === 'superadmin') {
-    // Already the only account of this role once created, so there's
-    // nothing else to check for a name collision against.
     const hasSuperAdmin = await db.prepare("SELECT 1 FROM users WHERE role = 'superadmin'").get();
     if (hasSuperAdmin) return res.status(409).json({ error: 'a super admin account already exists' });
   } else {
@@ -104,18 +130,46 @@ authRouter.post('/register-admin', ah(async (req, res) => {
     if (existing) return res.status(409).json({ error: 'that email is already registered' });
   }
 
-  // Profile fields only make sense for a manager (a real employee/contact
-  // record) — the super admin has none of this, by the same "no email"
-  // reasoning as above.
-  const mobile = role === 'manager' ? (req.body.mobile ?? '').trim() || null : null;
-  const department = role === 'manager' ? (req.body.department ?? '').trim() || null : null;
-  const jobRole = role === 'manager' ? (req.body.jobRole ?? '').trim() || null : null;
+  // Resolve parent_id from whichever superior this role declared, never
+  // trusting the client's claim about it without checking the row actually
+  // holds the expected role — this is what keeps a self-declared hierarchy
+  // link from pointing at a made-up or wrong-tier id.
+  let parentId = null;
+  if (role === 'gm') {
+    const superadmin = await db.prepare("SELECT id FROM users WHERE role = 'superadmin'").get();
+    if (!superadmin) return res.status(400).json({ error: 'no super admin exists yet for a General Manager to report to' });
+    parentId = superadmin.id;
+  } else if (role === 'agm') {
+    const gm = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'gm'").get(req.body.gmId);
+    if (!gm) return res.status(400).json({ error: 'select a valid General Manager' });
+    parentId = gm.id;
+  } else if (role === 'manager') {
+    const agm = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'agm'").get(req.body.agmId);
+    if (!agm) return res.status(400).json({ error: 'select a valid Assistant General Manager' });
+    parentId = agm.id;
+  } else if (role === 'am') {
+    const manager = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'manager'").get(req.body.managerId);
+    if (!manager) return res.status(400).json({ error: 'select a valid Manager' });
+    parentId = manager.id;
+  } else if (role === 'tl') {
+    // Manager is deliberately derived from the picked AM's own chain, not a
+    // second independent field — see RegisterAdminForm's tl branch for why.
+    const am = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'am'").get(req.body.amId);
+    if (!am) return res.status(400).json({ error: 'select a valid Assistant Manager' });
+    parentId = am.id;
+  }
+
+  // Profile fields make sense for any real account except the super admin,
+  // who has none of this, by the same "no email" reasoning as above.
+  const mobile = role === 'superadmin' ? null : (req.body.mobile ?? '').trim() || null;
+  const department = role === 'superadmin' ? null : (req.body.department ?? '').trim() || null;
+  const jobRole = role === 'superadmin' ? null : (req.body.jobRole ?? '').trim() || null;
 
   const agentKey = crypto.randomBytes(16).toString('hex');
   const info = await db.prepare(`
     INSERT INTO users (name, email, agent_key, role, parent_id, password_hash, mobile, department, job_role)
-    VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?) RETURNING id
-  `).run(name.trim(), email, agentKey, role, hashPassword(password), mobile, department, jobRole);
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
+  `).run(name.trim(), email, agentKey, role, parentId, hashPassword(password), mobile, department, jobRole);
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
 }));

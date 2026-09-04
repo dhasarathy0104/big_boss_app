@@ -112,3 +112,37 @@ export async function isManagerInScope(authUser, managerId) {
   const ownManagerId = await getAncestorIdWithRole(authUser.id, 'manager');
   return ownManagerId === managerId;
 }
+
+// One department's full org chart: the Manager, their AMs, and each AM's
+// TLs, each level carrying an employee count so the UI can show "12
+// employees" on a card without a separate round trip per card. Legacy
+// employees still pointing straight at the manager (pre-dating AM/TL) count
+// toward the department total but aren't nested under a synthetic AM/TL —
+// same "shows as direct, not excluded" precedent as employees-full elsewhere.
+// Shared by superadmin's org-wide /departments and every supervisor tier's
+// scoped /:id/departments, so the two can never drift apart.
+const EMPLOYEE_COLUMNS = "id, name, email, mobile, department, job_role AS \"jobRole\"";
+
+export async function buildDepartment(manager) {
+  const ams = await db.prepare("SELECT id, name, email, mobile FROM users WHERE parent_id = ? AND role = 'am' ORDER BY name").all(manager.id);
+  const amsWithTls = await Promise.all(ams.map(async (am) => {
+    const tls = await db.prepare("SELECT id, name, email, mobile FROM users WHERE parent_id = ? AND role = 'tl' ORDER BY name").all(am.id);
+    const tlsWithEmployees = await Promise.all(tls.map(async (tl) => {
+      const employees = await db.prepare(`SELECT ${EMPLOYEE_COLUMNS} FROM users WHERE parent_id = ? AND role = 'employee' ORDER BY name`).all(tl.id);
+      return { ...tl, employees, employeeCount: employees.length };
+    }));
+    const employeeCount = tlsWithEmployees.reduce((sum, tl) => sum + tl.employeeCount, 0);
+    return { ...am, tls: tlsWithEmployees, employeeCount };
+  }));
+  // Legacy employees still pointing straight at the manager, pre-dating
+  // AM/TL — kept as their own small list rather than folded into a
+  // synthetic AM/TL, same "shows as direct, not excluded" precedent as
+  // employees-full elsewhere.
+  const directEmployees = await db.prepare(`SELECT ${EMPLOYEE_COLUMNS} FROM users WHERE parent_id = ? AND role = 'employee' ORDER BY name`).all(manager.id);
+  const employeeCount = amsWithTls.reduce((sum, am) => sum + am.employeeCount, 0) + directEmployees.length;
+  return {
+    id: manager.id, name: manager.name, email: manager.email, mobile: manager.mobile,
+    department: manager.department, jobRole: manager.jobRole ?? null,
+    ams: amsWithTls, directEmployees, employeeCount,
+  };
+}

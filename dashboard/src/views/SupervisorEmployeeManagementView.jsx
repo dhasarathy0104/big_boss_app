@@ -5,16 +5,17 @@ import EmployeeManagementTable from '../components/EmployeeManagementTable.jsx';
 // The generalized version of ManagerDashboard's EmployeeManagementView —
 // same table, same edit-modal-does-everything pattern, but for any
 // supervisor tier's whole employee subtree (GM/AGM/Manager/AM/TL) instead
-// of just a manager's direct reports. No transfer option here on purpose:
-// moving an employee across branches is what a TL's peer-transfer (see
-// SupervisorTeamView's "Team & Invite" tab) or the super admin's "Reassign
-// anyone" are for — this view is profile editing, password reset, and
-// removal only, scoped to whoever is actually below this person.
+// of just a manager's direct reports. The edit modal's Assistant
+// Manager/Team Lead picker (tlOptions/onReassignTl) can move an employee to
+// any TL within this supervisor's own subtree; a move outside that subtree
+// (a different Manager's branch entirely) is the super admin's job.
 export default function SupervisorEmployeeManagementView({ supervisorId }) {
   const [employees, setEmployees] = useState(null);
+  const [tlOptions, setTlOptions] = useState([]);
 
   function load() {
     fetch(`/api/supervisors/${supervisorId}/employees-full`).then((r) => r.json()).then(setEmployees);
+    fetch(`/api/supervisors/${supervisorId}/tls-in-scope`).then((r) => r.json()).then(setTlOptions);
   }
 
   useEffect(load, [supervisorId]);
@@ -27,6 +28,17 @@ export default function SupervisorEmployeeManagementView({ supervisorId }) {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(fields),
+    });
+    if (!res.ok) return (await res.json()).error;
+    load();
+    return null;
+  }
+
+  async function reassignTl(employeeId, newTlId) {
+    const res = await fetch(`/api/supervisors/${supervisorId}/employees/${employeeId}/reassign`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ newTlId }),
     });
     if (!res.ok) return (await res.json()).error;
     load();
@@ -70,8 +82,10 @@ export default function SupervisorEmployeeManagementView({ supervisorId }) {
       ) : (
         <EmployeeManagementTable
           employees={employees}
+          tlOptions={tlOptions}
           onSave={saveEmployee}
           onDelete={deleteEmployee}
+          onReassignTl={reassignTl}
         />
       )}
     </div>

@@ -9,7 +9,19 @@ import { getToken, setToken } from './api.js';
 import { LOGO_DATA_URI } from './logo.js';
 import { SUPERVISOR_DASHBOARD_ROLES } from './roles.js';
 
+// Role choices for the open self-registration form below, and which picker
+// field(s) each one needs to declare its place in the org — see
+// backend/src/routes/auth.js's register-admin for the matching validation.
+const REGISTER_ROLES = [
+  { value: 'gm', label: 'General Manager' },
+  { value: 'agm', label: 'Assistant General Manager' },
+  { value: 'manager', label: 'Manager' },
+  { value: 'am', label: 'Assistant Manager' },
+  { value: 'tl', label: 'Team Lead' },
+];
+
 function RegisterAdminForm({ onAuthed, onBack }) {
+  const [role, setRole] = useState('manager');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [mobile, setMobile] = useState('');
@@ -19,20 +31,53 @@ function RegisterAdminForm({ onAuthed, onBack }) {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Picker options, fetched fresh whenever the role changes, plus the
+  // picked id for whichever one this role actually needs.
+  const [gmOptions, setGmOptions] = useState([]);
+  const [agmOptions, setAgmOptions] = useState([]);
+  const [managerOptions, setManagerOptions] = useState([]);
+  const [amOptions, setAmOptions] = useState([]);
+  const [gmId, setGmId] = useState('');
+  const [agmId, setAgmId] = useState('');
+  const [managerId, setManagerId] = useState('');
+  const [amId, setAmId] = useState('');
+
+  useEffect(() => {
+    setGmId(''); setAgmId(''); setManagerId(''); setAmId('');
+    if (role === 'agm') fetch('/api/auth/accounts?role=gm').then((r) => r.json()).then(setGmOptions);
+    if (role === 'manager') fetch('/api/auth/accounts?role=agm').then((r) => r.json()).then(setAgmOptions);
+    if (role === 'am') fetch('/api/auth/accounts?role=manager').then((r) => r.json()).then(setManagerOptions);
+    if (role === 'tl') fetch('/api/auth/accounts?role=am').then((r) => r.json()).then(setAmOptions);
+  }, [role]);
+
+  // TL declares their Assistant Manager; Manager is then shown read-only,
+  // derived from that AM's own chain, rather than a second independently
+  // pickable field — otherwise nothing would stop someone claiming an AM and
+  // a Manager that don't actually match, silently corrupting the hierarchy.
+  const selectedAm = amOptions.find((a) => String(a.id) === amId);
+
   async function submit(e) {
     e.preventDefault();
     setError('');
     if (!name.trim()) { setError('Name required.'); return; }
     if (!email.trim()) { setError('Email required.'); return; }
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    if (role === 'agm' && !gmId) { setError('Select a General Manager.'); return; }
+    if (role === 'manager' && !agmId) { setError('Select an Assistant General Manager.'); return; }
+    if (role === 'am' && !managerId) { setError('Select a Manager.'); return; }
+    if (role === 'tl' && !amId) { setError('Select an Assistant Manager.'); return; }
 
     setSubmitting(true);
     const res = await fetch('/api/auth/register-admin', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        name: name.trim(), email: email.trim(), password, role: 'manager',
+        name: name.trim(), email: email.trim(), password, role,
         mobile: mobile.trim() || undefined, department: department.trim() || undefined, jobRole: jobRole.trim() || undefined,
+        gmId: role === 'agm' ? gmId : undefined,
+        agmId: role === 'manager' ? agmId : undefined,
+        managerId: role === 'am' ? managerId : undefined,
+        amId: role === 'tl' ? amId : undefined,
       }),
     });
     setSubmitting(false);
@@ -51,14 +96,50 @@ function RegisterAdminForm({ onAuthed, onBack }) {
           </div>
           <div className="brand-name">BIG BOSS</div>
         </div>
-        <h1>Create a manager account</h1>
-        <p className="join-sub">Open signup — anyone with this server's address can create a manager account here.</p>
+        <h1>Create an account</h1>
+        <p className="join-sub">Open signup — anyone with this server's address can create an account at any level here.</p>
         <form className="stacked-form" onSubmit={submit}>
+          <select value={role} onChange={(e) => setRole(e.target.value)}>
+            {REGISTER_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+          {role === 'agm' && (
+            <select value={gmId} onChange={(e) => setGmId(e.target.value)}>
+              <option value="">Select General Manager…</option>
+              {gmOptions.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          )}
+          {role === 'manager' && (
+            <select value={agmId} onChange={(e) => setAgmId(e.target.value)}>
+              <option value="">Select Assistant General Manager…</option>
+              {agmOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          )}
+          {role === 'am' && (
+            <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
+              <option value="">Select Manager…</option>
+              {managerOptions.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}{m.department ? ` (${m.department})` : ''}</option>
+              ))}
+            </select>
+          )}
+          {role === 'tl' && (
+            <>
+              <select value={amId} onChange={(e) => setAmId(e.target.value)}>
+                <option value="">Select Assistant Manager…</option>
+                {amOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              {selectedAm && (
+                <p className="join-sub" style={{ margin: 0 }}>Manager: {selectedAm.managerName ?? '—'}</p>
+              )}
+            </>
+          )}
           <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
           <input type="email" placeholder="Your email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <input placeholder="Mobile number" value={mobile} onChange={(e) => setMobile(e.target.value)} />
-          <input placeholder="Department" value={department} onChange={(e) => setDepartment(e.target.value)} />
-          <input placeholder="Role (e.g. Manager)" value={jobRole} onChange={(e) => setJobRole(e.target.value)} />
+          {role === 'manager' && (
+            <input placeholder="Department" value={department} onChange={(e) => setDepartment(e.target.value)} />
+          )}
+          <input placeholder="Job title (optional)" value={jobRole} onChange={(e) => setJobRole(e.target.value)} />
           <input
             type="password"
             placeholder="Choose a password (8+ characters)"
@@ -261,7 +342,7 @@ function AuthScreen({ onAuthed, presetRole }) {
             onClick={() => setShowRegisterAdmin(true)}
             style={{ background: 'none', color: '#8b93a3', fontSize: 12, marginTop: 8, padding: 0, textDecoration: 'underline', width: 'auto' }}
           >
-            New here? Create a manager account
+            New here? Create an account
           </button>
         )}
       </div>

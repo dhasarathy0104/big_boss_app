@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pencil, Trash2, User, Mail, Phone, Building2, Users, Lock, Eye, EyeOff, ArrowRightLeft } from 'lucide-react';
 import Avatar from './Avatar.jsx';
 import Modal from './Modal.jsx';
 
-function EditEmployeeModal({ employee, managerName, otherManagers, onSave, onTransfer, onClose }) {
+function EditEmployeeModal({ employee, managerName, otherManagers, tlOptions, onSave, onTransfer, onReassignTl, onClose }) {
   const [form, setForm] = useState({
     name: employee.name ?? '', email: employee.email ?? '', mobile: employee.mobile ?? '',
     department: employee.department ?? '', jobRole: employee.jobRole ?? '', password: '',
@@ -13,6 +13,24 @@ function EditEmployeeModal({ employee, managerName, otherManagers, onSave, onTra
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [transferring, setTransferring] = useState(false);
+  const [amId, setAmId] = useState('');
+  const [tlId, setTlId] = useState('');
+  const [reassigning, setReassigning] = useState(false);
+
+  // Groups the flat tlOptions list (each TL tagged with its own AM) into
+  // "pick an AM, then pick one of their TLs" — a friendlier two-step picker
+  // than one long flat list of team lead names once an org has more than a
+  // handful.
+  const amGroups = useMemo(() => {
+    const map = new Map();
+    (tlOptions ?? []).forEach((tl) => {
+      const key = String(tl.amId ?? 'none');
+      if (!map.has(key)) map.set(key, { amId: tl.amId, amName: tl.amName ?? 'No assistant manager', tls: [] });
+      map.get(key).tls.push(tl);
+    });
+    return [...map.values()];
+  }, [tlOptions]);
+  const tlsForSelectedAm = amGroups.find((g) => String(g.amId ?? 'none') === amId)?.tls ?? [];
 
   async function save(e) {
     e.preventDefault();
@@ -35,6 +53,15 @@ function EditEmployeeModal({ employee, managerName, otherManagers, onSave, onTra
     setTransferring(true);
     const err = await onTransfer(employee.id, targetManagerId);
     setTransferring(false);
+    if (err) { setError(err); return; }
+    onClose();
+  }
+
+  async function doReassignTl() {
+    if (!tlId) return;
+    setReassigning(true);
+    const err = await onReassignTl(employee.id, tlId);
+    setReassigning(false);
     if (err) { setError(err); return; }
     onClose();
   }
@@ -94,13 +121,48 @@ function EditEmployeeModal({ employee, managerName, otherManagers, onSave, onTra
             </div>
           </div>
         </div>
-        {managerName && <p className="card-subtitle" style={{ margin: '0 0 12px' }}>Reports to: {managerName}</p>}
+        {managerName && (
+          <p className="card-subtitle" style={{ margin: '0 0 4px' }}>Reports to: {managerName}</p>
+        )}
+        {(employee.tlName || employee.amName) && (
+          <p className="card-subtitle" style={{ margin: '0 0 12px' }}>
+            {employee.tlName && <>Team Lead: {employee.tlName}</>}
+            {employee.tlName && employee.amName && ' · '}
+            {employee.amName && <>Assistant Manager: {employee.amName}</>}
+          </p>
+        )}
         {error && <div style={{ color: '#e07070', fontSize: 12, marginBottom: 12 }}>{error}</div>}
         <div className="inline-form">
           <button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
           <button type="button" className="btn-outline" onClick={onClose}>Cancel</button>
         </div>
       </form>
+
+      {tlOptions && tlOptions.length > 0 && (
+        <>
+          <hr className="modal-divider" />
+          <p className="modal-section-title">Move to a different Assistant Manager / Team Lead</p>
+          <div className="inline-form">
+            <div className="input-icon-wrap" style={{ minWidth: 180 }}>
+              <Users size={15} />
+              <select value={amId} onChange={(e) => { setAmId(e.target.value); setTlId(''); }}>
+                <option value="">Select assistant manager…</option>
+                {amGroups.map((g) => <option key={g.amId ?? 'none'} value={String(g.amId ?? 'none')}>{g.amName}</option>)}
+              </select>
+            </div>
+            <div className="input-icon-wrap" style={{ minWidth: 180 }}>
+              <ArrowRightLeft size={15} />
+              <select value={tlId} onChange={(e) => setTlId(e.target.value)} disabled={!amId}>
+                <option value="">Select team lead…</option>
+                {tlsForSelectedAm.map((tl) => <option key={tl.id} value={tl.id}>{tl.name}</option>)}
+              </select>
+            </div>
+            <button type="button" className="btn-outline-danger" disabled={!tlId || reassigning} onClick={doReassignTl}>
+              {reassigning ? 'Moving…' : 'Move'}
+            </button>
+          </div>
+        </>
+      )}
 
       {otherManagers && otherManagers.filter((m) => m.id !== employee.managerId).length > 0 && (
         <>
@@ -128,7 +190,7 @@ function EditEmployeeModal({ employee, managerName, otherManagers, onSave, onTra
 // tab and the super admin's org-wide employee view — same columns, same
 // pencil-opens-edit-form / trash-deletes-row pattern, different API scope
 // wired in by the caller via onSave/onDelete/onTransfer.
-export default function EmployeeManagementTable({ employees, managerName, otherManagers, onSave, onDelete, onTransfer, onRowClick }) {
+export default function EmployeeManagementTable({ employees, managerName, otherManagers, tlOptions, onSave, onDelete, onTransfer, onReassignTl, onRowClick }) {
   const [editing, setEditing] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -202,8 +264,10 @@ export default function EmployeeManagementTable({ employees, managerName, otherM
           employee={editing}
           managerName={editing.managerName ?? managerName}
           otherManagers={otherManagers}
+          tlOptions={tlOptions}
           onSave={onSave}
           onTransfer={onTransfer}
+          onReassignTl={onReassignTl}
           onClose={() => setEditing(null)}
         />
       )}

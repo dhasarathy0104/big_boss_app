@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db, randomToken } from '../db.js';
 import { requireSupervisorSelf, hashPassword } from '../auth.js';
-import { getDescendantIds, getAncestorIdWithRole, roleBelow } from '../hierarchy.js';
+import { getDescendantIds, getAncestorIdWithRole, roleBelow, buildDepartment } from '../hierarchy.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { deleteEmployeeCascade } from '../deleteUser.js';
 import { ah } from '../asyncHandler.js';
@@ -282,4 +282,109 @@ supervisorsRouter.post('/:id/team/:memberId/transfer', requireSupervisorSelf, ah
 
   await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(targetParent.id, member.id);
   res.json({ ok: true, memberId: member.id, newParentId: targetParent.id, newParentName: targetParent.name });
+}));
+
+// Every department within this supervisor's own subtree (one per Manager
+// below them) — the GM/AGM read-only dashboard's version of superadmin's
+// org-wide /departments, scoped by the same getDescendantIds check every
+// other supervisor-scoped route uses. An AM or TL calling this just gets
+// their own single department (their subtree only ever contains at most one
+// Manager, found via the ancestor walk, not a descendant one).
+supervisorsRouter.get('/:id/departments', requireSupervisorSelf, ah(async (req, res) => {
+  const user = await db.prepare('SELECT id, role FROM users WHERE id = ?').get(req.params.id);
+  let managers;
+  if (user.role === 'am' || user.role === 'tl') {
+    const managerId = await getAncestorIdWithRole(user.id, 'manager');
+    managers = managerId
+      ? await db.prepare("SELECT id, name, email, mobile, department, job_role AS \"jobRole\" FROM users WHERE id = ?").all(managerId)
+      : [];
+  } else {
+    const descendantIds = await getDescendantIds(user.id);
+    managers = descendantIds.length === 0 ? [] : await db.prepare(
+      "SELECT id, name, email, mobile, department, job_role AS \"jobRole\" FROM users WHERE id = ANY(?) AND role = 'manager' ORDER BY name"
+    ).all(descendantIds);
+  }
+  const departments = await Promise.all(managers.map(buildDepartment));
+  res.json(departments);
+}));
+
+// Profile edit (name/email/mobile/department/title, no password) for any
+// Manager/AM/TL within this supervisor's own subtree — the "Manager
+// Details" panel's pencil form. No password field on purpose: GM/AGM get
+// read/edit visibility into their own departments, not super admin's
+// account-security powers (setting anyone's password stays super-admin-only,
+// see superadminRouter's /admins/:id and /users/:id/set-password).
+supervisorsRouter.patch('/:id/admins/:targetId', requireSupervisorSelf, ah(async (req, res) => {
+  const descendantIds = await getDescendantIds(Number(req.params.id));
+  const target = descendantIds.includes(Number(req.params.targetId))
+    ? await db.prepare("SELECT * FROM users WHERE id = ? AND role IN ('manager', 'am', 'tl')").get(req.params.targetId)
+    : null;
+  if (!target) return res.status(404).json({ error: 'not found in your scope' });
+
+  const { name, mobile, department, jobRole } = req.body;
+  const email = req.body.email !== undefined ? req.body.email.trim().toLowerCase() : undefined;
+  if (name !== undefined && !name.trim()) return res.status(400).json({ error: 'name cannot be blank' });
+  if (email) {
+    const emailTaken = await db.prepare('SELECT 1 FROM users WHERE email = ? AND id != ?').get(email, target.id);
+    if (emailTaken) return res.status(409).json({ error: 'that email is already registered' });
+  }
+
+  const updates = [];
+  const values = [];
+  if (name !== undefined) { updates.push('name = ?'); values.push(name.trim()); }
+  if (email !== undefined) { updates.push('email = ?'); values.push(email || null); }
+  if (mobile !== undefined) { updates.push('mobile = ?'); values.push(mobile.trim() || null); }
+  if (department !== undefined) { updates.push('department = ?'); values.push(department.trim() || null); }
+  if (jobRole !== undefined) { updates.push('job_role = ?'); values.push(jobRole.trim() || null); }
+  if (updates.length === 0) return res.status(400).json({ error: 'nothing to update' });
+
+  values.push(target.id);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  const updated = await db.prepare(`
+    SELECT id, name, email, mobile, role, department, job_role AS "jobRole" FROM users WHERE id = ?
+  `).get(target.id);
+  res.json(updated);
+}));
+
+// Every TL in this supervisor's own subtree, with their AM's name attached —
+// the option list for the Employee Management edit form's Assistant
+// Manager/Team Lead reassignment picker (unlike the peer-transfer above,
+// which only moves an employee's direct TL to another TL and only works if
+// the caller *is* that TL, this lets any supervisor move an employee
+// anywhere in their own subtree to a different TL further down it).
+supervisorsRouter.get('/:id/tls-in-scope', requireSupervisorSelf, ah(async (req, res) => {
+  const descendantIds = await getDescendantIds(Number(req.params.id));
+  if (descendantIds.length === 0) return res.json([]);
+  const tls = await db.prepare(`
+    SELECT tl.id, tl.name, am.id AS "amId", am.name AS "amName"
+    FROM users tl
+    LEFT JOIN users am ON am.id = tl.parent_id AND am.role = 'am'
+    WHERE tl.id = ANY(?) AND tl.role = 'tl' ORDER BY tl.name
+  `).all(descendantIds);
+  res.json(tls);
+}));
+
+// Reassigns one employee (anywhere in this supervisor's subtree) to a
+// different TL — the new TL must also be in this supervisor's own subtree,
+// so a Manager/AM/GM/AGM can shuffle an employee between two of their own
+// TLs, but never poach one from outside their scope. Org-wide moves (a
+// different Manager's branch entirely) stay the super admin's job.
+supervisorsRouter.post('/:id/employees/:employeeId/reassign', requireSupervisorSelf, ah(async (req, res) => {
+  const { newTlId } = req.body;
+  if (!newTlId) return res.status(400).json({ error: 'newTlId required' });
+
+  const descendantIds = await getDescendantIds(Number(req.params.id));
+  const employee = descendantIds.includes(Number(req.params.employeeId))
+    ? await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'").get(req.params.employeeId)
+    : null;
+  if (!employee) return res.status(404).json({ error: 'employee not found in your team' });
+
+  const newTl = descendantIds.includes(Number(newTlId))
+    ? await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'tl'").get(newTlId)
+    : null;
+  if (!newTl) return res.status(404).json({ error: 'that team lead is not in your team' });
+  if (newTl.id === employee.parent_id) return res.status(400).json({ error: 'employee already reports to that team lead' });
+
+  await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(newTl.id, employee.id);
+  res.json({ ok: true, employeeId: employee.id, newTlId: newTl.id, newTlName: newTl.name });
 }));

@@ -1,19 +1,30 @@
 import { useEffect, useState } from 'react';
-import { Activity, Camera, Clock, UserPlus, Users, CalendarCheck, KanbanSquare, LogOut } from 'lucide-react';
+import { Activity, Camera, Clock, UserPlus, Users, CalendarCheck, KanbanSquare, LogOut, LayoutDashboard, UserCog } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
 import DeskIllustration from '../components/DeskIllustration.jsx';
+import DepartmentDrillDown from '../components/DepartmentDrillDown.jsx';
 import LiveView from './LiveView.jsx';
 import TimelineView from './TimelineView.jsx';
 import ScreenshotsView from './ScreenshotsView.jsx';
 import SupervisorTeamView from './SupervisorTeamView.jsx';
 import SupervisorEmployeeManagementView from './SupervisorEmployeeManagementView.jsx';
+import ManagerDetailsView from './ManagerDetailsView.jsx';
 import AttendanceReviewView from './AttendanceReviewView.jsx';
 import SupervisorProjectsHub from './SupervisorProjectsHub.jsx';
 import { LOGO_DATA_URI } from '../logo.js';
 import { ROLE_LABEL } from '../roles.js';
 
-const TABS = [
+// Overview and Manager Details are GM/AGM only — they're the two roles with
+// a genuinely org-wide (not just-their-own-department) view of the
+// hierarchy, mirroring what super admin sees minus the power to change
+// anything. AM/TL keep the plain tab set they've always had.
+const EXECUTIVE_TABS = [
+  { key: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { key: 'manager-details', label: 'Manager Details', icon: UserCog },
+];
+
+const BASE_TABS = [
   { key: 'live', label: 'Live', icon: Activity },
   { key: 'timeline', label: 'Timeline', icon: Clock },
   { key: 'screenshots', label: 'Screenshots', icon: Camera },
@@ -33,10 +44,12 @@ const TABS = [
 // logged in — a TL sees a handful of Employees, a GM sees everyone.
 export default function SupervisorDashboard({ user, onLogout }) {
   const supervisorId = user.id;
+  const isExecutive = user.role === 'gm' || user.role === 'agm';
+  const TABS = isExecutive ? [...EXECUTIVE_TABS, ...BASE_TABS] : BASE_TABS;
   const [employees, setEmployees] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [date, setDate] = useState(todayStr());
-  const [activeTab, setActiveTab] = useState('live');
+  const [activeTab, setActiveTab] = useState(isExecutive ? 'overview' : 'live');
 
   function loadEmployees() {
     fetch(`/api/supervisors/${supervisorId}/employees`).then((r) => r.json()).then((data) => {
@@ -107,6 +120,13 @@ export default function SupervisorDashboard({ user, onLogout }) {
       </aside>
 
       <main className="main">
+        {activeTab === 'overview' && (
+          <DepartmentDrillDown
+            endpoint={`/api/supervisors/${supervisorId}/departments`}
+            onSelectMember={(id, tab = 'timeline') => { setSelectedUserId(id); setActiveTab(tab); }}
+          />
+        )}
+        {activeTab === 'manager-details' && <ManagerDetailsView supervisorId={supervisorId} />}
         {activeTab === 'live' && (
           <LiveView
             managerId={supervisorId}

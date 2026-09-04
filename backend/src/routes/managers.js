@@ -131,24 +131,6 @@ managersRouter.delete('/:id/team/:employeeId', requireManagerSelf, ah(async (req
   res.json({ ok: true });
 }));
 
-managersRouter.get('/:id/invites', requireManagerSelf, ah(async (req, res) => {
-  const invites = await db.prepare(`
-    SELECT * FROM invite_links WHERE inviter_id = ? AND revoked = 0 ORDER BY created_at DESC
-  `).all(req.params.id);
-  res.json(invites);
-}));
-
-managersRouter.post('/:id/invites', requireManagerSelf, ah(async (req, res) => {
-  const token = randomToken(12);
-  await db.prepare('INSERT INTO invite_links (token, inviter_id) VALUES (?, ?)').run(token, req.params.id);
-  res.json(await db.prepare('SELECT * FROM invite_links WHERE token = ?').get(token));
-}));
-
-managersRouter.post('/:id/invites/:inviteId/revoke', requireManagerSelf, ah(async (req, res) => {
-  await db.prepare('UPDATE invite_links SET revoked = 1 WHERE id = ? AND inviter_id = ?').run(req.params.inviteId, req.params.id);
-  res.json({ ok: true });
-}));
-
 managersRouter.get('/:id/settings', requireManagerSelf, ah(async (req, res) => {
   const manager = await db.prepare(
     'SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE id = ?'
@@ -237,8 +219,8 @@ managersRouter.get('/:id/other-managers', requireManagerSelf, ah(async (req, res
 // employee's parent_id at a manager directly would skip AM/TL entirely and
 // break the fixed-level hierarchy (see hierarchy.js's ROLE_ORDER). Moving
 // one of those is what the TL's own peer-transfer (SupervisorTeamView) or
-// the super admin's general reassignment (SuperAdminDashboard's "Reassign
-// anyone") are for instead.
+// the Assistant Manager/Team Lead picker in the employee's own Employee
+// Management edit form (EmployeeManagementTable) are for instead.
 managersRouter.post('/:id/team/:employeeId/transfer', requireManagerSelf, ah(async (req, res) => {
   const { targetManagerId } = req.body;
   if (!targetManagerId) return res.status(400).json({ error: 'targetManagerId required' });
@@ -253,7 +235,7 @@ managersRouter.post('/:id/team/:employeeId/transfer', requireManagerSelf, ah(asy
   if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
   if (employee.parent_id !== Number(req.params.id)) {
     return res.status(400).json({
-      error: "this employee reports through an AM/TL — use their TL's Team & Invite tab or the super admin's \"Reassign anyone\" to move them instead",
+      error: "this employee reports through an AM/TL — use their TL's Team & Invite tab, or the Assistant Manager/Team Lead picker in their Employee Management edit form, to move them instead",
     });
   }
 

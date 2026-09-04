@@ -6,7 +6,7 @@ import { buildOverrideMaps, computeProductivity } from '../productivity.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
 import { deleteEmployeeCascade, deleteManagerCascade } from '../deleteUser.js';
-import { getAncestorIdWithRole, getDescendantIds, roleAbove } from '../hierarchy.js';
+import { getAncestorIdWithRole, getDescendantIds, roleAbove, buildDepartment } from '../hierarchy.js';
 
 export const superadminRouter = Router();
 
@@ -55,6 +55,53 @@ superadminRouter.post('/managers/:id/change-password', requireSuperAdmin, ah(asy
     await db.prepare('UPDATE users SET password_hash = ?, password_reset_requested_at = NULL WHERE id = ?').run(hashPassword(password), manager.id);
   }
   res.json({ ok: true });
+}));
+
+// Every GM/AGM/Manager/AM/TL account org-wide, for the expanded Manage
+// Admins list — previously that list only ever showed Manager rows.
+superadminRouter.get('/admins', requireSuperAdmin, ah(async (req, res) => {
+  const rows = await db.prepare(`
+    SELECT id, name, email, mobile, role, department, job_role AS "jobRole"
+    FROM users WHERE role IN ('gm', 'agm', 'manager', 'am', 'tl')
+    ORDER BY CASE role WHEN 'gm' THEN 1 WHEN 'agm' THEN 2 WHEN 'manager' THEN 3 WHEN 'am' THEN 4 ELSE 5 END, name
+  `).all();
+  res.json(rows);
+}));
+
+// Full profile edit for any GM/AGM/AM/TL — the generalized version of the
+// manager-only PATCH /managers/:id below, for the four roles that don't have
+// their own Projects/Billing/tracking-hours settings to also manage here.
+// Password is optional; leave blank to keep it as-is.
+superadminRouter.patch('/admins/:id', requireSuperAdmin, ah(async (req, res) => {
+  const admin = await db.prepare("SELECT * FROM users WHERE id = ? AND role IN ('gm', 'agm', 'am', 'tl')").get(req.params.id);
+  if (!admin) return res.status(404).json({ error: 'account not found' });
+
+  const { name, mobile, jobRole, password } = req.body;
+  const email = req.body.email !== undefined ? normalizeEmail(req.body.email) : undefined;
+  if (name !== undefined && !name.trim()) return res.status(400).json({ error: 'name cannot be blank' });
+  if (password !== undefined && password !== '' && password.length < 8) {
+    return res.status(400).json({ error: 'password must be at least 8 characters' });
+  }
+  if (email) {
+    const emailTaken = await db.prepare('SELECT 1 FROM users WHERE email = ? AND id != ?').get(email, admin.id);
+    if (emailTaken) return res.status(409).json({ error: 'that email is already registered' });
+  }
+
+  const updates = [];
+  const values = [];
+  if (name !== undefined) { updates.push('name = ?'); values.push(name.trim()); }
+  if (email !== undefined) { updates.push('email = ?'); values.push(email || null); }
+  if (mobile !== undefined) { updates.push('mobile = ?'); values.push(mobile.trim() || null); }
+  if (jobRole !== undefined) { updates.push('job_role = ?'); values.push(jobRole.trim() || null); }
+  if (password) { updates.push('password_hash = ?', 'password_reset_requested_at = NULL'); values.push(hashPassword(password)); }
+  if (updates.length === 0) return res.status(400).json({ error: 'nothing to update' });
+
+  values.push(admin.id);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  const updated = await db.prepare(`
+    SELECT id, name, email, mobile, role, job_role AS "jobRole" FROM users WHERE id = ?
+  `).get(admin.id);
+  res.json(updated);
 }));
 
 // Full profile edit for one manager — the "click the pencil" form on the
@@ -213,8 +260,9 @@ superadminRouter.patch('/managers/:id/settings', requireSuperAdmin, ah(async (re
 // the super admin can move any employee to any manager, not just within
 // their own team. Same restriction as the manager-only version though: only
 // valid for a legacy employee whose parent_id already points straight at a
-// manager — a properly-nested one should move via the general "Reassign
-// anyone" panel instead, which enforces the fixed-level chain.
+// manager — a properly-nested one should move via the Assistant Manager/Team
+// Lead picker in their Employee Management edit form instead (see /tls and
+// /users/:id/reassign below), which enforces the fixed-level chain.
 superadminRouter.post('/employees/:id/transfer', requireSuperAdmin, ah(async (req, res) => {
   const { targetManagerId } = req.body;
   if (!targetManagerId) return res.status(400).json({ error: 'targetManagerId required' });
@@ -223,7 +271,7 @@ superadminRouter.post('/employees/:id/transfer', requireSuperAdmin, ah(async (re
   if (!employee) return res.status(404).json({ error: 'employee not found' });
   const currentParent = await db.prepare('SELECT role FROM users WHERE id = ?').get(employee.parent_id);
   if (currentParent?.role !== 'manager') {
-    return res.status(400).json({ error: 'this employee reports through an AM/TL — use "Reassign anyone" in Manage Admins to move them instead' });
+    return res.status(400).json({ error: 'this employee reports through an AM/TL — use the Assistant Manager/Team Lead picker in their Employee Management edit form to move them instead' });
   }
 
   const targetManager = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(targetManagerId);
@@ -258,31 +306,19 @@ superadminRouter.get('/employees-full', requireSuperAdmin, ah(async (req, res) =
   res.json(withManagers);
 }));
 
-// Every account in the org except the super admin themselves, flat — the
-// super admin has no per-level view of everyone yet (see the /overview
-// KNOWN LIMITATION below), so a general "reassign anyone" picker needs its
-// own full listing rather than reusing that route.
-superadminRouter.get('/users', requireSuperAdmin, ah(async (req, res) => {
-  const users = await db.prepare(
-    "SELECT id, name, email, role, department FROM users WHERE role != 'superadmin' ORDER BY role, name"
-  ).all();
-  res.json(users);
-}));
-
-// Valid new-parent candidates for reassigning this one person to anywhere
-// else in the org: whoever holds the role directly above them, minus their
-// current parent (already there) and anyone already in their own subtree
-// (which would create a cycle — you can't become your own descendant's
-// report).
-superadminRouter.get('/users/:id/reassign-candidates', requireSuperAdmin, ah(async (req, res) => {
-  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
-  if (!user) return res.status(404).json({ error: 'user not found' });
-  const parentRole = roleAbove(user.role);
-  if (!parentRole) return res.json([]); // superadmin has nobody above it
-
-  const excludeIds = new Set([user.id, user.parent_id, ...(await getDescendantIds(user.id))]);
-  const candidates = await db.prepare('SELECT id, name FROM users WHERE role = ? ORDER BY name').all(parentRole);
-  res.json(candidates.filter((c) => !excludeIds.has(c.id)));
+// Every TL in the org, with their AM's name attached — the option list for
+// the Employee Management edit form's Assistant Manager/Team Lead
+// reassignment picker. The actual move reuses the general /users/:id/reassign
+// below (newParentId = the chosen TL's id), which already enforces the
+// fixed-level chain and cycle safety for any role, not just employees.
+superadminRouter.get('/tls', requireSuperAdmin, ah(async (req, res) => {
+  const tls = await db.prepare(`
+    SELECT tl.id, tl.name, am.id AS "amId", am.name AS "amName"
+    FROM users tl
+    LEFT JOIN users am ON am.id = tl.parent_id AND am.role = 'am'
+    WHERE tl.role = 'tl' ORDER BY tl.name
+  `).all();
+  res.json(tls);
 }));
 
 // Reassigns any one person (and their whole subtree, which moves with them —
@@ -312,6 +348,35 @@ superadminRouter.post('/users/:id/reassign', requireSuperAdmin, ah(async (req, r
 
   await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(newParent.id, user.id);
   res.json({ ok: true, userId: user.id, newParentId: newParent.id, newParentName: newParent.name });
+}));
+
+// Every department org-wide (one per Manager), each with their AMs and each
+// AM's TLs nested — the org-wide version of buildDepartment (see
+// hierarchy.js), replacing the old "pick an admin by name" first level of
+// the Overview tab (which only ever showed a Manager's *direct* employees —
+// invisible to anything nested under AM/TL, see the /overview endpoint
+// below's own KNOWN LIMITATION note).
+superadminRouter.get('/departments', requireSuperAdmin, ah(async (req, res) => {
+  const managers = await db.prepare(
+    "SELECT id, name, email, mobile, department, job_role AS \"jobRole\" FROM users WHERE role = 'manager' ORDER BY name"
+  ).all();
+  const departments = await Promise.all(managers.map(buildDepartment));
+  res.json(departments);
+}));
+
+// Every account created org-wide, any role, newest first — the super
+// admin's visibility into every self-registration (see auth.js's
+// register-admin) at any level, GM down through TL. An employee's own TL
+// sees their new employee too, but that's just the existing team/employee
+// list picking them up automatically, not a separate notification.
+superadminRouter.get('/recent-registrations', requireSuperAdmin, ah(async (req, res) => {
+  const rows = await db.prepare(`
+    SELECT u.id, u.name, u.email, u.role, u.department, u.created_at, p.name AS "reportsTo"
+    FROM users u LEFT JOIN users p ON p.id = u.parent_id
+    WHERE u.role != 'superadmin'
+    ORDER BY u.created_at DESC LIMIT 50
+  `).all();
+  res.json(rows);
 }));
 
 // Every pending "Forgot password?" request in the org, any role — by

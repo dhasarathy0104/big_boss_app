@@ -31,8 +31,6 @@ function legacyCopy(text) {
 }
 
 export default function TeamView({ managerId }) {
-  const [invites, setInvites] = useState([]);
-  const [copied, setCopied] = useState(false);
   const [otherManagers, setOtherManagers] = useState([]);
   const [newManagerName, setNewManagerName] = useState('');
   const [newManagerEmail, setNewManagerEmail] = useState('');
@@ -41,33 +39,13 @@ export default function TeamView({ managerId }) {
   const [managerCreateError, setManagerCreateError] = useState('');
   const [copiedManagerLink, setCopiedManagerLink] = useState(false);
 
-  function loadInvites() {
-    fetch(`/api/managers/${managerId}/invites`).then((r) => r.json()).then(setInvites);
-  }
-
   function loadOtherManagers() {
     fetch(`/api/managers/${managerId}/other-managers`).then((r) => r.json()).then(setOtherManagers);
   }
 
   useEffect(() => {
-    if (managerId) { loadInvites(); loadOtherManagers(); }
+    if (managerId) { loadOtherManagers(); }
   }, [managerId]);
-
-  async function generateInvite() {
-    const res = await fetch(`/api/managers/${managerId}/invites`, { method: 'POST' });
-    const invite = await res.json();
-    setInvites((prev) => [invite, ...prev]);
-  }
-
-  const activeInvite = invites[0];
-  const joinUrl = activeInvite ? `${window.location.origin}/join/${activeInvite.token}` : null;
-
-  function copyLink() {
-    copyToClipboard(joinUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }
 
   async function createPeerManager(e) {
     e.preventDefault();
@@ -97,29 +75,6 @@ export default function TeamView({ managerId }) {
 
   return (
     <>
-      <div className="panel">
-        <h2>Invite link</h2>
-        {!activeInvite ? (
-          <>
-            <div className="empty">No invite link yet — generate one and share it with your team.</div>
-            <button onClick={generateInvite}>Generate invite link</button>
-          </>
-        ) : (
-          <>
-            <div className="inline-form">
-              <input readOnly value={joinUrl} style={{ flex: 1, minWidth: 320 }} />
-              <button onClick={copyLink}>{copied ? 'Copied!' : 'Copy'}</button>
-              <button onClick={generateInvite}>Generate new link</button>
-            </div>
-            <div className="shot-meta" style={{ marginTop: 8 }}>
-              Used {activeInvite.use_count} time{activeInvite.use_count === 1 ? '' : 's'}. Anyone who opens this link and
-              runs the agent automatically joins your team — no manual approval needed. This only connects their
-              background tracking agent — it does not give them dashboard access (see below for that).
-            </div>
-          </>
-        )}
-      </div>
-
       <div className="panel">
         <h2>Browser extension (optional, for real website tracking)</h2>
         <p className="join-sub" style={{ marginTop: 0 }}>

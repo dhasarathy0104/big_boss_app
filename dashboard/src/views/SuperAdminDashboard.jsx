@@ -10,11 +10,11 @@ import DeskIllustration from '../components/DeskIllustration.jsx';
 import FolderIllustration from '../components/FolderIllustration.jsx';
 import AdminCardIllustration from '../components/AdminCardIllustration.jsx';
 import EmployeeManagementTable from '../components/EmployeeManagementTable.jsx';
+import DepartmentDrillDown from '../components/DepartmentDrillDown.jsx';
 import Modal from '../components/Modal.jsx';
 import WebRTCViewer from '../components/WebRTCViewer.jsx';
 import TimelineView from './TimelineView.jsx';
 import ScreenshotsView, { TrackingHoursControl, IntervalControl } from './ScreenshotsView.jsx';
-import SupervisorTeamView from './SupervisorTeamView.jsx';
 import { LOGO_DATA_URI } from '../logo.js';
 import { ROLE_LABEL } from '../roles.js';
 
@@ -126,163 +126,13 @@ const TABS = [
 const STATUS_LABEL = { active: 'Active', idle: 'Idle', offline: 'Offline' };
 const REFRESH_MS = 15_000;
 
-// Four-level drill-down, mirroring the card look of the manager's own Live
-// tab: pick an admin (name only) -> see that admin's own details -> open
-// their employees (name + summary each) -> click one to see THEIR full
-// details too, with an explicit choice to jump to Timeline/Screenshots
-// rather than navigating away the instant you click a name.
-function OverviewTab({ overview, onSelectMember, onChanged }) {
-  const [selectedAdminId, setSelectedAdminId] = useState(null);
-  const [employeesOpen, setEmployeesOpen] = useState(false);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
-  if (!overview) return null;
-
-  const selectedAdmin = overview.admins.find((a) => a.id === selectedAdminId) ?? null;
-  const selectedEmployee = selectedAdmin?.employees.find((e) => e.id === selectedEmployeeId) ?? null;
-
-  if (selectedEmployee) {
-    return (
-      <div className="panel">
-        <button className="btn-small" onClick={() => setSelectedEmployeeId(null)} style={{ marginBottom: 14 }}>
-          &larr; {selectedAdmin.name}'s team
-        </button>
-        <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Avatar name={selectedEmployee.name} size={26} />
-          {selectedEmployee.name}
-        </h2>
-        <table>
-          <tbody>
-            <tr><th style={{ width: 110 }}>Email</th><td>{selectedEmployee.email || '—'}</td></tr>
-            <tr><th>Mobile</th><td>{selectedEmployee.mobile || '—'}</td></tr>
-            <tr><th>Role</th><td>{selectedEmployee.jobRole || 'Employee'}</td></tr>
-            <tr><th>Department</th><td>{selectedEmployee.department || '—'}</td></tr>
-            <tr><th>Reports to</th><td>{selectedAdmin.name}</td></tr>
-          </tbody>
-        </table>
-        <div className="inline-form" style={{ marginTop: 16 }}>
-          <button onClick={() => onSelectMember(selectedEmployee.id, 'timeline')}>View Timeline</button>
-          <button onClick={() => onSelectMember(selectedEmployee.id, 'screenshots')}>View Screenshots</button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div className="stat-row">
-        <div className="stat-tile">
-          <div className="stat-tile-icon" style={{ background: 'rgba(57,135,229,0.15)' }}>
-            <ShieldCheck size={18} color="var(--brand)" />
-          </div>
-          <div>
-            <div className="stat-tile-value">{overview.totalAdmins}</div>
-            <div className="stat-tile-label">Admins</div>
-          </div>
-        </div>
-        <div className="stat-tile">
-          <div className="stat-tile-icon" style={{ background: 'rgba(57,135,229,0.15)' }}>
-            <Users size={18} color="var(--brand)" />
-          </div>
-          <div>
-            <div className="stat-tile-value">{overview.totalEmployees}</div>
-            <div className="stat-tile-label">Employees (org-wide)</div>
-          </div>
-        </div>
-      </div>
-
-      {!selectedAdmin ? (
-        <div className="panel">
-          <h2>Admins</h2>
-          {overview.admins.length === 0 ? (
-            <div className="empty">No admins yet.</div>
-          ) : (
-            <div className="live-grid">
-              {overview.admins.map((admin) => (
-                <div
-                  key={admin.id}
-                  className="live-card"
-                  onClick={() => { setSelectedAdminId(admin.id); setEmployeesOpen(false); setSelectedEmployeeId(null); }}
-                >
-                  <div className="live-card-top">
-                    <Avatar name={admin.name} size={30} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{admin.name}</div>
-                      <div className="shot-meta">{admin.employeeCount} employee{admin.employeeCount === 1 ? '' : 's'}</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : (
-        <>
-          <div className="panel">
-            <button className="btn-small" onClick={() => setSelectedAdminId(null)} style={{ marginBottom: 14 }}>
-              &larr; All admins
-            </button>
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Avatar name={selectedAdmin.name} size={26} />
-              {selectedAdmin.name}
-            </h2>
-            <table>
-              <tbody>
-                <tr><th style={{ width: 110 }}>Email</th><td>{selectedAdmin.email || '—'}</td></tr>
-                <tr><th>Mobile</th><td>{selectedAdmin.mobile || '—'}</td></tr>
-                <tr><th>Role</th><td>Manager</td></tr>
-                <tr><th>Department</th><td>{selectedAdmin.department || '—'}</td></tr>
-              </tbody>
-            </table>
-
-            <h2
-              style={{ marginTop: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
-              onClick={() => setEmployeesOpen(!employeesOpen)}
-            >
-              {employeesOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-              Employees ({selectedAdmin.employeeCount})
-            </h2>
-            {employeesOpen && (
-              <EmployeeManagementTable
-                employees={selectedAdmin.employees.map((e) => ({ ...e, managerId: selectedAdmin.id }))}
-                managerName={selectedAdmin.name}
-                otherManagers={overview.admins.filter((a) => a.id !== selectedAdmin.id)}
-                onRowClick={(e) => setSelectedEmployeeId(e.id)}
-                onSave={async (employeeId, fields) => {
-                  const res = await fetch(`/api/superadmin/employees/${employeeId}`, {
-                    method: 'PATCH',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify(fields),
-                  });
-                  if (!res.ok) return (await res.json()).error;
-                  onChanged?.();
-                  return null;
-                }}
-                onDelete={async (employeeId) => {
-                  const res = await fetch(`/api/superadmin/employees/${employeeId}`, { method: 'DELETE' });
-                  if (res.ok) onChanged?.();
-                }}
-                onTransfer={async (employeeId, targetManagerId) => {
-                  const res = await fetch(`/api/superadmin/employees/${employeeId}/transfer`, {
-                    method: 'POST',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ targetManagerId }),
-                  });
-                  if (!res.ok) return (await res.json()).error;
-                  onChanged?.();
-                  return null;
-                }}
-              />
-            )}
-          </div>
-
-          <div className="panel">
-            <h2>Projects &amp; progress</h2>
-            <AdminProjectsPanel managerId={selectedAdmin.id} canRemove={false} />
-          </div>
-        </>
-      )}
-    </>
-  );
+// Department -> Manager -> Assistant Manager -> Team Lead -> Employee — see
+// DepartmentDrillDown for the shared implementation (also used by the GM/AGM
+// read-only dashboard). Replaced the old "pick an admin by name" version,
+// which only ever showed a Manager's *direct* employees, invisible to
+// anything nested under AM/TL.
+function OverviewTab({ onSelectMember }) {
+  return <DepartmentDrillDown endpoint="/api/superadmin/departments" onSelectMember={onSelectMember} />;
 }
 
 // Flat, org-wide version of the same employee table — every employee across
@@ -321,9 +171,11 @@ function EmployeePickerBar({ overview, selectedUserId, onSelect }) {
 
 function SuperAdminEmployeesTab({ overview, onChanged }) {
   const [employees, setEmployees] = useState(null);
+  const [tlOptions, setTlOptions] = useState([]);
 
   function load() {
     fetch('/api/superadmin/employees-full').then((r) => r.json()).then(setEmployees);
+    fetch('/api/superadmin/tls').then((r) => r.json()).then(setTlOptions);
   }
 
   useEffect(load, []);
@@ -344,6 +196,18 @@ function SuperAdminEmployeesTab({ overview, onChanged }) {
       <EmployeeManagementTable
         employees={employees}
         otherManagers={overview.admins}
+        tlOptions={tlOptions}
+        onReassignTl={async (employeeId, newTlId) => {
+          const res = await fetch(`/api/superadmin/users/${employeeId}/reassign`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ newParentId: newTlId }),
+          });
+          if (!res.ok) return (await res.json()).error;
+          onChanged?.();
+          load();
+          return null;
+        }}
         onSave={async (employeeId, fields) => {
           const res = await fetch(`/api/superadmin/employees/${employeeId}`, {
             method: 'PATCH',
@@ -1028,11 +892,92 @@ function EditManagerModal({ manager, allManagers, onSaved, onClose }) {
   );
 }
 
+// Name/email/mobile/password only — the generalized edit form for GM/AGM/AM/TL
+// rows in AdminsListPanel below. Manager keeps the richer EditManagerModal
+// (Department, screenshot/tracking settings, employee transfer), since those
+// don't apply to the other four roles.
+function EditAdminModal({ admin, onSaved, onClose }) {
+  const [form, setForm] = useState({ name: admin.name ?? '', email: admin.email ?? '', mobile: admin.mobile ?? '', password: '' });
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function save(e) {
+    e.preventDefault();
+    setError('');
+    if (!form.name.trim()) { setError('Name is required.'); return; }
+    if (form.password && form.password.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    setSaving(true);
+    const res = await fetch(`/api/superadmin/admins/${admin.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: form.name, email: form.email, mobile: form.mobile,
+        ...(form.password ? { password: form.password } : {}),
+      }),
+    });
+    setSaving(false);
+    if (!res.ok) { setError((await res.json()).error); return; }
+    onSaved?.();
+    onClose();
+  }
+
+  return (
+    <Modal title={`Edit ${admin.name}`} onClose={onClose}>
+      <form onSubmit={save}>
+        <div className="form-grid">
+          <div className="field">
+            <label>Full name</label>
+            <div className="input-icon-wrap"><User size={15} /><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+          </div>
+          <div className="field">
+            <label>Email address</label>
+            <div className="input-icon-wrap"><Mail size={15} /><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+          </div>
+          <div className="field">
+            <label>Mobile number</label>
+            <div className="input-icon-wrap"><Phone size={15} /><input value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} /></div>
+          </div>
+          <div className="field">
+            <label>New password (optional)</label>
+            <div className="input-icon-wrap has-toggle">
+              <Lock size={15} />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Leave blank to keep as-is"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+              />
+              <button type="button" className="input-icon-toggle" onClick={() => setShowPassword((v) => !v)} title={showPassword ? 'Hide password' : 'Show password'}>
+                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
+          </div>
+        </div>
+        {error && <div style={{ color: '#e07070', fontSize: 12, marginBottom: 12 }}>{error}</div>}
+        <div className="inline-form">
+          <button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+          <button type="button" className="btn-outline" onClick={onClose}>Cancel</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function AdminsListPanel({ overview, onChanged }) {
+  const [admins, setAdmins] = useState(null);
   const [editing, setEditing] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [deleteError, setDeleteError] = useState('');
+
+  function load() {
+    fetch('/api/superadmin/admins').then((r) => r.json()).then(setAdmins);
+  }
+
+  useEffect(load, []);
+
+  function reload() { load(); onChanged?.(); }
 
   async function handleDelete(id) {
     setDeleteError('');
@@ -1041,8 +986,10 @@ function AdminsListPanel({ overview, onChanged }) {
     setDeletingId(null);
     if (!res.ok) { setDeleteError((await res.json()).error); return; }
     setConfirmingId(null);
-    onChanged?.();
+    reload();
   }
+
+  if (!admins) return null;
 
   return (
     <div className="panel">
@@ -1051,12 +998,14 @@ function AdminsListPanel({ overview, onChanged }) {
         <div>
           <h2 className="card-title">Admins</h2>
           <p className="card-subtitle">
-            Click the pencil to edit an admin's details or password, set their tracking hours, or transfer one of their employees. The trash icon removes an admin with no employees left on their team.
+            Every General Manager, Assistant General Manager, Manager, Assistant Manager, and Team Lead, org-wide.
+            Click the pencil to edit their details or set a new password. Managers can also have their tracking
+            settings adjusted and employees transferred here; the trash icon removes a Manager with no employees left.
           </p>
         </div>
       </div>
       {deleteError && <div style={{ color: '#e07070', fontSize: 12, marginBottom: 10 }}>{deleteError}</div>}
-      {overview.admins.length === 0 ? (
+      {admins.length === 0 ? (
         <div className="empty">No admins yet.</div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
@@ -1065,7 +1014,7 @@ function AdminsListPanel({ overview, onChanged }) {
               <tr><th>Name</th><th>Email</th><th>Mobile</th><th>Role</th><th>Department</th><th></th></tr>
             </thead>
             <tbody>
-              {overview.admins.map((a) => (
+              {admins.map((a) => (
                 <tr key={a.id}>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1075,7 +1024,7 @@ function AdminsListPanel({ overview, onChanged }) {
                   </td>
                   <td>{a.email || '—'}</td>
                   <td>{a.mobile || '—'}</td>
-                  <td><span className="badge-role">{a.jobRole || 'Manager'}</span></td>
+                  <td><span className="badge-role">{ROLE_LABEL[a.role] ?? a.role}</span></td>
                   <td>{a.department ? <span className="badge-dept">{a.department}</span> : '—'}</td>
                   <td>
                     {confirmingId === a.id ? (
@@ -1090,9 +1039,11 @@ function AdminsListPanel({ overview, onChanged }) {
                         <button className="row-icon-btn" title="Edit" onClick={() => setEditing(a)}>
                           <Pencil size={14} />
                         </button>
-                        <button className="row-icon-btn row-icon-btn-danger" title="Remove" onClick={() => { setDeleteError(''); setConfirmingId(a.id); }}>
-                          <Trash2 size={14} />
-                        </button>
+                        {a.role === 'manager' && (
+                          <button className="row-icon-btn row-icon-btn-danger" title="Remove" onClick={() => { setDeleteError(''); setConfirmingId(a.id); }}>
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     )}
                   </td>
@@ -1102,92 +1053,17 @@ function AdminsListPanel({ overview, onChanged }) {
           </table>
         </div>
       )}
-      {editing && (
-        <EditManagerModal manager={editing} allManagers={overview.admins} onSaved={onChanged} onClose={() => setEditing(null)} />
+      {editing && editing.role === 'manager' && (
+        <EditManagerModal
+          manager={overview.admins.find((m) => m.id === editing.id) ?? editing}
+          allManagers={overview.admins}
+          onSaved={reload}
+          onClose={() => setEditing(null)}
+        />
       )}
-    </div>
-  );
-}
-
-// Reassigns any one account anywhere in the org to a new parent at any
-// level — the super admin's version of the peer-transfer every supervisor
-// tier now has for their own direct reports (see SupervisorTeamView.jsx and
-// backend/src/routes/supervisors.js's /:id/team/:memberId/transfer). Split
-// into its own panel rather than folded into the admins list below, since it
-// needs to reach GM/AGM/AM/TL accounts too, which that list still doesn't
-// show (see the /overview KNOWN LIMITATION in superadmin.js).
-function ReassignPanel() {
-  const [users, setUsers] = useState([]);
-  const [userId, setUserId] = useState('');
-  const [candidates, setCandidates] = useState([]);
-  const [newParentId, setNewParentId] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    fetch('/api/superadmin/users').then((r) => r.json()).then(setUsers);
-  }, []);
-
-  useEffect(() => {
-    setNewParentId('');
-    setCandidates([]);
-    if (!userId) return;
-    fetch(`/api/superadmin/users/${userId}/reassign-candidates`).then((r) => r.json()).then(setCandidates);
-  }, [userId]);
-
-  async function submit(e) {
-    e.preventDefault();
-    setError(''); setSuccess('');
-    if (!userId || !newParentId) return;
-    setSubmitting(true);
-    const res = await fetch(`/api/superadmin/users/${userId}/reassign`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ newParentId }),
-    });
-    setSubmitting(false);
-    if (!res.ok) { setError((await res.json()).error); return; }
-    const data = await res.json();
-    setSuccess(`Moved to report to ${data.newParentName}.`);
-    setUserId(''); setNewParentId('');
-  }
-
-  const selectedUser = users.find((u) => u.id === Number(userId));
-
-  return (
-    <div className="panel">
-      <div className="section-head">
-        <div className="section-icon"><UserCog size={22} /></div>
-        <div>
-          <h2 className="card-title">Reassign anyone</h2>
-          <p className="card-subtitle">
-            Move any account — and everyone below them — to a new supervisor at any level. Only accounts
-            one level above their current role are valid destinations, so the reporting chain stays intact.
-          </p>
-        </div>
-      </div>
-      <form className="stacked-form" onSubmit={submit}>
-        <select value={userId} onChange={(e) => setUserId(e.target.value)}>
-          <option value="">Who to move…</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>{u.name} ({ROLE_LABEL[u.role] ?? u.role})</option>
-          ))}
-        </select>
-        {userId && (
-          <select value={newParentId} onChange={(e) => setNewParentId(e.target.value)} disabled={candidates.length === 0}>
-            <option value="">
-              {candidates.length === 0 ? `No valid destination for a ${ROLE_LABEL[selectedUser?.role] ?? ''}` : 'Move to report to…'}
-            </option>
-            {candidates.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        )}
-        {error && <div style={{ color: '#e07070', fontSize: 12 }}>{error}</div>}
-        {success && <div style={{ color: 'var(--status-good)', fontSize: 12 }}>{success}</div>}
-        <button type="submit" disabled={!userId || !newParentId || submitting} style={{ alignSelf: 'flex-start' }}>
-          {submitting ? 'Moving…' : 'Move'}
-        </button>
-      </form>
+      {editing && editing.role !== 'manager' && (
+        <EditAdminModal admin={editing} onSaved={reload} onClose={() => setEditing(null)} />
+      )}
     </div>
   );
 }
@@ -1283,19 +1159,60 @@ function PasswordResetRequestsPanel() {
   );
 }
 
-function ManageTab({ overview, onChanged, superadminId }) {
+// Every self-registration org-wide, any level — a plain checked list (this
+// app has no email/push infrastructure, see the password-reset panel above
+// for the same pattern already established), not a live alert.
+function RecentRegistrationsPanel() {
+  const [registrations, setRegistrations] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/superadmin/recent-registrations').then((r) => r.json()).then(setRegistrations);
+  }, []);
+
+  if (!registrations || registrations.length === 0) return null;
+
+  return (
+    <div className="panel">
+      <div className="section-head">
+        <div className="section-icon"><UserPlus size={22} /></div>
+        <div>
+          <h2 className="card-title">Recent registrations ({registrations.length})</h2>
+          <p className="card-subtitle">Every account created org-wide, any level, newest first.</p>
+        </div>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table>
+          <thead><tr><th>Name</th><th>Role</th><th>Reports to</th><th>Department</th><th>Created</th></tr></thead>
+          <tbody>
+            {registrations.map((r) => (
+              <tr key={r.id}>
+                <td>{r.name}</td>
+                <td><span className="badge-role">{ROLE_LABEL[r.role] ?? r.role}</span></td>
+                <td>{r.reportsTo || '—'}</td>
+                <td>{r.department || '—'}</td>
+                <td>{r.created_at}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ManageTab({ overview, onChanged }) {
   return (
     <>
       <PasswordResetRequestsPanel />
-      {/* Starts the new GM-down hierarchy — the super admin invites a GM the
-          same way every other level invites the one below it (see
-          SupervisorTeamView.jsx / hierarchy.js's roleBelow). CreateAdminPanel
-          below is the older, separate "create a Manager account directly, no
-          invite" flow kept for the two-level org shape from before this
-          rework — the two coexist since neither replaces the other. */}
-      <SupervisorTeamView supervisorId={superadminId} />
+      <RecentRegistrationsPanel />
+      {/* GM/AGM/Manager/AM/TL all self-register now (see App.jsx's
+          RegisterAdminForm) instead of being invited down the chain, so
+          there's no "invite a GM" step here anymore. CreateAdminPanel below
+          is the older, separate "create a Manager account directly, no
+          self-registration" flow — kept since it's still occasionally useful
+          (a super admin setting a manager's password directly rather than
+          having them register themselves), not because anything requires it. */}
       <CreateAdminPanel onCreated={onChanged} />
-      <ReassignPanel />
       <AdminsListPanel overview={overview} onChanged={onChanged} />
     </>
   );
@@ -1364,7 +1281,7 @@ export default function SuperAdminDashboard({ user, onLogout }) {
 
       <main className="main">
         {activeTab === 'overview' && (
-          <OverviewTab overview={overview} onChanged={reloadOverview} onSelectMember={(id, tab = 'timeline') => { setSelectedUserId(id); setActiveTab(tab); }} />
+          <OverviewTab onSelectMember={(id, tab = 'timeline') => { setSelectedUserId(id); setActiveTab(tab); }} />
         )}
         {activeTab === 'live' && (
           <LiveTab onSelectMember={(id) => { setSelectedUserId(id); setActiveTab('timeline'); }} />
@@ -1387,7 +1304,7 @@ export default function SuperAdminDashboard({ user, onLogout }) {
           </>
         )}
         {activeTab === 'employees' && <SuperAdminEmployeesTab overview={overview} onChanged={reloadOverview} />}
-        {activeTab === 'manage' && <ManageTab overview={overview} onChanged={reloadOverview} superadminId={user.id} />}
+        {activeTab === 'manage' && <ManageTab overview={overview} onChanged={reloadOverview} />}
         {activeTab === 'assign' && <AssignTab overview={overview} />}
       </main>
     </div>
