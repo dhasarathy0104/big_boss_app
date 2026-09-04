@@ -5,6 +5,7 @@ import { requireManager, requireManagerSelf, hashPassword } from '../auth.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
 import { deleteEmployeeCascade } from '../deleteUser.js';
+import { getDescendantIds } from '../hierarchy.js';
 
 export const managersRouter = Router();
 
@@ -36,13 +37,26 @@ managersRouter.post('/create-peer', requireManager, ah(async (req, res) => {
   res.json({ id: info.lastInsertRowid, name: name.trim(), claimToken });
 }));
 
+// Every employee anywhere below this manager — via AM then TL, the fixed
+// two extra levels the hierarchy rework inserted between Manager and
+// Employee — not just direct reports (a manager has none directly anymore;
+// every employee's real parent is a TL). tlName/amName resolve via a
+// straight two-hop join since that shape is fixed; a legacy employee whose
+// parent_id still points straight at a manager (pre-dating AM/TL) shows
+// both as "—" rather than being excluded.
 managersRouter.get('/:id/team', requireManagerSelf, ah(async (req, res) => {
+  const descendantIds = await getDescendantIds(Number(req.params.id));
+  if (descendantIds.length === 0) return res.json([]);
   const team = await db.prepare(`
-    SELECT id, name, email, mobile, department, job_role AS "jobRole", created_at,
-      (claim_token IS NOT NULL) AS "hasPendingClaim", (password_hash IS NOT NULL) AS "hasDashboardLogin",
-      (password_reset_requested_at IS NOT NULL) AS "passwordResetRequested"
-    FROM users WHERE parent_id = ? AND role = 'employee' ORDER BY name
-  `).all(req.params.id);
+    SELECT e.id, e.name, e.email, e.mobile, e.department, e.job_role AS "jobRole", e.created_at,
+      (e.claim_token IS NOT NULL) AS "hasPendingClaim", (e.password_hash IS NOT NULL) AS "hasDashboardLogin",
+      (e.password_reset_requested_at IS NOT NULL) AS "passwordResetRequested",
+      tl.id AS "tlId", tl.name AS "tlName", am.id AS "amId", am.name AS "amName"
+    FROM users e
+    LEFT JOIN users tl ON tl.id = e.parent_id AND tl.role = 'tl'
+    LEFT JOIN users am ON am.id = tl.parent_id AND am.role = 'am'
+    WHERE e.id = ANY(?) AND e.role = 'employee' ORDER BY e.name
+  `).all(descendantIds);
   res.json(team);
 }));
 
@@ -55,8 +69,10 @@ managersRouter.post('/:id/team/:employeeId/set-password', requireManagerSelf, ah
   if (!password || password.length < 8) {
     return res.status(400).json({ error: 'a password of at least 8 characters is required' });
   }
-  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND parent_id = ? AND role = 'employee'")
-    .get(req.params.employeeId, req.params.id);
+  const descendantIds = await getDescendantIds(Number(req.params.id));
+  const employee = descendantIds.includes(Number(req.params.employeeId))
+    ? await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'").get(req.params.employeeId)
+    : null;
   if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
 
   await db.prepare('UPDATE users SET password_hash = ?, password_reset_requested_at = NULL WHERE id = ?')
@@ -68,8 +84,10 @@ managersRouter.post('/:id/team/:employeeId/set-password', requireManagerSelf, ah
 // the same request — the "click the pencil, edit everything, Save" flow
 // replaces the old separate set-password/claim-link buttons for this view.
 managersRouter.patch('/:id/team/:employeeId', requireManagerSelf, ah(async (req, res) => {
-  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND parent_id = ? AND role = 'employee'")
-    .get(req.params.employeeId, req.params.id);
+  const descendantIds = await getDescendantIds(Number(req.params.id));
+  const employee = descendantIds.includes(Number(req.params.employeeId))
+    ? await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'").get(req.params.employeeId)
+    : null;
   if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
 
   const { name, email, mobile, department, jobRole, password } = req.body;
@@ -103,8 +121,10 @@ managersRouter.patch('/:id/team/:employeeId', requireManagerSelf, ah(async (req,
 // screenshots, timesheets, attendance, leave). Irreversible — the UI should
 // confirm before calling this.
 managersRouter.delete('/:id/team/:employeeId', requireManagerSelf, ah(async (req, res) => {
-  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND parent_id = ? AND role = 'employee'")
-    .get(req.params.employeeId, req.params.id);
+  const descendantIds = await getDescendantIds(Number(req.params.id));
+  const employee = descendantIds.includes(Number(req.params.employeeId))
+    ? await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'").get(req.params.employeeId)
+    : null;
   if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
 
   await deleteEmployeeCascade(employee.id);
@@ -188,8 +208,10 @@ managersRouter.patch('/:id/settings', requireManagerSelf, ah(async (req, res) =>
 // dashboard password — separate from the invite link, which only connects the
 // background tracking agent. Manager hands this to that specific employee.
 managersRouter.post('/:id/team/:employeeId/claim-link', requireManagerSelf, ah(async (req, res) => {
-  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND parent_id = ? AND role = 'employee'")
-    .get(req.params.employeeId, req.params.id);
+  const descendantIds = await getDescendantIds(Number(req.params.id));
+  const employee = descendantIds.includes(Number(req.params.employeeId))
+    ? await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'").get(req.params.employeeId)
+    : null;
   if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
 
   const claimToken = randomToken(16);
@@ -209,6 +231,14 @@ managersRouter.get('/:id/other-managers', requireManagerSelf, ah(async (req, res
 // source of truth for "whose team is this employee on", there's no
 // before/after split. The old manager loses access immediately; the new
 // manager gains full access immediately, including past data.
+//
+// Only ever valid for a legacy employee whose parent_id still points
+// straight at a manager (pre-dating AM/TL) — pointing a properly-nested
+// employee's parent_id at a manager directly would skip AM/TL entirely and
+// break the fixed-level hierarchy (see hierarchy.js's ROLE_ORDER). Moving
+// one of those is what the TL's own peer-transfer (SupervisorTeamView) or
+// the super admin's general reassignment (SuperAdminDashboard's "Reassign
+// anyone") are for instead.
 managersRouter.post('/:id/team/:employeeId/transfer', requireManagerSelf, ah(async (req, res) => {
   const { targetManagerId } = req.body;
   if (!targetManagerId) return res.status(400).json({ error: 'targetManagerId required' });
@@ -216,9 +246,16 @@ managersRouter.post('/:id/team/:employeeId/transfer', requireManagerSelf, ah(asy
     return res.status(400).json({ error: 'employee is already on your team' });
   }
 
-  const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND parent_id = ? AND role = 'employee'")
-    .get(req.params.employeeId, req.params.id);
+  const descendantIds = await getDescendantIds(Number(req.params.id));
+  const employee = descendantIds.includes(Number(req.params.employeeId))
+    ? await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'").get(req.params.employeeId)
+    : null;
   if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
+  if (employee.parent_id !== Number(req.params.id)) {
+    return res.status(400).json({
+      error: "this employee reports through an AM/TL — use their TL's Team & Invite tab or the super admin's \"Reassign anyone\" to move them instead",
+    });
+  }
 
   const targetManager = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(targetManagerId);
   if (!targetManager) return res.status(404).json({ error: 'target manager not found' });

@@ -319,23 +319,29 @@ function EmployeePickerBar({ overview, selectedUserId, onSelect }) {
 }
 
 function SuperAdminEmployeesTab({ overview, onChanged }) {
-  if (!overview) return null;
-  const allEmployees = overview.admins.flatMap((a) =>
-    a.employees.map((e) => ({ ...e, managerId: a.id, managerName: a.name })));
+  const [employees, setEmployees] = useState(null);
+
+  function load() {
+    fetch('/api/superadmin/employees-full').then((r) => r.json()).then(setEmployees);
+  }
+
+  useEffect(load, []);
+
+  if (!overview || !employees) return null;
 
   return (
     <div className="panel">
       <div className="section-head">
         <div className="section-icon"><Users size={22} /></div>
         <div>
-          <h2 className="card-title">Employees ({allEmployees.length})</h2>
+          <h2 className="card-title">Employees ({employees.length})</h2>
           <p className="card-subtitle">
-            Every employee, org-wide. Click the pencil to edit their details or set a new password, or the trash icon to remove them.
+            Every employee, org-wide — any depth below Manager. Click the pencil to edit their details or set a new password, or the trash icon to remove them.
           </p>
         </div>
       </div>
       <EmployeeManagementTable
-        employees={allEmployees}
+        employees={employees}
         otherManagers={overview.admins}
         onSave={async (employeeId, fields) => {
           const res = await fetch(`/api/superadmin/employees/${employeeId}`, {
@@ -345,11 +351,12 @@ function SuperAdminEmployeesTab({ overview, onChanged }) {
           });
           if (!res.ok) return (await res.json()).error;
           onChanged?.();
+          load();
           return null;
         }}
         onDelete={async (employeeId) => {
           const res = await fetch(`/api/superadmin/employees/${employeeId}`, { method: 'DELETE' });
-          if (res.ok) onChanged?.();
+          if (res.ok) { onChanged?.(); load(); }
         }}
         onTransfer={async (employeeId, targetManagerId) => {
           const res = await fetch(`/api/superadmin/employees/${employeeId}/transfer`, {
@@ -359,6 +366,7 @@ function SuperAdminEmployeesTab({ overview, onChanged }) {
           });
           if (!res.ok) return (await res.json()).error;
           onChanged?.();
+          load();
           return null;
         }}
       />

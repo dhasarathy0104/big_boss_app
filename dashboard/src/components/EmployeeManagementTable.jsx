@@ -150,7 +150,7 @@ export default function EmployeeManagementTable({ employees, managerName, otherM
         <table>
           <thead>
             <tr>
-              <th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Manager</th><th>Department</th><th></th>
+              <th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Manager</th><th>Assistant Manager</th><th>Team Lead</th><th>Department</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -169,6 +169,8 @@ export default function EmployeeManagementTable({ employees, managerName, otherM
                 <td>{e.mobile || '—'}</td>
                 <td>{e.jobRole ? <span className="badge-role">{e.jobRole}</span> : '—'}</td>
                 <td>{e.managerName ?? managerName ?? '—'}</td>
+                <td>{e.amName ?? '—'}</td>
+                <td>{e.tlName ?? '—'}</td>
                 <td>{e.department ? <span className="badge-dept">{e.department}</span> : '—'}</td>
                 <td>
                   {confirmingId === e.id ? (

@@ -211,19 +211,51 @@ superadminRouter.patch('/managers/:id/settings', requireSuperAdmin, ah(async (re
 
 // Org-wide employee transfer — unlike a manager's own team-transfer route,
 // the super admin can move any employee to any manager, not just within
-// their own team.
+// their own team. Same restriction as the manager-only version though: only
+// valid for a legacy employee whose parent_id already points straight at a
+// manager — a properly-nested one should move via the general "Reassign
+// anyone" panel instead, which enforces the fixed-level chain.
 superadminRouter.post('/employees/:id/transfer', requireSuperAdmin, ah(async (req, res) => {
   const { targetManagerId } = req.body;
   if (!targetManagerId) return res.status(400).json({ error: 'targetManagerId required' });
 
   const employee = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'").get(req.params.id);
   if (!employee) return res.status(404).json({ error: 'employee not found' });
+  const currentParent = await db.prepare('SELECT role FROM users WHERE id = ?').get(employee.parent_id);
+  if (currentParent?.role !== 'manager') {
+    return res.status(400).json({ error: 'this employee reports through an AM/TL — use "Reassign anyone" in Manage Admins to move them instead' });
+  }
 
   const targetManager = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(targetManagerId);
   if (!targetManager) return res.status(404).json({ error: 'target manager not found' });
 
   await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(targetManager.id, employee.id);
   res.json({ ok: true, employeeId: employee.id, newManagerId: targetManager.id, newManagerName: targetManager.name });
+}));
+
+// Every employee org-wide, with their TL/AM resolved via the fixed two-hop
+// chain above them (and Manager via getAncestorIdWithRole, since it needs
+// to keep working for a legacy employee whose parent_id points straight at
+// a manager, skipping AM/TL entirely) — used by the super admin's own
+// "Employee Management" tab, which otherwise has no way to see anyone
+// nested below AM/TL (see the /overview KNOWN LIMITATION above it).
+superadminRouter.get('/employees-full', requireSuperAdmin, ah(async (req, res) => {
+  const employees = await db.prepare(`
+    SELECT e.id, e.name, e.email, e.mobile, e.department, e.job_role AS "jobRole", e.created_at,
+      (e.password_reset_requested_at IS NOT NULL) AS "passwordResetRequested",
+      tl.id AS "tlId", tl.name AS "tlName", am.id AS "amId", am.name AS "amName"
+    FROM users e
+    LEFT JOIN users tl ON tl.id = e.parent_id AND tl.role = 'tl'
+    LEFT JOIN users am ON am.id = tl.parent_id AND am.role = 'am'
+    WHERE e.role = 'employee'
+    ORDER BY e.name
+  `).all();
+  const withManagers = await Promise.all(employees.map(async (e) => {
+    const managerId = await getAncestorIdWithRole(e.id, 'manager');
+    const manager = managerId ? await db.prepare('SELECT name FROM users WHERE id = ?').get(managerId) : null;
+    return { ...e, managerId, managerName: manager?.name ?? null };
+  }));
+  res.json(withManagers);
 }));
 
 // Every account in the org except the super admin themselves, flat — the
