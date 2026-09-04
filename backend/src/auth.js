@@ -105,15 +105,21 @@ export function requireSupervisorSelf(req, res, next) {
   });
 }
 
-// For routes shared between manager team-wide views (?managerId=) and employee
-// self-views (?userId=): the caller must be that exact manager, or that exact
-// employee, or the manager who owns that employee. Deliberately still
-// manager-only on the managerId branch — team-wide timesheet/leave/attendance
-// review hasn't been extended to the other reporting levels (yet).
+// For routes shared between a supervisor's team-wide view (?managerId=,
+// despite the name — kept for backward compatibility, it now means "this
+// supervisor's own id" at any tier) and an individual's self-view
+// (?userId=): the caller must be a supervisor querying their own id, or
+// that exact employee, or someone above that employee in the hierarchy.
+// Generalized from Manager-only to every supervisor tier (see
+// hierarchy.js's isSupervisorRole) — team-wide time-entries/leave-requests/
+// attendance review now works the same way team management already does.
+// The actual subtree scoping happens in each route's own query (via
+// getDescendantIds), not here — this only confirms the caller may ask for
+// their own id at all.
 export async function authorizeScopedQuery(req, res) {
   const { userId, managerId } = req.query;
   if (managerId !== undefined) {
-    if (req.authUser.role !== 'manager' || Number(managerId) !== req.authUser.id) {
+    if (!isSupervisorRole(req.authUser.role) || Number(managerId) !== req.authUser.id) {
       res.status(403).json({ error: 'not your team' });
       return false;
     }

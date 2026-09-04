@@ -7,6 +7,7 @@ import EmployeeDashboard from './views/EmployeeDashboard.jsx';
 import SuperAdminDashboard from './views/SuperAdminDashboard.jsx';
 import { getToken, setToken } from './api.js';
 import { LOGO_DATA_URI } from './logo.js';
+import { SUPERVISOR_DASHBOARD_ROLES } from './roles.js';
 
 function RegisterAdminForm({ onAuthed, onBack }) {
   const [name, setName] = useState('');
@@ -311,7 +312,7 @@ function Shell() {
   // the org-hierarchy rework, and unlike Manager they have no
   // Projects/Billing/Category-Rules features tying them to their own
   // bespoke UI, so there's nothing to preserve by giving each its own.
-  if (['gm', 'agm', 'am', 'tl'].includes(user.role)) return <SupervisorDashboard user={user} onLogout={logout} />;
+  if (SUPERVISOR_DASHBOARD_ROLES.includes(user.role)) return <SupervisorDashboard user={user} onLogout={logout} />;
   return <EmployeeDashboard employee={user} onLogout={logout} />;
 }
 

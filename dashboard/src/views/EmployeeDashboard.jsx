@@ -68,7 +68,7 @@ export default function EmployeeDashboard({ employee, onLogout }) {
         )}
         {activeTab === 'projects' && <MyTasksView userId={employee.id} />}
         {activeTab === 'logtime' && (
-          <LogTimeView userId={employee.id} managerId={employee.managerId} />
+          <LogTimeView userId={employee.id} />
         )}
         {activeTab === 'attendance' && <AttendanceView userId={employee.id} />}
       </main>

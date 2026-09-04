@@ -49,7 +49,11 @@ function QuickAddTask({ status, onAdd }) {
   );
 }
 
-export default function ProjectsView({ managerId, team }) {
+// canCreateProject defaults to true so ManagerDashboard's existing usage is
+// unchanged — AM/TL pass canCreateProject={false}, since the backend never
+// lets them own a project (see projects.js's canOwnProject); they still get
+// the full task board below for whatever's already there.
+export default function ProjectsView({ managerId, team, canCreateProject = true }) {
   const [projects, setProjects] = useState([]);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -138,55 +142,57 @@ export default function ProjectsView({ managerId, team }) {
 
   return (
     <>
-      <div className="panel">
-        <div className="section-head">
-          <div className="section-icon"><FolderPlus size={22} /></div>
-          <div>
-            <h2 className="card-title">New project</h2>
-            <p className="card-subtitle">Create a new project and get started with your team.</p>
+      {canCreateProject && (
+        <div className="panel">
+          <div className="section-head">
+            <div className="section-icon"><FolderPlus size={22} /></div>
+            <div>
+              <h2 className="card-title">New project</h2>
+              <p className="card-subtitle">Create a new project and get started with your team.</p>
+            </div>
+            <div className="section-illustration"><FolderIllustration badge="plus" /></div>
           </div>
-          <div className="section-illustration"><FolderIllustration badge="plus" /></div>
+          <form className="inline-form" onSubmit={createProject}>
+            <div className="input-icon-wrap" style={{ minWidth: 200 }}>
+              <FolderOpen size={15} />
+              <input
+                placeholder="Project name"
+                value={newProject.name}
+                onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
+              />
+            </div>
+            <div className="input-icon-wrap" style={{ minWidth: 180 }}>
+              <User size={15} />
+              <input
+                placeholder="Client (optional)"
+                value={newProject.clientName}
+                onChange={(e) => setNewProject({ ...newProject, clientName: e.target.value })}
+              />
+            </div>
+            <label className="checkbox-label" title="Track a per-hour rate for this project">
+              <input
+                type="checkbox"
+                checked={newProject.isBillable}
+                onChange={(e) => setNewProject({ ...newProject, isBillable: e.target.checked })}
+              />
+              Billable
+              <Info size={13} style={{ opacity: 0.6 }} />
+            </label>
+            {newProject.isBillable && (
+              <input
+                type="number"
+                placeholder="Rate/hr"
+                value={newProject.hourlyRate}
+                onChange={(e) => setNewProject({ ...newProject, hourlyRate: e.target.value })}
+                style={{ width: 90 }}
+              />
+            )}
+            <button type="submit">
+              <PlusCircle size={14} />Create project
+            </button>
+          </form>
         </div>
-        <form className="inline-form" onSubmit={createProject}>
-          <div className="input-icon-wrap" style={{ minWidth: 200 }}>
-            <FolderOpen size={15} />
-            <input
-              placeholder="Project name"
-              value={newProject.name}
-              onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
-            />
-          </div>
-          <div className="input-icon-wrap" style={{ minWidth: 180 }}>
-            <User size={15} />
-            <input
-              placeholder="Client (optional)"
-              value={newProject.clientName}
-              onChange={(e) => setNewProject({ ...newProject, clientName: e.target.value })}
-            />
-          </div>
-          <label className="checkbox-label" title="Track a per-hour rate for this project">
-            <input
-              type="checkbox"
-              checked={newProject.isBillable}
-              onChange={(e) => setNewProject({ ...newProject, isBillable: e.target.checked })}
-            />
-            Billable
-            <Info size={13} style={{ opacity: 0.6 }} />
-          </label>
-          {newProject.isBillable && (
-            <input
-              type="number"
-              placeholder="Rate/hr"
-              value={newProject.hourlyRate}
-              onChange={(e) => setNewProject({ ...newProject, hourlyRate: e.target.value })}
-              style={{ width: 90 }}
-            />
-          )}
-          <button type="submit">
-            <PlusCircle size={14} />Create project
-          </button>
-        </form>
-      </div>
+      )}
 
       <div className="panel">
         <div className="section-head" style={{ marginBottom: 16, alignItems: 'center' }}>

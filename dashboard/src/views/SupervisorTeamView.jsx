@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Avatar from '../components/Avatar.jsx';
+import { ROLE_LABEL } from '../roles.js';
 
 // navigator.clipboard only exists in a secure context (HTTPS) — on a
 // plain-HTTP deployment it's undefined, so the modern API silently does
@@ -30,8 +31,6 @@ function legacyCopy(text) {
   document.body.removeChild(textarea);
   return ok;
 }
-
-const ROLE_LABEL = { gm: 'GM', agm: 'AGM', manager: 'Manager', am: 'Assistant Manager', tl: 'Team Lead', employee: 'Employee' };
 
 // The generalized "Team & Invite" tab, shared by every level above Employee
 // (GM, AGM, Manager, AM, TL) — the same invite-link idea already used for

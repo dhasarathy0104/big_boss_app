@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { db } from '../db.js';
-import { requireManager } from '../auth.js';
+import { requireSupervisor } from '../auth.js';
+import { isManagerInScope, roleAtOrAbove } from '../hierarchy.js';
 import { ah } from '../asyncHandler.js';
 
 export const billingRouter = Router();
@@ -45,25 +46,30 @@ async function computeInvoice(projectId, startDate, endDate) {
   };
 }
 
-async function ownsProject(authUser, projectId) {
+// Billing view access is AM-and-above (Manager/AGM/GM/superadmin own or
+// oversee it; AM can view/use it within scope) — TL and Employee explicitly
+// get no billing access at all, per the hierarchy rework's permission model,
+// so they're excluded before the scope check even runs.
+async function canViewBilling(authUser, projectId) {
+  if (!roleAtOrAbove(authUser.role, 'am')) return false;
   const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
-  return project && project.manager_id === authUser.id;
+  return project && (await isManagerInScope(authUser, project.manager_id));
 }
 
-billingRouter.get('/projects/:id/invoice', requireManager, ah(async (req, res) => {
+billingRouter.get('/projects/:id/invoice', requireSupervisor, ah(async (req, res) => {
   const { startDate, endDate } = req.query;
   if (!startDate || !endDate) return res.status(400).json({ error: 'startDate and endDate required' });
-  if (!(await ownsProject(req.authUser, req.params.id))) return res.status(403).json({ error: 'not your project' });
+  if (!(await canViewBilling(req.authUser, req.params.id))) return res.status(403).json({ error: 'not your project' });
 
   const result = await computeInvoice(req.params.id, startDate, endDate);
   if (result.error) return res.status(result.status).json({ error: result.error });
   res.json(result);
 }));
 
-billingRouter.get('/projects/:id/invoice.pdf', requireManager, ah(async (req, res) => {
+billingRouter.get('/projects/:id/invoice.pdf', requireSupervisor, ah(async (req, res) => {
   const { startDate, endDate } = req.query;
   if (!startDate || !endDate) return res.status(400).json({ error: 'startDate and endDate required' });
-  if (!(await ownsProject(req.authUser, req.params.id))) return res.status(403).json({ error: 'not your project' });
+  if (!(await canViewBilling(req.authUser, req.params.id))) return res.status(403).json({ error: 'not your project' });
 
   const invoice = await computeInvoice(req.params.id, startDate, endDate);
   if (invoice.error) return res.status(invoice.status).json({ error: invoice.error });

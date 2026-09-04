@@ -78,3 +78,37 @@ export async function isSelfOrDescendant(authUser, targetUserId) {
   const descendantIds = await getDescendantIds(authUser.id);
   return descendantIds.includes(targetUserId);
 }
+
+// True if `role` is at `thresholdRole`'s level or more senior — e.g.
+// roleAtOrAbove('am', 'am') and roleAtOrAbove('manager', 'am') are both
+// true, roleAtOrAbove('tl', 'am') is false. Used for features with a fixed
+// "this tier and everyone above it" cutoff (e.g. category-rule editing is
+// AM-and-above, project creation is Manager-and-above) — a plain roleLevel
+// comparison, kept as its own function so cutoffs read as intent rather
+// than a bare index comparison at every call site.
+export function roleAtOrAbove(role, thresholdRole) {
+  const level = roleLevel(role);
+  const threshold = roleLevel(thresholdRole);
+  return level !== -1 && threshold !== -1 && level <= threshold;
+}
+
+// True if `authUser` is allowed to act on a resource owned by the Manager
+// `managerId` — projects, category rules, and billing are all anchored to
+// one specific Manager this way (see projects.manager_id /
+// category_rules.manager_id), unlike employee-owned data which uses
+// isSelfOrDescendant above. The owning Manager can sit either below the
+// caller (a GM/AGM looking down at a Manager somewhere in their subtree) or
+// above the caller (an AM/TL/Employee looking up at their own department's
+// Manager) — this checks both directions relative to roleLevel('manager')
+// rather than assuming "below" like isSelfOrDescendant does.
+export async function isManagerInScope(authUser, managerId) {
+  if (authUser.role === 'superadmin') return true;
+  if (authUser.id === managerId) return true;
+  if (roleLevel(authUser.role) === -1) return false;
+  if (roleAtOrAbove(authUser.role, 'manager')) {
+    const descendantIds = await getDescendantIds(authUser.id);
+    return descendantIds.includes(managerId);
+  }
+  const ownManagerId = await getAncestorIdWithRole(authUser.id, 'manager');
+  return ownManagerId === managerId;
+}

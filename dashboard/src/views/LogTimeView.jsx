@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fmtTime, fmtMinutes } from '../format.js';
 
-export default function LogTimeView({ userId, managerId }) {
+export default function LogTimeView({ userId }) {
   const [projects, setProjects] = useState([]);
   const [entries, setEntries] = useState([]);
   const [form, setForm] = useState({ projectId: '', startedAt: '', endedAt: '', note: '' });
@@ -11,9 +11,19 @@ export default function LogTimeView({ userId, managerId }) {
     fetch(`/api/time-entries?userId=${userId}`).then((r) => r.json()).then(setEntries);
   }
 
+  // The project picker is derived from the employee's own assigned tasks
+  // (not a department-wide project list) — an employee logs time against a
+  // project because they have work assigned there, not by browsing every
+  // project their department happens to have.
   useEffect(() => {
-    if (managerId) fetch(`/api/projects?managerId=${managerId}`).then((r) => r.json()).then(setProjects);
-  }, [managerId]);
+    fetch('/api/tasks/mine').then((r) => r.json()).then((tasks) => {
+      const byProject = new Map();
+      for (const t of tasks) {
+        if (!byProject.has(t.project_id)) byProject.set(t.project_id, { id: t.project_id, name: t.project_name });
+      }
+      setProjects([...byProject.values()]);
+    });
+  }, [userId]);
 
   useEffect(() => { if (userId) loadEntries(); }, [userId]);
 
@@ -46,7 +56,7 @@ export default function LogTimeView({ userId, managerId }) {
       <div className="panel">
         <h2>Log time</h2>
         {projects.length === 0 ? (
-          <div className="empty">Your manager hasn't created any projects yet.</div>
+          <div className="empty">You don't have any assigned tasks with a project yet.</div>
         ) : (
           <form className="stacked-form" onSubmit={submitEntry}>
             <select value={form.projectId} onChange={(e) => setForm({ ...form, projectId: e.target.value })}>

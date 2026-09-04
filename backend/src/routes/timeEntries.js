@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, authorizeScopedQuery } from '../auth.js';
+import { getDescendantIds, getAncestorIdWithRole, isManagerInScope } from '../hierarchy.js';
 import { ah } from '../asyncHandler.js';
 
 export const timeEntriesRouter = Router();
@@ -20,7 +21,16 @@ timeEntriesRouter.get('/', requireAuth, ah(async (req, res) => {
   `;
   const params = [];
   if (userId) { sql += ' AND te.user_id = ?'; params.push(userId); }
-  if (managerId) { sql += ' AND p.manager_id = ?'; params.push(managerId); }
+  if (managerId) {
+    // "managerId" is really the requesting supervisor's own id at any tier
+    // (see authorizeScopedQuery) — scope to their whole subtree, not just
+    // entries against projects they personally own, so a GM/AGM/AM sees
+    // entries logged by anyone below them regardless of which department's
+    // project it was logged against.
+    const descendantIds = await getDescendantIds(Number(managerId));
+    if (descendantIds.length === 0) return res.json([]);
+    sql += ' AND te.user_id = ANY(?)'; params.push(descendantIds);
+  }
   sql += ' ORDER BY te.started_at DESC';
   res.json(await db.prepare(sql).all(...params));
 }));
@@ -38,7 +48,12 @@ timeEntriesRouter.post('/', requireAuth, ah(async (req, res) => {
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
   if (!user || !project) return res.status(404).json({ error: 'user or project not found' });
-  if (project.manager_id !== user.parent_id) {
+  // The employee's real department Manager is found by walking up the
+  // chain (their direct parent is a TL, not the Manager, in the current
+  // hierarchy) — a direct parent_id comparison here would reject every
+  // properly-nested employee's own department project.
+  const ownManagerId = await getAncestorIdWithRole(user.id, 'manager');
+  if (project.manager_id !== ownManagerId) {
     return res.status(403).json({ error: "project does not belong to this employee's manager" });
   }
 
@@ -51,7 +66,6 @@ timeEntriesRouter.post('/', requireAuth, ah(async (req, res) => {
 
 timeEntriesRouter.patch('/:id/review', requireAuth, ah(async (req, res) => {
   const { decision } = req.body;
-  if (req.authUser.role !== 'manager') return res.status(403).json({ error: 'manager access required' });
   if (!['approved', 'rejected'].includes(decision)) {
     return res.status(400).json({ error: 'decision must be approved or rejected' });
   }
@@ -60,7 +74,13 @@ timeEntriesRouter.patch('/:id/review', requireAuth, ah(async (req, res) => {
     JOIN projects p ON p.id = te.project_id WHERE te.id = ?
   `).get(req.params.id);
   if (!entry) return res.status(404).json({ error: 'time entry not found' });
-  if (entry.project_manager_id !== req.authUser.id) return res.status(403).json({ error: 'not your team' });
+  // isManagerInScope's ancestor-branch would also match the employee who
+  // logged the entry against their own department's project — explicitly
+  // excluded, since an employee must never approve their own (or anyone's)
+  // time entry.
+  if (req.authUser.role === 'employee' || !(await isManagerInScope(req.authUser, entry.project_manager_id))) {
+    return res.status(403).json({ error: 'not your team' });
+  }
   if (entry.status !== 'pending') return res.status(409).json({ error: `already ${entry.status}` });
 
   await db.prepare(`

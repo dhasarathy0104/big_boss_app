@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, authorizeScopedQuery } from '../auth.js';
+import { getDescendantIds } from '../hierarchy.js';
 import { ah } from '../asyncHandler.js';
 
 export const attendanceRouter = Router();
@@ -51,13 +52,17 @@ attendanceRouter.get('/', requireAuth, ah(async (req, res) => {
     return res.json(records);
   }
 
+  // "managerId" is the requesting supervisor's own id at any tier (see
+  // authorizeScopedQuery) — their whole subtree, not just direct reports.
+  const descendantIds = await getDescendantIds(Number(managerId));
+  if (descendantIds.length === 0) return res.json([]);
   const day = date || new Date().toISOString().slice(0, 10);
   const records = await db.prepare(`
     SELECT a.*, u.name AS user_name
     FROM attendance_records a
     JOIN users u ON u.id = a.user_id
-    WHERE u.parent_id = ? AND a.clock_in >= ? AND a.clock_in < ?
+    WHERE u.id = ANY(?) AND a.clock_in >= ? AND a.clock_in < ?
     ORDER BY a.clock_in DESC
-  `).all(managerId, `${day}T00:00:00.000Z`, `${day}T23:59:59.999Z`);
+  `).all(descendantIds, `${day}T00:00:00.000Z`, `${day}T23:59:59.999Z`);
   res.json(records);
 }));

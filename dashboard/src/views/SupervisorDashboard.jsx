@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, Camera, Clock, UserPlus, LogOut } from 'lucide-react';
+import { Activity, Camera, Clock, UserPlus, Users, CalendarCheck, KanbanSquare, LogOut } from 'lucide-react';
 import { todayStr } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
 import DeskIllustration from '../components/DeskIllustration.jsx';
@@ -7,16 +7,21 @@ import LiveView from './LiveView.jsx';
 import TimelineView from './TimelineView.jsx';
 import ScreenshotsView from './ScreenshotsView.jsx';
 import SupervisorTeamView from './SupervisorTeamView.jsx';
+import SupervisorEmployeeManagementView from './SupervisorEmployeeManagementView.jsx';
+import AttendanceReviewView from './AttendanceReviewView.jsx';
+import SupervisorProjectsHub from './SupervisorProjectsHub.jsx';
 import { LOGO_DATA_URI } from '../logo.js';
+import { ROLE_LABEL } from '../roles.js';
 
 const TABS = [
   { key: 'live', label: 'Live', icon: Activity },
   { key: 'timeline', label: 'Timeline', icon: Clock },
   { key: 'screenshots', label: 'Screenshots', icon: Camera },
+  { key: 'employees', label: 'Employee Management', icon: Users },
+  { key: 'projects', label: 'Projects', icon: KanbanSquare },
+  { key: 'attendance', label: 'Attendance & Leave', icon: CalendarCheck },
   { key: 'team', label: 'Team & Invite', icon: UserPlus },
 ];
-
-const ROLE_LABEL = { gm: 'General Manager', agm: 'Assistant General Manager', manager: 'Manager', am: 'Assistant Manager', tl: 'Team Lead' };
 
 // The shared dashboard for every level above Employee except Manager (which
 // keeps its own richer dashboard — Projects, Billing, Category Rules, and
@@ -118,6 +123,9 @@ export default function SupervisorDashboard({ user, onLogout }) {
             settingsUrl={`/api/supervisors/${supervisorId}/settings`}
           />
         )}
+        {activeTab === 'employees' && <SupervisorEmployeeManagementView supervisorId={supervisorId} />}
+        {activeTab === 'projects' && <SupervisorProjectsHub supervisorId={supervisorId} role={user.role} />}
+        {activeTab === 'attendance' && <AttendanceReviewView managerId={supervisorId} />}
         {activeTab === 'team' && <SupervisorTeamView supervisorId={supervisorId} />}
       </main>
     </div>

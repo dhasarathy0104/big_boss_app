@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { setToken } from '../api.js';
 import { LOGO_DATA_URI } from '../logo.js';
-
-const ROLE_LABEL = { gm: 'General Manager', agm: 'Assistant General Manager', manager: 'Manager', am: 'Assistant Manager', tl: 'Team Lead' };
+import { ROLE_LABEL } from '../roles.js';
 
 function Brand() {
   return (

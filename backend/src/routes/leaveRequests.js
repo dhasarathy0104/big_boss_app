@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, authorizeScopedQuery } from '../auth.js';
+import { getDescendantIds, isSelfOrDescendant } from '../hierarchy.js';
 import { ah } from '../asyncHandler.js';
 
 export const leaveRequestsRouter = Router();
@@ -18,13 +19,17 @@ leaveRequestsRouter.get('/', requireAuth, ah(async (req, res) => {
     `).all(userId));
   }
 
+  // "managerId" is the requesting supervisor's own id at any tier (see
+  // authorizeScopedQuery) — their whole subtree, not just direct reports.
+  const descendantIds = await getDescendantIds(Number(managerId));
+  if (descendantIds.length === 0) return res.json([]);
   const requests = await db.prepare(`
     SELECT l.*, u.name AS user_name
     FROM leave_requests l
     JOIN users u ON u.id = l.user_id
-    WHERE u.parent_id = ?
+    WHERE u.id = ANY(?)
     ORDER BY l.created_at DESC
-  `).all(managerId);
+  `).all(descendantIds);
   res.json(requests);
 }));
 
@@ -45,16 +50,18 @@ leaveRequestsRouter.post('/', requireAuth, ah(async (req, res) => {
 
 leaveRequestsRouter.patch('/:id/review', requireAuth, ah(async (req, res) => {
   const { decision } = req.body;
-  if (req.authUser.role !== 'manager') return res.status(403).json({ error: 'manager access required' });
+  if (req.authUser.role === 'employee') return res.status(403).json({ error: 'supervisor access required' });
   if (!['approved', 'rejected'].includes(decision)) {
     return res.status(400).json({ error: 'decision must be approved or rejected' });
   }
-  const request = await db.prepare(`
-    SELECT l.*, u.parent_id AS employee_manager_id FROM leave_requests l
-    JOIN users u ON u.id = l.user_id WHERE l.id = ?
-  `).get(req.params.id);
+  const request = await db.prepare('SELECT * FROM leave_requests WHERE id = ?').get(req.params.id);
   if (!request) return res.status(404).json({ error: 'leave request not found' });
-  if (request.employee_manager_id !== req.authUser.id) return res.status(403).json({ error: 'not your team' });
+  // Leave belongs to the requesting employee directly, not to a project —
+  // isSelfOrDescendant (unlike isManagerInScope) is the right check here,
+  // same as team management already uses.
+  if (!(await isSelfOrDescendant(req.authUser, request.user_id)) || request.user_id === req.authUser.id) {
+    return res.status(403).json({ error: 'not your team' });
+  }
   if (request.status !== 'pending') return res.status(409).json({ error: `already ${request.status}` });
 
   await db.prepare(`

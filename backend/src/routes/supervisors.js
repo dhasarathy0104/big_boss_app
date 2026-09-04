@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { db, randomToken } from '../db.js';
 import { requireSupervisorSelf, hashPassword } from '../auth.js';
-import { getDescendantIds, roleBelow } from '../hierarchy.js';
+import { getDescendantIds, getAncestorIdWithRole, roleBelow } from '../hierarchy.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
+import { deleteEmployeeCascade } from '../deleteUser.js';
 import { ah } from '../asyncHandler.js';
 
 // Generalized invite management for any level above Employee (GM, AGM,
@@ -79,6 +80,87 @@ supervisorsRouter.get('/:id/employees', requireSupervisorSelf, ah(async (req, re
   res.json(employees);
 }));
 
+// Every employee anywhere below this supervisor, with full profile detail —
+// the generalized version of routes/managers.js's employee-management team
+// listing, now available to GM/AGM/Manager/AM/TL, not just Manager. TL/AM
+// resolve via a fixed two-hop join (an employee's parent is always a TL,
+// whose parent is always an AM, per hierarchy.js's ROLE_ORDER) — the same
+// shape managers.js already uses, valid for any supervisor's subtree
+// regardless of how deep they sit above it.
+supervisorsRouter.get('/:id/employees-full', requireSupervisorSelf, ah(async (req, res) => {
+  const descendantIds = await getDescendantIds(Number(req.params.id));
+  if (descendantIds.length === 0) return res.json([]);
+  const employees = await db.prepare(`
+    SELECT e.id, e.name, e.email, e.mobile, e.department, e.job_role AS "jobRole", e.created_at,
+      (e.claim_token IS NOT NULL) AS "hasPendingClaim", (e.password_hash IS NOT NULL) AS "hasDashboardLogin",
+      (e.password_reset_requested_at IS NOT NULL) AS "passwordResetRequested",
+      tl.id AS "tlId", tl.name AS "tlName", am.id AS "amId", am.name AS "amName"
+    FROM users e
+    LEFT JOIN users tl ON tl.id = e.parent_id AND tl.role = 'tl'
+    LEFT JOIN users am ON am.id = tl.parent_id AND am.role = 'am'
+    WHERE e.id = ANY(?) AND e.role = 'employee' ORDER BY e.name
+  `).all(descendantIds);
+  const withManagers = await Promise.all(employees.map(async (e) => {
+    const managerId = await getAncestorIdWithRole(e.id, 'manager');
+    const manager = managerId ? await db.prepare('SELECT name FROM users WHERE id = ?').get(managerId) : null;
+    return { ...e, managerId, managerName: manager?.name ?? null };
+  }));
+  res.json(withManagers);
+}));
+
+// Edits one employee's profile (and optionally password) anywhere in this
+// supervisor's subtree — the generalized version of routes/managers.js's
+// PATCH .../team/:employeeId. Scoped by getDescendantIds instead of direct
+// parent_id, since a GM/AGM/AM/TL's employees are rarely their direct
+// reports.
+supervisorsRouter.patch('/:id/employees/:employeeId', requireSupervisorSelf, ah(async (req, res) => {
+  const descendantIds = await getDescendantIds(Number(req.params.id));
+  const employee = descendantIds.includes(Number(req.params.employeeId))
+    ? await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'").get(req.params.employeeId)
+    : null;
+  if (!employee) return res.status(404).json({ error: 'employee not found in your team' });
+
+  const { name, email, mobile, department, jobRole, password } = req.body;
+  if (name !== undefined && !name.trim()) return res.status(400).json({ error: 'name cannot be blank' });
+  if (password !== undefined && password !== '' && password.length < 8) {
+    return res.status(400).json({ error: 'password must be at least 8 characters' });
+  }
+
+  const updates = [];
+  const values = [];
+  if (name !== undefined) { updates.push('name = ?'); values.push(name.trim()); }
+  if (email !== undefined) { updates.push('email = ?'); values.push(email.trim() || null); }
+  if (mobile !== undefined) { updates.push('mobile = ?'); values.push(mobile.trim() || null); }
+  if (department !== undefined) { updates.push('department = ?'); values.push(department.trim() || null); }
+  if (jobRole !== undefined) { updates.push('job_role = ?'); values.push(jobRole.trim() || null); }
+  if (password) { updates.push('password_hash = ?', 'password_reset_requested_at = NULL'); values.push(hashPassword(password)); }
+  if (updates.length === 0) return res.status(400).json({ error: 'nothing to update' });
+
+  values.push(employee.id);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  const updated = await db.prepare(`
+    SELECT id, name, email, mobile, department, job_role AS "jobRole", created_at,
+      (claim_token IS NOT NULL) AS "hasPendingClaim", (password_hash IS NOT NULL) AS "hasDashboardLogin",
+      (password_reset_requested_at IS NOT NULL) AS "passwordResetRequested"
+    FROM users WHERE id = ?
+  `).get(employee.id);
+  res.json(updated);
+}));
+
+// Permanently removes an employee anywhere in this supervisor's subtree and
+// all their tracked data — the generalized version of routes/managers.js's
+// DELETE .../team/:employeeId, reusing the same cascade helper.
+supervisorsRouter.delete('/:id/employees/:employeeId', requireSupervisorSelf, ah(async (req, res) => {
+  const descendantIds = await getDescendantIds(Number(req.params.id));
+  const employee = descendantIds.includes(Number(req.params.employeeId))
+    ? await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'").get(req.params.employeeId)
+    : null;
+  if (!employee) return res.status(404).json({ error: 'employee not found in your team' });
+
+  await deleteEmployeeCascade(employee.id);
+  res.json({ ok: true });
+}));
+
 // Screenshot interval / tracking hours — the generalized version of
 // routes/managers.js's settings endpoints, usable by any supervisor tier
 // for the people directly below them (see server.js's agent-settings/
@@ -139,6 +221,31 @@ supervisorsRouter.patch('/:id/settings', requireSupervisorSelf, ah(async (req, r
 supervisorsRouter.get('/:id/invite-role', requireSupervisorSelf, ah(async (req, res) => {
   const user = await db.prepare('SELECT role FROM users WHERE id = ?').get(req.params.id);
   res.json({ role: roleBelow(user?.role) });
+}));
+
+// Which Manager-owned department(s) this supervisor can reach, for wiring
+// up the existing Manager-scoped views (ProjectsView/CategoriesView/
+// BillingView all take a single managerId) without a second copy of them.
+// AM/TL only ever have one department (their own ancestor Manager); GM/AGM
+// can span several, so the frontend shows a picker built from this list —
+// never a client-guessed id, since every managerId it returns is already
+// confirmed to be in this supervisor's own subtree.
+supervisorsRouter.get('/:id/managers-in-scope', requireSupervisorSelf, ah(async (req, res) => {
+  const user = await db.prepare('SELECT id, name, role FROM users WHERE id = ?').get(req.params.id);
+  if (user.role === 'manager') {
+    return res.json([{ id: user.id, name: user.name }]);
+  }
+  if (user.role === 'am' || user.role === 'tl') {
+    const managerId = await getAncestorIdWithRole(user.id, 'manager');
+    if (!managerId) return res.json([]);
+    const manager = await db.prepare('SELECT id, name FROM users WHERE id = ?').get(managerId);
+    return res.json(manager ? [manager] : []);
+  }
+  // gm / agm: every Manager anywhere in their subtree.
+  const descendantIds = await getDescendantIds(user.id);
+  if (descendantIds.length === 0) return res.json([]);
+  const managers = await db.prepare("SELECT id, name FROM users WHERE id = ANY(?) AND role = 'manager' ORDER BY name").all(descendantIds);
+  res.json(managers);
 }));
 
 // Other accounts at this same level, to pick a transfer destination from —

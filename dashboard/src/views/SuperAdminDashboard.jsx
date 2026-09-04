@@ -16,6 +16,7 @@ import TimelineView from './TimelineView.jsx';
 import ScreenshotsView, { TrackingHoursControl, IntervalControl } from './ScreenshotsView.jsx';
 import SupervisorTeamView from './SupervisorTeamView.jsx';
 import { LOGO_DATA_URI } from '../logo.js';
+import { ROLE_LABEL } from '../roles.js';
 
 const TASK_STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', review: 'Review', done: 'Done' };
 
@@ -1108,8 +1109,6 @@ function AdminsListPanel({ overview, onChanged }) {
   );
 }
 
-const REASSIGN_ROLE_LABEL = { gm: 'GM', agm: 'AGM', manager: 'Manager', am: 'Assistant Manager', tl: 'Team Lead', employee: 'Employee' };
-
 // Reassigns any one account anywhere in the org to a new parent at any
 // level — the super admin's version of the peer-transfer every supervisor
 // tier now has for their own direct reports (see SupervisorTeamView.jsx and
@@ -1172,13 +1171,13 @@ function ReassignPanel() {
         <select value={userId} onChange={(e) => setUserId(e.target.value)}>
           <option value="">Who to move…</option>
           {users.map((u) => (
-            <option key={u.id} value={u.id}>{u.name} ({REASSIGN_ROLE_LABEL[u.role] ?? u.role})</option>
+            <option key={u.id} value={u.id}>{u.name} ({ROLE_LABEL[u.role] ?? u.role})</option>
           ))}
         </select>
         {userId && (
           <select value={newParentId} onChange={(e) => setNewParentId(e.target.value)} disabled={candidates.length === 0}>
             <option value="">
-              {candidates.length === 0 ? `No valid destination for a ${REASSIGN_ROLE_LABEL[selectedUser?.role] ?? ''}` : 'Move to report to…'}
+              {candidates.length === 0 ? `No valid destination for a ${ROLE_LABEL[selectedUser?.role] ?? ''}` : 'Move to report to…'}
             </option>
             {candidates.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
@@ -1251,7 +1250,7 @@ function PasswordResetRequestsPanel() {
             {requests.map((r) => (
               <tr key={r.id}>
                 <td>{r.name}</td>
-                <td><span className="badge-role">{REASSIGN_ROLE_LABEL[r.role] ?? r.role}</span></td>
+                <td><span className="badge-role">{ROLE_LABEL[r.role] ?? r.role}</span></td>
                 <td>{r.reportsTo || '—'}</td>
                 <td>
                   {settingFor === r.id ? (

@@ -1,23 +1,27 @@
 import { Router } from 'express';
 import { db, withTransaction } from '../db.js';
 import { requireAuth } from '../auth.js';
+import { isManagerInScope, roleAtOrAbove } from '../hierarchy.js';
 import { ah } from '../asyncHandler.js';
 
 export const projectsRouter = Router();
 
-// Read by both a manager (their own projects) and their employees (to pick a
-// project to log time against) — same permission shape as isSelfOrOwnEmployee,
-// just checking a managerId instead of a userId.
-function canSeeManagersProjects(authUser, managerId) {
-  if (authUser.role === 'superadmin') return true;
-  if (authUser.role === 'manager') return authUser.id === managerId;
-  return authUser.parent_id === managerId;
+// Project lifecycle (create/delete) is deliberately narrower than viewing —
+// only Manager-and-above (Manager/AGM/GM/superadmin) can own or remove a
+// project; AM/TL explicitly get view/task-management access (see tasks.js)
+// but never become the owner, per the hierarchy rework's permission model.
+function canOwnProject(authUser) {
+  return authUser.role === 'superadmin' || roleAtOrAbove(authUser.role, 'manager');
 }
 
+// Department-wide project browsing — deliberately not for employees. An
+// employee's own project visibility is tied to their assigned work instead
+// (see GET /api/tasks/mine, which already returns each task's project name
+// directly), not a browsable list of every project their department has.
 projectsRouter.get('/', requireAuth, ah(async (req, res) => {
   const { managerId } = req.query;
   if (!managerId) return res.status(400).json({ error: 'managerId required' });
-  if (!canSeeManagersProjects(req.authUser, Number(managerId))) {
+  if (req.authUser.role === 'employee' || !(await isManagerInScope(req.authUser, Number(managerId)))) {
     return res.status(403).json({ error: 'not your team' });
   }
   const projects = await db.prepare('SELECT * FROM projects WHERE manager_id = ? ORDER BY created_at DESC').all(managerId);
@@ -27,12 +31,16 @@ projectsRouter.get('/', requireAuth, ah(async (req, res) => {
 projectsRouter.post('/', requireAuth, ah(async (req, res) => {
   const { managerId, name, clientName, isBillable, hourlyRate } = req.body;
   if (!managerId || !name?.trim()) return res.status(400).json({ error: 'managerId and name required' });
+  if (!canOwnProject(req.authUser)) return res.status(403).json({ error: 'manager access required' });
 
-  const isOwnProject = req.authUser.role === 'manager' && req.authUser.id === Number(managerId);
-  const isSuperAdminAssigning = req.authUser.role === 'superadmin'
-    && await db.prepare("SELECT 1 FROM users WHERE id = ? AND role = 'manager'").get(managerId);
-  if (!isOwnProject && !isSuperAdminAssigning) {
-    return res.status(403).json({ error: 'manager access required' });
+  const targetIsManager = await db.prepare("SELECT 1 FROM users WHERE id = ? AND role = 'manager'").get(managerId);
+  if (!targetIsManager) return res.status(400).json({ error: 'managerId must belong to a manager account' });
+
+  // canOwnProject already excluded AM/TL/Employee above, so isManagerInScope
+  // here only ever takes its "at-or-above manager" branch: exact self-match
+  // for a Manager, descendant-match for GM/AGM, always-true for superadmin.
+  if (!(await isManagerInScope(req.authUser, Number(managerId)))) {
+    return res.status(403).json({ error: 'that manager is outside your hierarchy' });
   }
 
   const info = await db.prepare(`
@@ -42,17 +50,16 @@ projectsRouter.post('/', requireAuth, ah(async (req, res) => {
   res.json(await db.prepare('SELECT * FROM projects WHERE id = ?').get(info.lastInsertRowid));
 }));
 
-// Manager (their own project) or super admin (any project, since a super
-// admin is the one who can assign a project to a manager in the first
-// place). Removes the project entirely — its tasks, and any time entries
-// logged against it (project_id is required on a time entry, so those can't
-// be kept dangling once the project is gone).
+// Manager (their own project), GM/AGM (a project owned by a manager in
+// their subtree), or super admin (any project) can remove it entirely — its
+// tasks, and any time entries logged against it (project_id is required on
+// a time entry, so those can't be kept dangling once the project is gone).
+// Never AM/TL — see canOwnProject.
 projectsRouter.delete('/:id', requireAuth, ah(async (req, res) => {
   const project = await db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!project) return res.status(404).json({ error: 'project not found' });
 
-  const isOwnProject = req.authUser.role === 'manager' && req.authUser.id === project.manager_id;
-  if (req.authUser.role !== 'superadmin' && !isOwnProject) {
+  if (!canOwnProject(req.authUser) || !(await isManagerInScope(req.authUser, project.manager_id))) {
     return res.status(403).json({ error: 'not your project' });
   }
 
