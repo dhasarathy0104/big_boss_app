@@ -14,6 +14,7 @@ import Modal from '../components/Modal.jsx';
 import WebRTCViewer from '../components/WebRTCViewer.jsx';
 import TimelineView from './TimelineView.jsx';
 import ScreenshotsView, { TrackingHoursControl, IntervalControl } from './ScreenshotsView.jsx';
+import SupervisorTeamView from './SupervisorTeamView.jsx';
 import { LOGO_DATA_URI } from '../logo.js';
 
 const TASK_STATUS_LABEL = { todo: 'To do', in_progress: 'In progress', review: 'Review', done: 'Done' };
@@ -1275,10 +1276,17 @@ function PasswordResetRequestsPanel() {
   );
 }
 
-function ManageTab({ overview, onChanged }) {
+function ManageTab({ overview, onChanged, superadminId }) {
   return (
     <>
       <PasswordResetRequestsPanel />
+      {/* Starts the new GM-down hierarchy — the super admin invites a GM the
+          same way every other level invites the one below it (see
+          SupervisorTeamView.jsx / hierarchy.js's roleBelow). CreateAdminPanel
+          below is the older, separate "create a Manager account directly, no
+          invite" flow kept for the two-level org shape from before this
+          rework — the two coexist since neither replaces the other. */}
+      <SupervisorTeamView supervisorId={superadminId} />
       <CreateAdminPanel onCreated={onChanged} />
       <ReassignPanel />
       <AdminsListPanel overview={overview} onChanged={onChanged} />
@@ -1372,7 +1380,7 @@ export default function SuperAdminDashboard({ user, onLogout }) {
           </>
         )}
         {activeTab === 'employees' && <SuperAdminEmployeesTab overview={overview} onChanged={reloadOverview} />}
-        {activeTab === 'manage' && <ManageTab overview={overview} onChanged={reloadOverview} />}
+        {activeTab === 'manage' && <ManageTab overview={overview} onChanged={reloadOverview} superadminId={user.id} />}
         {activeTab === 'assign' && <AssignTab overview={overview} />}
       </main>
     </div>
