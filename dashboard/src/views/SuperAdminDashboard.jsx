@@ -1184,26 +1184,101 @@ function ReassignPanel() {
   );
 }
 
+// Every pending "Forgot password?" request in the org, any role — the super
+// admin sees all of them as a backstop, on top of whoever's own direct
+// supervisor already sees the same request in their Team & Invite tab (an
+// employee's TL, or a GM/AGM/Manager/AM's own supervisor).
+function PasswordResetRequestsPanel() {
+  const [requests, setRequests] = useState(null);
+  const [settingFor, setSettingFor] = useState(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  function load() {
+    fetch('/api/superadmin/password-reset-requests').then((r) => r.json()).then(setRequests);
+  }
+
+  useEffect(load, []);
+
+  function startSet(id) {
+    setSettingFor(id);
+    setNewPassword('');
+    setError('');
+  }
+
+  async function saveNewPassword(id) {
+    if (newPassword.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    setSaving(true);
+    setError('');
+    const res = await fetch(`/api/superadmin/users/${id}/set-password`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: newPassword }),
+    });
+    setSaving(false);
+    if (!res.ok) { setError((await res.json()).error); return; }
+    setSettingFor(null);
+    load();
+  }
+
+  if (!requests || requests.length === 0) return null;
+
+  return (
+    <div className="panel">
+      <div className="section-head">
+        <div className="section-icon"><AlertCircle size={22} /></div>
+        <div>
+          <h2 className="card-title">Password reset requested ({requests.length})</h2>
+          <p className="card-subtitle">
+            These accounts clicked "Forgot password?" on the login screen — any role, org-wide. Set them a new one directly below.
+          </p>
+        </div>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table>
+          <thead><tr><th>Name</th><th>Role</th><th>Reports to</th><th></th></tr></thead>
+          <tbody>
+            {requests.map((r) => (
+              <tr key={r.id}>
+                <td>{r.name}</td>
+                <td><span className="badge-role">{REASSIGN_ROLE_LABEL[r.role] ?? r.role}</span></td>
+                <td>{r.reportsTo || '—'}</td>
+                <td>
+                  {settingFor === r.id ? (
+                    <div className="inline-form" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                      <input
+                        type="password"
+                        placeholder="New password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        style={{ width: 140 }}
+                      />
+                      <button className="btn-small" disabled={saving} onClick={() => saveNewPassword(r.id)}>
+                        {saving ? 'Saving…' : 'Save'}
+                      </button>
+                      <button className="btn-small" onClick={() => setSettingFor(null)}>Cancel</button>
+                    </div>
+                  ) : (
+                    <button className="btn-small" onClick={() => startSet(r.id)}>Set password</button>
+                  )}
+                  {settingFor === r.id && error && (
+                    <div style={{ color: '#e07070', fontSize: 11, marginTop: 4 }}>{error}</div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function ManageTab({ overview, onChanged }) {
-  const requested = (overview?.admins ?? []).filter((a) => a.passwordResetRequested);
   return (
     <>
-      {requested.length > 0 && (
-        <div className="panel">
-          <div className="section-head">
-            <div className="section-icon"><AlertCircle size={22} /></div>
-            <div>
-              <h2 className="card-title">Password reset requested ({requested.length})</h2>
-              <p className="card-subtitle">
-                These admins clicked "Forgot password?" on the login screen. Click their row's pencil icon below to set them a new one.
-              </p>
-            </div>
-          </div>
-          <div className="chip-row">
-            {requested.map((a) => <div className="chip" key={a.id}>{a.name}</div>)}
-          </div>
-        </div>
-      )}
+      <PasswordResetRequestsPanel />
       <CreateAdminPanel onCreated={onChanged} />
       <ReassignPanel />
       <AdminsListPanel overview={overview} onChanged={onChanged} />

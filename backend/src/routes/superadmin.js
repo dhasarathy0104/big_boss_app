@@ -282,6 +282,39 @@ superadminRouter.post('/users/:id/reassign', requireSuperAdmin, ah(async (req, r
   res.json({ ok: true, userId: user.id, newParentId: newParent.id, newParentName: newParent.name });
 }));
 
+// Every pending "Forgot password?" request in the org, any role — by
+// design, the super admin is always one of the people notified regardless
+// of who clicked it (a GM/AGM/Manager/AM/TL's own supervisor already sees
+// their request in their own Team & Invite tab; an employee's TL likewise
+// sees theirs there — this is what makes the super admin see all of them
+// too, as a backstop, rather than only the two-level slice /overview shows).
+superadminRouter.get('/password-reset-requests', requireSuperAdmin, ah(async (req, res) => {
+  const rows = await db.prepare(`
+    SELECT u.id, u.name, u.email, u.role, p.name AS "reportsTo"
+    FROM users u LEFT JOIN users p ON p.id = u.parent_id
+    WHERE u.role != 'superadmin' AND u.password_reset_requested_at IS NOT NULL
+    ORDER BY u.role, u.name
+  `).all();
+  res.json(rows);
+}));
+
+// Sets a new password for any one account in the org, any role — the super
+// admin's fulfillment side of the request list above, generalizing the
+// manager-only /managers/:id/change-password to work for GM/AGM/AM/TL and
+// employee accounts too.
+superadminRouter.post('/users/:id/set-password', requireSuperAdmin, ah(async (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 8) {
+    return res.status(400).json({ error: 'a password of at least 8 characters is required' });
+  }
+  const user = await db.prepare("SELECT * FROM users WHERE id = ? AND role != 'superadmin'").get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'user not found' });
+
+  await db.prepare('UPDATE users SET password_hash = ?, password_reset_requested_at = NULL WHERE id = ?')
+    .run(hashPassword(password), user.id);
+  res.json({ ok: true });
+}));
+
 // Org structure: how many admins, how many employees, and who reports to
 // whom. No screenshot/activity data here — that's an employee-monitoring
 // concept, not something extended to overseeing admins themselves.
