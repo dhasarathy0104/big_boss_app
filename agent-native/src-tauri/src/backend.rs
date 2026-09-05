@@ -63,6 +63,17 @@ struct RegisterAdminRequest<'a> {
     department: Option<&'a str>,
     #[serde(rename = "jobRole", skip_serializing_if = "Option::is_none")]
     job_role: Option<&'a str>,
+    // Which superior this role reports to. am needs manager_id; tl needs
+    // both manager_id and am_id (cross-checked server-side that the pair
+    // actually matches); manager/gm/agm need neither — each of those has
+    // only ever one possible parent (the one AGM, one super admin, and one
+    // GM respectively), resolved automatically. See
+    // backend/src/routes/auth.js's register-admin for the matching
+    // per-role validation.
+    #[serde(rename = "managerId", skip_serializing_if = "Option::is_none")]
+    manager_id: Option<i64>,
+    #[serde(rename = "amId", skip_serializing_if = "Option::is_none")]
+    am_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -151,15 +162,20 @@ impl BackendClient {
         Self::parse_login_response(res, "login failed").await
     }
 
-    // Open self-service manager/superadmin signup — no invite link required.
+    // Open self-service signup for every non-employee role — no invite link
+    // required.
     pub async fn register_admin(
         &self, name: &str, email: &str, password: &str, role: &str,
         mobile: Option<&str>, department: Option<&str>, job_role: Option<&str>,
+        manager_id: Option<i64>, am_id: Option<i64>,
     ) -> Result<LoginResponse, String> {
         let res = self
             .http
             .post(format!("{}/api/auth/register-admin", self.base_url))
-            .json(&RegisterAdminRequest { name, email, password, role, mobile, department, job_role })
+            .json(&RegisterAdminRequest {
+                name, email, password, role, mobile, department, job_role,
+                manager_id, am_id,
+            })
             .send()
             .await
             .map_err(|e| e.to_string())?;

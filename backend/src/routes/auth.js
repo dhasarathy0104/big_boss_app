@@ -78,15 +78,14 @@ authRouter.post('/claim-manager', ah(async (req, res) => {
 }));
 
 // Public — the open self-registration form's "who do you report to" pickers
-// (see register-admin below). Minimal fields only, reachable before login.
-// AM options carry their own manager's name/department too, since the TL
-// registration form derives Manager read-only from whichever AM is picked
-// rather than letting TL set it independently (see register-admin's tl
-// branch for why).
+// (see register-admin below): am registration picks a manager, tl
+// registration picks both an am and a manager independently. gm/agm need no
+// picker (see register-admin) so aren't offered here. AM options carry their
+// own manager's name/department too, for context in the TL form's list.
 authRouter.get('/accounts', ah(async (req, res) => {
   const { role } = req.query;
-  if (!['gm', 'agm', 'manager', 'am'].includes(role)) {
-    return res.status(400).json({ error: 'role must be one of gm, agm, manager, am' });
+  if (!['manager', 'am'].includes(role)) {
+    return res.status(400).json({ error: 'role must be one of manager, am' });
   }
   if (role === 'am') {
     const rows = await db.prepare(`
@@ -101,12 +100,13 @@ authRouter.get('/accounts', ah(async (req, res) => {
   res.json(rows);
 }));
 
-// Open self-service signup for every non-employee role — no invite link or
+// Open self-service signup for manager/am/tl — no invite link or
 // existing-supervisor approval required, by the same explicit-request
-// precedent as the original manager/superadmin version below. Extended to
-// cover the whole chain (gm/agm/manager/am/tl) so each level declares their
-// own place in the org by picking their real superior from /accounts above,
-// instead of requiring an invite from that superior.
+// precedent as the original manager/superadmin version. gm and agm are also
+// handled by this same endpoint (same INSERT, same capped-at-one pattern as
+// superadmin) but are deliberately not offered as choices in the open
+// registration form — there's only ever one of each, so they're created
+// directly once rather than self-registered.
 authRouter.post('/register-admin', ah(async (req, res) => {
   const { name, password, role } = req.body;
   const VALID_ROLES = ['gm', 'agm', 'manager', 'am', 'tl', 'superadmin'];
@@ -119,13 +119,20 @@ authRouter.post('/register-admin', ah(async (req, res) => {
   if (!name?.trim() || (role !== 'superadmin' && !email) || !password || password.length < 8) {
     return res.status(400).json({ error: `name${role === 'superadmin' ? ',' : ', email,'} and a password of at least 8 characters are required` });
   }
-  // Only ever one super admin, by explicit request. Unlike everyone else's
-  // self-registration, this isn't reopenable via the UI; someone has to
-  // remove the existing super admin first.
-  if (role === 'superadmin') {
-    const hasSuperAdmin = await db.prepare("SELECT 1 FROM users WHERE role = 'superadmin'").get();
-    if (hasSuperAdmin) return res.status(409).json({ error: 'a super admin account already exists' });
-  } else {
+  // Only ever one super admin, one General Manager, and one Assistant
+  // General Manager, by explicit request — every Manager reports to that
+  // same single AGM automatically (see the manager branch below), so there's
+  // never a real choice to make at that level anyway. Unlike Manager/AM/TL
+  // self-registration, none of these three are reopenable via the UI once
+  // filled; someone has to remove the existing account first. GM/AGM are
+  // deliberately left out of the open registration form's role choices (see
+  // RegisterAdminForm) — reaching this branch for either one is only ever a
+  // direct API call, same as how the one super admin account was created.
+  if (role === 'superadmin' || role === 'gm' || role === 'agm') {
+    const existingRole = await db.prepare('SELECT 1 FROM users WHERE role = ?').get(role);
+    if (existingRole) return res.status(409).json({ error: `a ${role === 'superadmin' ? 'super admin' : role === 'gm' ? 'General Manager' : 'Assistant General Manager'} account already exists` });
+  }
+  if (role !== 'superadmin') {
     const existing = await db.prepare('SELECT 1 FROM users WHERE email = ?').get(email);
     if (existing) return res.status(409).json({ error: 'that email is already registered' });
   }
@@ -133,29 +140,38 @@ authRouter.post('/register-admin', ah(async (req, res) => {
   // Resolve parent_id from whichever superior this role declared, never
   // trusting the client's claim about it without checking the row actually
   // holds the expected role — this is what keeps a self-declared hierarchy
-  // link from pointing at a made-up or wrong-tier id.
+  // link from pointing at a made-up or wrong-tier id. gm and manager need no
+  // picker at all: gm's parent is simply the one super admin, and manager's
+  // parent is simply the one AGM — there's only ever one of each, so asking
+  // which one to pick would be a dropdown with a single, forced answer.
   let parentId = null;
   if (role === 'gm') {
     const superadmin = await db.prepare("SELECT id FROM users WHERE role = 'superadmin'").get();
     if (!superadmin) return res.status(400).json({ error: 'no super admin exists yet for a General Manager to report to' });
     parentId = superadmin.id;
   } else if (role === 'agm') {
-    const gm = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'gm'").get(req.body.gmId);
-    if (!gm) return res.status(400).json({ error: 'select a valid General Manager' });
+    const gm = await db.prepare("SELECT id FROM users WHERE role = 'gm'").get();
+    if (!gm) return res.status(400).json({ error: 'no General Manager exists yet for an Assistant General Manager to report to' });
     parentId = gm.id;
   } else if (role === 'manager') {
-    const agm = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'agm'").get(req.body.agmId);
-    if (!agm) return res.status(400).json({ error: 'select a valid Assistant General Manager' });
+    const agm = await db.prepare("SELECT id FROM users WHERE role = 'agm'").get();
+    if (!agm) return res.status(400).json({ error: 'no Assistant General Manager exists yet for a Manager to report to' });
     parentId = agm.id;
   } else if (role === 'am') {
     const manager = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'manager'").get(req.body.managerId);
     if (!manager) return res.status(400).json({ error: 'select a valid Manager' });
     parentId = manager.id;
   } else if (role === 'tl') {
-    // Manager is deliberately derived from the picked AM's own chain, not a
-    // second independent field — see RegisterAdminForm's tl branch for why.
-    const am = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'am'").get(req.body.amId);
+    // TL declares both — unlike am/manager above, there's a real ambiguity
+    // to resolve (which AM, under which Manager), so both are asked for and
+    // cross-checked, rather than deriving one from the other silently.
+    const am = await db.prepare("SELECT id, parent_id FROM users WHERE id = ? AND role = 'am'").get(req.body.amId);
     if (!am) return res.status(400).json({ error: 'select a valid Assistant Manager' });
+    const manager = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'manager'").get(req.body.managerId);
+    if (!manager) return res.status(400).json({ error: 'select a valid Manager' });
+    if (am.parent_id !== manager.id) {
+      return res.status(400).json({ error: 'that Assistant Manager does not report to the selected Manager' });
+    }
     parentId = am.id;
   }
 

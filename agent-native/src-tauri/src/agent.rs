@@ -138,16 +138,20 @@ pub async fn login(email: &str, password: &str, name: Option<&str>, backend_url:
     Ok(finish_login(resp, backend_url))
 }
 
-// Open self-service manager/superadmin signup — no invite link required, by
-// explicit request. `role` must be "manager" or "superadmin"; the server
-// rejects anything else (including "employee" — that role only comes from
-// an invite-link enrollment or a manager-issued claim link).
+// Open self-service signup for every non-employee role (gm/agm/manager/am/tl;
+// superadmin is created separately, capped at one account) — no invite link
+// required, by explicit request. The server independently rejects "employee"
+// here regardless — that role only ever comes from a TL-issued invite-link
+// enrollment.
 pub async fn register_admin(
     name: &str, email: &str, password: &str, role: &str, backend_url: &str,
     mobile: Option<&str>, department: Option<&str>, job_role: Option<&str>,
+    manager_id: Option<i64>, am_id: Option<i64>,
 ) -> Result<LoginOutcome, String> {
     let client = BackendClient::new(backend_url.to_string());
-    let resp = client.register_admin(name, email, password, role, mobile, department, job_role).await?;
+    let resp = client
+        .register_admin(name, email, password, role, mobile, department, job_role, manager_id, am_id)
+        .await?;
     Ok(finish_login(resp, backend_url))
 }
 

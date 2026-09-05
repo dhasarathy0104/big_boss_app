@@ -230,7 +230,7 @@
       <input id="adminPassword" type="password" placeholder="Password" />
 
       <button id="submitAdmin">Log in</button>
-      <button class="text-link" id="goToAdminRegister">New here? Create a manager account</button>
+      <button class="text-link" id="goToAdminRegister">New here? Create an account</button>
       <button class="text-link" id="forgotAdmin">Forgot password?</button>
       <button class="text-link" data-back>&larr; Back</button>
       <div class="status" id="statusAdmin"></div>
@@ -251,8 +251,30 @@
     </div>
 
     <div id="screen-admin-register" class="screen">
-      <h1>Create a manager account</h1>
-      <p class="sub">Open signup — anyone with this server's address can create a manager account here.</p>
+      <h1>Create an account</h1>
+      <p class="sub">Open signup — anyone with this server's address can create an account at any level here.</p>
+
+      <label for="registerRole">Role</label>
+      <select id="registerRole">
+        <option value="manager" selected>Manager</option>
+        <option value="am">Assistant Manager</option>
+        <option value="tl">Team Lead</option>
+      </select>
+
+      <div id="registerAmManagerField" style="display:none">
+        <label for="registerManagerPicker">Manager</label>
+        <select id="registerManagerPicker"><option value="">Select Manager…</option></select>
+      </div>
+
+      <div id="registerTlAmField" style="display:none">
+        <label for="registerAmPicker">Assistant Manager</label>
+        <select id="registerAmPicker"><option value="">Select Assistant Manager…</option></select>
+      </div>
+
+      <div id="registerTlManagerField" style="display:none">
+        <label for="registerTlManagerPicker">Manager</label>
+        <select id="registerTlManagerPicker"><option value="">Select Manager…</option></select>
+      </div>
 
       <label for="registerName">Your name</label>
       <input id="registerName" placeholder="Jane Doe" />
@@ -263,11 +285,13 @@
       <label for="registerMobile">Mobile number</label>
       <input id="registerMobile" placeholder="98765 43210" />
 
-      <label for="registerDepartment">Department</label>
-      <input id="registerDepartment" placeholder="Sales" />
+      <div id="registerDepartmentField">
+        <label for="registerDepartment">Department</label>
+        <input id="registerDepartment" placeholder="Sales" />
+      </div>
 
-      <label for="registerJobRole">Role</label>
-      <input id="registerJobRole" placeholder="Manager" />
+      <label for="registerJobRole">Job title (optional)</label>
+      <input id="registerJobRole" placeholder="e.g. Manager" />
 
       <label for="registerPassword">Password</label>
       <input id="registerPassword" type="password" placeholder="Choose a password (8+ characters)" />
@@ -573,9 +597,19 @@
       }
     });
 
-    // --- Manager self-registration (super admin signup was removed — that
-    // role is capped at one account, created only from the super admin's own
-    // dashboard, not this open form) ---
+    // --- Open self-registration for manager/am/tl (super admin, General
+    // Manager, and Assistant General Manager are all capped at exactly one
+    // account, created directly rather than through this open form — see
+    // backend/src/routes/auth.js's register-admin). Matches
+    // dashboard/src/App.jsx's RegisterAdminForm field-for-field. ---
+    const registerRoleSelect = document.getElementById('registerRole');
+    const registerAmManagerFieldDiv = document.getElementById('registerAmManagerField');
+    const registerTlAmFieldDiv = document.getElementById('registerTlAmField');
+    const registerTlManagerFieldDiv = document.getElementById('registerTlManagerField');
+    const registerDepartmentFieldDiv = document.getElementById('registerDepartmentField');
+    const registerManagerPicker = document.getElementById('registerManagerPicker');
+    const registerAmPicker = document.getElementById('registerAmPicker');
+    const registerTlManagerPicker = document.getElementById('registerTlManagerPicker');
     const registerNameInput = document.getElementById('registerName');
     const registerEmailInput = document.getElementById('registerEmail');
     const registerMobileInput = document.getElementById('registerMobile');
@@ -585,11 +619,59 @@
     const submitRegisterAdminBtn = document.getElementById('submitRegisterAdmin');
     const statusRegisterAdminEl = document.getElementById('statusRegisterAdmin');
 
+    async function loadRegisterPicker(selectEl, role) {
+      const placeholder = selectEl.firstElementChild.textContent;
+      selectEl.innerHTML = '';
+      const placeholderOpt = document.createElement('option');
+      placeholderOpt.value = '';
+      placeholderOpt.textContent = placeholder;
+      selectEl.appendChild(placeholderOpt);
+      let rows = [];
+      try {
+        const res = await fetch(BACKEND_URL + '/api/auth/accounts?role=' + role);
+        rows = await res.json();
+      } catch {
+        return;
+      }
+      rows.forEach((r) => {
+        const opt = document.createElement('option');
+        opt.value = r.id;
+        opt.textContent = r.name + (role === 'manager' && r.department ? ` (${r.department})` : '');
+        selectEl.appendChild(opt);
+      });
+    }
+
+    // TL declares both their Assistant Manager and their Manager
+    // independently — the server cross-checks the pair actually matches
+    // (see register-admin's tl branch) rather than deriving one from the
+    // other, so both fields are asked for here rather than one being
+    // read-only.
+    function updateRegisterFields() {
+      const role = registerRoleSelect.value;
+      registerAmManagerFieldDiv.style.display = role === 'am' ? 'block' : 'none';
+      registerTlAmFieldDiv.style.display = role === 'tl' ? 'block' : 'none';
+      registerTlManagerFieldDiv.style.display = role === 'tl' ? 'block' : 'none';
+      registerDepartmentFieldDiv.style.display = role === 'manager' ? 'block' : 'none';
+
+      if (role === 'am') loadRegisterPicker(registerManagerPicker, 'manager');
+      if (role === 'tl') {
+        loadRegisterPicker(registerAmPicker, 'am');
+        loadRegisterPicker(registerTlManagerPicker, 'manager');
+      }
+    }
+
+    registerRoleSelect.addEventListener('change', updateRegisterFields);
+    document.getElementById('goToAdminRegister').addEventListener('click', () => {
+      registerRoleSelect.value = 'manager';
+      updateRegisterFields();
+    });
+
     submitRegisterAdminBtn.addEventListener('click', async () => {
       statusRegisterAdminEl.textContent = '';
       statusRegisterAdminEl.className = 'status';
 
       const backendUrl = BACKEND_URL;
+      const role = registerRoleSelect.value;
       const name = registerNameInput.value.trim();
       const email = registerEmailInput.value.trim();
       const password = registerPasswordInput.value;
@@ -604,16 +686,33 @@
         statusRegisterAdminEl.className = 'status error';
         return;
       }
+      if (role === 'am' && !registerManagerPicker.value) {
+        statusRegisterAdminEl.textContent = 'Select a Manager.';
+        statusRegisterAdminEl.className = 'status error';
+        return;
+      }
+      if (role === 'tl' && !registerAmPicker.value) {
+        statusRegisterAdminEl.textContent = 'Select an Assistant Manager.';
+        statusRegisterAdminEl.className = 'status error';
+        return;
+      }
+      if (role === 'tl' && !registerTlManagerPicker.value) {
+        statusRegisterAdminEl.textContent = 'Select a Manager.';
+        statusRegisterAdminEl.className = 'status error';
+        return;
+      }
 
       submitRegisterAdminBtn.disabled = true;
       statusRegisterAdminEl.textContent = 'Creating account…';
 
       try {
         await invoke('submit_register_admin', {
-          backendUrl, name, email, password, role: 'manager',
+          backendUrl, name, email, password, role,
           mobile: registerMobileInput.value.trim() || null,
           department: registerDepartmentInput.value.trim() || null,
           jobRole: registerJobRoleInput.value.trim() || null,
+          managerId: role === 'am' ? Number(registerManagerPicker.value) : role === 'tl' ? Number(registerTlManagerPicker.value) : null,
+          amId: role === 'tl' ? Number(registerAmPicker.value) : null,
         });
         statusRegisterAdminEl.textContent = 'Account created — opening your dashboard…';
         statusRegisterAdminEl.className = 'status ok';

@@ -153,13 +153,15 @@ async fn submit_login(app: AppHandle, backend_url: String, email: String, passwo
     Ok(())
 }
 
-// Open self-service manager/superadmin signup — no invite link required.
+// Open self-service signup for manager/am/tl — no invite link required.
 // Otherwise identical to submit_login (a fresh admin account never carries
 // an agent_key, so this never starts tracking, only opens the dashboard).
+// manager_id/am_id: am sends manager_id only; tl sends both (cross-checked
+// server-side); manager sends neither — see setup-ui/index.html's form.
 #[tauri::command]
-async fn submit_register_admin(app: AppHandle, backend_url: String, name: String, email: String, password: String, role: String, mobile: Option<String>, department: Option<String>, job_role: Option<String>) -> Result<(), String> {
+async fn submit_register_admin(app: AppHandle, backend_url: String, name: String, email: String, password: String, role: String, mobile: Option<String>, department: Option<String>, job_role: Option<String>, manager_id: Option<i64>, am_id: Option<i64>) -> Result<(), String> {
     let trimmed = backend_url.trim().trim_end_matches('/').to_string();
-    let outcome = agent::register_admin(&name, &email, &password, &role, &trimmed, mobile.as_deref(), department.as_deref(), job_role.as_deref()).await?;
+    let outcome = agent::register_admin(&name, &email, &password, &role, &trimmed, mobile.as_deref(), department.as_deref(), job_role.as_deref(), manager_id, am_id).await?;
 
     open_dashboard_window_with_token(&app, &trimmed, &outcome.token).map_err(|e| e.to_string())?;
 

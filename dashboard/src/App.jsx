@@ -12,9 +12,10 @@ import { SUPERVISOR_DASHBOARD_ROLES } from './roles.js';
 // Role choices for the open self-registration form below, and which picker
 // field(s) each one needs to declare its place in the org — see
 // backend/src/routes/auth.js's register-admin for the matching validation.
+// General Manager and Assistant General Manager are deliberately not
+// offered here — there's only ever one of each (like super admin), so
+// they're created directly once rather than self-registered.
 const REGISTER_ROLES = [
-  { value: 'gm', label: 'General Manager' },
-  { value: 'agm', label: 'Assistant General Manager' },
   { value: 'manager', label: 'Manager' },
   { value: 'am', label: 'Assistant Manager' },
   { value: 'tl', label: 'Team Lead' },
@@ -32,29 +33,27 @@ function RegisterAdminForm({ onAuthed, onBack }) {
   const [submitting, setSubmitting] = useState(false);
 
   // Picker options, fetched fresh whenever the role changes, plus the
-  // picked id for whichever one this role actually needs.
-  const [gmOptions, setGmOptions] = useState([]);
-  const [agmOptions, setAgmOptions] = useState([]);
+  // picked id for whichever one this role actually needs. Manager needs
+  // none at all — its parent is simply the one Assistant General Manager,
+  // resolved automatically server-side.
   const [managerOptions, setManagerOptions] = useState([]);
   const [amOptions, setAmOptions] = useState([]);
-  const [gmId, setGmId] = useState('');
-  const [agmId, setAgmId] = useState('');
   const [managerId, setManagerId] = useState('');
   const [amId, setAmId] = useState('');
+  // TL's own Manager pick, independent of which AM they picked — asked for
+  // separately on purpose (see register-admin's tl branch), which is why
+  // this needs its own options list rather than reusing managerOptions.
+  const [tlManagerId, setTlManagerId] = useState('');
+  const [tlManagerOptions, setTlManagerOptions] = useState([]);
 
   useEffect(() => {
-    setGmId(''); setAgmId(''); setManagerId(''); setAmId('');
-    if (role === 'agm') fetch('/api/auth/accounts?role=gm').then((r) => r.json()).then(setGmOptions);
-    if (role === 'manager') fetch('/api/auth/accounts?role=agm').then((r) => r.json()).then(setAgmOptions);
+    setManagerId(''); setAmId(''); setTlManagerId('');
     if (role === 'am') fetch('/api/auth/accounts?role=manager').then((r) => r.json()).then(setManagerOptions);
-    if (role === 'tl') fetch('/api/auth/accounts?role=am').then((r) => r.json()).then(setAmOptions);
+    if (role === 'tl') {
+      fetch('/api/auth/accounts?role=am').then((r) => r.json()).then(setAmOptions);
+      fetch('/api/auth/accounts?role=manager').then((r) => r.json()).then(setTlManagerOptions);
+    }
   }, [role]);
-
-  // TL declares their Assistant Manager; Manager is then shown read-only,
-  // derived from that AM's own chain, rather than a second independently
-  // pickable field — otherwise nothing would stop someone claiming an AM and
-  // a Manager that don't actually match, silently corrupting the hierarchy.
-  const selectedAm = amOptions.find((a) => String(a.id) === amId);
 
   async function submit(e) {
     e.preventDefault();
@@ -62,10 +61,9 @@ function RegisterAdminForm({ onAuthed, onBack }) {
     if (!name.trim()) { setError('Name required.'); return; }
     if (!email.trim()) { setError('Email required.'); return; }
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
-    if (role === 'agm' && !gmId) { setError('Select a General Manager.'); return; }
-    if (role === 'manager' && !agmId) { setError('Select an Assistant General Manager.'); return; }
     if (role === 'am' && !managerId) { setError('Select a Manager.'); return; }
     if (role === 'tl' && !amId) { setError('Select an Assistant Manager.'); return; }
+    if (role === 'tl' && !tlManagerId) { setError('Select a Manager.'); return; }
 
     setSubmitting(true);
     const res = await fetch('/api/auth/register-admin', {
@@ -74,9 +72,7 @@ function RegisterAdminForm({ onAuthed, onBack }) {
       body: JSON.stringify({
         name: name.trim(), email: email.trim(), password, role,
         mobile: mobile.trim() || undefined, department: department.trim() || undefined, jobRole: jobRole.trim() || undefined,
-        gmId: role === 'agm' ? gmId : undefined,
-        agmId: role === 'manager' ? agmId : undefined,
-        managerId: role === 'am' ? managerId : undefined,
+        managerId: role === 'am' ? managerId : role === 'tl' ? tlManagerId : undefined,
         amId: role === 'tl' ? amId : undefined,
       }),
     });
@@ -102,18 +98,6 @@ function RegisterAdminForm({ onAuthed, onBack }) {
           <select value={role} onChange={(e) => setRole(e.target.value)}>
             {REGISTER_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
-          {role === 'agm' && (
-            <select value={gmId} onChange={(e) => setGmId(e.target.value)}>
-              <option value="">Select General Manager…</option>
-              {gmOptions.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
-          )}
-          {role === 'manager' && (
-            <select value={agmId} onChange={(e) => setAgmId(e.target.value)}>
-              <option value="">Select Assistant General Manager…</option>
-              {agmOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-          )}
           {role === 'am' && (
             <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
               <option value="">Select Manager…</option>
@@ -128,9 +112,12 @@ function RegisterAdminForm({ onAuthed, onBack }) {
                 <option value="">Select Assistant Manager…</option>
                 {amOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
-              {selectedAm && (
-                <p className="join-sub" style={{ margin: 0 }}>Manager: {selectedAm.managerName ?? '—'}</p>
-              )}
+              <select value={tlManagerId} onChange={(e) => setTlManagerId(e.target.value)}>
+                <option value="">Select Manager…</option>
+                {tlManagerOptions.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}{m.department ? ` (${m.department})` : ''}</option>
+                ))}
+              </select>
             </>
           )}
           <input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />

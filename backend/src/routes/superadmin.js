@@ -15,7 +15,10 @@ function normalizeEmail(raw) {
 }
 
 // Creates a manager account directly — the super admin sets the password
-// themselves and passes it along, no invite link or self-registration needed.
+// themselves and passes it along, no invite link or self-registration
+// needed. Parent is the one Assistant General Manager, same as a
+// self-registered manager (see auth.js's register-admin) — there's only
+// ever one AGM, so this isn't a choice, just an automatic link.
 superadminRouter.post('/create-admin', requireSuperAdmin, ah(async (req, res) => {
   const { name, password } = req.body;
   const email = normalizeEmail(req.body.email);
@@ -24,11 +27,12 @@ superadminRouter.post('/create-admin', requireSuperAdmin, ah(async (req, res) =>
   }
   const existing = await db.prepare('SELECT 1 FROM users WHERE email = ?').get(email);
   if (existing) return res.status(409).json({ error: 'that email is already registered' });
+  const agm = await db.prepare("SELECT id FROM users WHERE role = 'agm'").get();
 
   const agentKey = crypto.randomBytes(16).toString('hex');
   const info = await db.prepare(`
-    INSERT INTO users (name, email, agent_key, role, parent_id, password_hash) VALUES (?, ?, ?, 'manager', NULL, ?) RETURNING id
-  `).run(name.trim(), email, agentKey, hashPassword(password));
+    INSERT INTO users (name, email, agent_key, role, parent_id, password_hash) VALUES (?, ?, ?, 'manager', ?, ?) RETURNING id
+  `).run(name.trim(), email, agentKey, agm?.id ?? null, hashPassword(password));
   const user = await db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(info.lastInsertRowid);
   res.json(user);
 }));
