@@ -34,32 +34,37 @@ const CONNECT_TIMEOUT_SECS: u64 = 15;
 // Runs for the lifetime of the agent, alongside the activity/screenshot
 // loops. Costs one small HTTP request every couple of seconds while idle;
 // only starts capturing frames once a manager/superadmin actually connects.
+//
+// Multiple concurrent viewers (e.g. an employee's TL, AM, Manager, and GM
+// all watching the same person around the same time) are each their own
+// independent session_id and their own handle_session task below — the
+// backend relay (see backend/src/liveRelay.js) already supports any number
+// of concurrent session pairs per employee, keyed by session_id, with no
+// cap. This loop used to gate on a single `streaming` bool that skipped
+// polling entirely while one session was active, so a second viewer's
+// request just sat pending server-side until the first one ended, timed
+// out client-side after CONNECT_TIMEOUT_SECS, and showed as "the employee's
+// app didn't respond" — easy to misread as the employee going offline, when
+// they were active the whole time. Each viewer now gets their own capture
+// loop, independently capturing and sending frames — simple and correct,
+// though it does mean N simultaneous viewers costs N times the screen
+// capture/encode work on the employee's machine; if that ever matters at
+// realistic viewer counts, revisit as a single shared capture broadcast to
+// multiple sockets instead of N independent captures.
 pub async fn run_watch_loop(agent_key: String, backend_url: String) {
-    let streaming = Arc::new(AtomicBool::new(false));
-
     loop {
         tokio::time::sleep(Duration::from_secs(POLL_FOR_REQUEST_SECS)).await;
-
-        // One session at a time per employee for the MVP — a second
-        // "Watch Live" click while already streaming just waits its turn
-        // (the pending request stays queued server-side until this one ends).
-        if streaming.load(Ordering::Relaxed) {
-            continue;
-        }
 
         let poll_client = BackendClient::new(backend_url.clone());
         match poll_client.poll_live_session_request(&agent_key).await {
             Ok(Some(session_id)) => {
-                streaming.store(true, Ordering::Relaxed);
                 let agent_key = agent_key.clone();
                 let backend_url = backend_url.clone();
-                let streaming = streaming.clone();
                 tokio::spawn(async move {
                     let sid = session_id.clone();
                     if let Err(e) = handle_session(&agent_key, &backend_url, &session_id).await {
                         eprintln!("live session {sid} ended: {e}");
                     }
-                    streaming.store(false, Ordering::Relaxed);
                 });
             }
             Ok(None) => {}
