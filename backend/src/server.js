@@ -184,19 +184,36 @@ app.post('/api/ingest/screenshot', authUser, ah(async (req, res) => {
 
 // Agent checks this periodically so a manager's interval change takes effect
 // without the employee needing to restart their agent.
+//
+// req.user.parent_id used to be read directly here, which was correct back
+// when an employee's parent WAS their manager -- since Stage 2's TL-invite
+// rework, an employee's direct parent is always a TL, so this was silently
+// reading a TL's own screenshot_interval_minutes (always left at its
+// untouched column default of 5) instead of the real Manager's value any
+// admin actually sets. Every employee going through a TL has been getting
+// the hardcoded default regardless of what their Manager's setting says,
+// with no error -- confirmed by testing a Manager set to 30 minutes and
+// seeing this endpoint still return 5 for their employee. Walking the
+// chain with getAncestorIdWithRole (same tolerant walk used elsewhere)
+// finds the real Manager at any depth. An employee with no Manager
+// anywhere in their chain (a fully orphaned TL/AM, or before the org has
+// any Manager at all yet) falls back to the super admin's own row instead
+// of a bare hardcoded 5, so there's still one real, settable place
+// (GET/PATCH /api/superadmin/org-defaults) controlling what such an
+// employee's agent actually does, not just a silent constant.
 app.get('/api/agent-settings', authUser, ah(async (req, res) => {
-  const managerId = req.user.parent_id;
-  const manager = managerId
+  const managerId = await getAncestorIdWithRole(req.user.id, 'manager');
+  const source = managerId
     ? await db.prepare('SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(managerId)
-    : null;
+    : await db.prepare("SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE role = 'superadmin'").get();
   res.json({
-    screenshotIntervalMinutes: manager?.screenshot_interval_minutes ?? 5,
+    screenshotIntervalMinutes: source?.screenshot_interval_minutes ?? 5,
     // Not enforced by the currently-installed agent — enforcement lives
     // server-side (see /api/ingest/*) so this works without an agent
     // update. Exposed here anyway so a future agent version can save a
     // battery/CPU cost by not polling outside the window at all.
-    trackingStartTime: manager?.tracking_start_time ?? null,
-    trackingEndTime: manager?.tracking_end_time ?? null,
+    trackingStartTime: source?.tracking_start_time ?? null,
+    trackingEndTime: source?.tracking_end_time ?? null,
   });
 }));
 

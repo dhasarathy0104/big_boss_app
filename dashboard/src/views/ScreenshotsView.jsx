@@ -193,16 +193,24 @@ export default function ScreenshotsView({ selectedUserId, managerId, settingsUrl
 
   return (
     <>
-      {selectedUserId && !managerId && (
-        <div className="panel">
-          <div className="empty">
-            This employee doesn't report to a Manager yet, so there's no team-wide screenshot frequency
-            or tracking-hours setting to show — connect them to a Manager from the Admins panel to set one.
+      {managerId ? (
+        <>
+          <IntervalControl managerId={managerId} settingsUrl={settingsUrl} />
+          <TrackingHoursControl managerId={managerId} settingsUrl={settingsUrl ?? `/api/managers/${managerId}/settings`} />
+        </>
+      ) : selectedUserId ? (
+        <>
+          <div className="panel">
+            <div className="empty">
+              This employee doesn't report to a Manager yet, so there's no team's setting to inherit —
+              connect them to a Manager from the Admins panel, or set an org-wide default below that
+              applies to anyone not yet connected to one.
+            </div>
           </div>
-        </div>
-      )}
-      <IntervalControl managerId={managerId} settingsUrl={settingsUrl} />
-      {managerId && <TrackingHoursControl managerId={managerId} settingsUrl={settingsUrl ?? `/api/managers/${managerId}/settings`} />}
+          <IntervalControl managerId="org-default" settingsUrl="/api/superadmin/org-defaults" />
+          <TrackingHoursControl managerId="org-default" settingsUrl="/api/superadmin/org-defaults" />
+        </>
+      ) : null}
 
       {!selectedUserId ? (
         <div className="panel"><div className="empty">Select someone from your team on the left.</div></div>

@@ -295,6 +295,64 @@ superadminRouter.patch('/managers/:id/settings', requireSuperAdmin, ah(async (re
   });
 }));
 
+// Same shape as the manager-settings pair above, but for the one super
+// admin row itself — the fallback GET /api/agent-settings uses when an
+// employee's chain doesn't reach a real Manager at all (a detached TL/AM,
+// or no Manager exists yet), so there's a real, settable value controlling
+// what such an employee's agent actually does instead of a bare hardcoded
+// constant. No :id param since there's only ever one super admin.
+superadminRouter.get('/org-defaults', requireSuperAdmin, ah(async (req, res) => {
+  const sa = await db.prepare(
+    "SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE role = 'superadmin'"
+  ).get();
+  res.json({
+    screenshotIntervalMinutes: sa?.screenshot_interval_minutes ?? 5,
+    trackingStartTime: sa?.tracking_start_time ?? null,
+    trackingEndTime: sa?.tracking_end_time ?? null,
+  });
+}));
+
+superadminRouter.patch('/org-defaults', requireSuperAdmin, ah(async (req, res) => {
+  const sa = await db.prepare("SELECT id FROM users WHERE role = 'superadmin'").get();
+
+  const updates = [];
+  const values = [];
+
+  if ('screenshotIntervalMinutes' in req.body) {
+    const minutes = Number(req.body.screenshotIntervalMinutes);
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 240) {
+      return res.status(400).json({ error: 'screenshotIntervalMinutes must be an integer between 0 (off) and 240' });
+    }
+    updates.push('screenshot_interval_minutes = ?');
+    values.push(minutes);
+  }
+  if ('trackingStartTime' in req.body || 'trackingEndTime' in req.body) {
+    const start = req.body.trackingStartTime ?? null;
+    const end = req.body.trackingEndTime ?? null;
+    if (!isValidHHMMOrEmpty(start) || !isValidHHMMOrEmpty(end)) {
+      return res.status(400).json({ error: 'tracking hours must be in HH:MM (24-hour) format, or blank' });
+    }
+    if ((start && !end) || (!start && end)) {
+      return res.status(400).json({ error: 'set both a start and end time, or leave both blank' });
+    }
+    updates.push('tracking_start_time = ?', 'tracking_end_time = ?');
+    values.push(start || null, end || null);
+  }
+  if (updates.length === 0) return res.status(400).json({ error: 'nothing to update' });
+
+  values.push(sa.id);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+
+  const updated = await db.prepare(
+    'SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE id = ?'
+  ).get(sa.id);
+  res.json({
+    screenshotIntervalMinutes: updated.screenshot_interval_minutes,
+    trackingStartTime: updated.tracking_start_time,
+    trackingEndTime: updated.tracking_end_time,
+  });
+}));
+
 // Org-wide employee transfer — unlike a manager's own team-transfer route,
 // the super admin can move any employee to any manager, not just within
 // their own team. Same restriction as the manager-only version though: only
