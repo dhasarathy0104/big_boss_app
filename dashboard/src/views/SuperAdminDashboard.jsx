@@ -986,8 +986,12 @@ function EditAdminModal({ admin, onSaved, onClose }) {
   }
 
   async function doTransfer() {
-    const newParentId = admin.role === 'am' ? transferManagerId : transferAmId;
-    if (!newParentId) return;
+    const rawValue = admin.role === 'am' ? transferManagerId : transferAmId;
+    if (!rawValue) return;
+    // "none" is the detach option (see the dropdowns below) -- it needs to
+    // reach the backend as an actual null, not the literal string "none",
+    // since select values are always strings.
+    const newParentId = rawValue === 'none' ? null : rawValue;
     setTransferError(''); setTransferSuccess('');
     setTransferring(true);
     const res = await fetch(`/api/superadmin/users/${admin.id}/reassign`, {
@@ -998,7 +1002,7 @@ function EditAdminModal({ admin, onSaved, onClose }) {
     setTransferring(false);
     if (!res.ok) { setTransferError((await res.json()).error); return; }
     const data = await res.json();
-    setTransferSuccess(`Moved to report to ${data.newParentName}.`);
+    setTransferSuccess(data.newParentName ? `Moved to report to ${data.newParentName}.` : 'No longer reports to anyone.');
     setTransferManagerId(''); setTransferAmId('');
     onSaved?.();
   }
@@ -1059,6 +1063,7 @@ function EditAdminModal({ admin, onSaved, onClose }) {
               <ArrowRightLeft size={15} />
               <select value={transferManagerId} onChange={(e) => setTransferManagerId(e.target.value)}>
                 <option value="">Select manager…</option>
+                {admin.parentId != null && <option value="none">No manager</option>}
                 {managers.filter((m) => String(m.id) !== String(admin.parentId)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
             </div>
@@ -1085,8 +1090,13 @@ function EditAdminModal({ admin, onSaved, onClose }) {
             </div>
             <div className="input-icon-wrap" style={{ minWidth: 180 }}>
               <Users size={15} />
-              <select value={transferAmId} onChange={(e) => setTransferAmId(e.target.value)} disabled={!transferManagerId}>
+              {/* "No assistant manager" (detach) never needs a Manager
+                  picked first -- it's the one option here that doesn't
+                  depend on the filter above, so it stays enabled and
+                  visible regardless of transferManagerId. */}
+              <select value={transferAmId} onChange={(e) => setTransferAmId(e.target.value)}>
                 <option value="">Select assistant manager…</option>
+                {admin.parentId != null && <option value="none">No assistant manager</option>}
                 {amsForSelectedManager.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>

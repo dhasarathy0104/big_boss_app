@@ -153,9 +153,19 @@ superadminRouter.delete('/managers/:id', requireSuperAdmin, ah(async (req, res) 
   const manager = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(req.params.id);
   if (!manager) return res.status(404).json({ error: 'manager not found' });
 
-  const { count } = await db.prepare("SELECT COUNT(*)::int AS count FROM users WHERE parent_id = ? AND role = 'employee'").get(manager.id);
-  if (count > 0) {
-    return res.status(400).json({ error: `This admin still has ${count} employee${count === 1 ? '' : 's'} — transfer or remove them first.` });
+  // This used to count only direct employee children (parent_id = manager.id
+  // AND role = 'employee'), which no employee has matched since Stage 2's
+  // TL-invite rework — the guard never actually blocked anything, so
+  // deleteManagerCascade's own DELETE FROM users would hit a foreign-key
+  // violation the moment the manager still had a real AM underneath (that
+  // AM's own parent_id would go dangling), surfacing to the user as a raw
+  // "something went wrong". Walking the whole subtree instead of one
+  // direct-role count catches AM/TL/employees at any depth.
+  const descendantIds = await getDescendantIds(manager.id);
+  if (descendantIds.length > 0) {
+    return res.status(400).json({
+      error: `This admin still has ${descendantIds.length} ${descendantIds.length === 1 ? 'person' : 'people'} in their department — transfer or remove them first.`,
+    });
   }
 
   await deleteManagerCascade(manager.id);
@@ -358,12 +368,31 @@ superadminRouter.get('/tls', requireSuperAdmin, ah(async (req, res) => {
 // whole hierarchy depends on (see hierarchy.js's ROLE_ORDER) still has to
 // hold after an arbitrary-level move, not just at invite time.
 superadminRouter.post('/users/:id/reassign', requireSuperAdmin, ah(async (req, res) => {
+  if (!('newParentId' in req.body)) return res.status(400).json({ error: 'newParentId required' });
   const { newParentId } = req.body;
-  if (!newParentId) return res.status(400).json({ error: 'newParentId required' });
 
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'user not found' });
   if (user.role === 'superadmin') return res.status(400).json({ error: "can't reassign the super admin" });
+
+  // Explicit null detaches entirely (parent_id -> NULL), matching the
+  // "no manager"/"no assistant manager" option the Admins panel's edit
+  // form offers for AM/TL — the only two roles that can ever be created
+  // without a superior in the first place (see register-admin), so
+  // they're the only ones this generic endpoint allows detaching. Manager
+  // always auto-reports to the one AGM (never a picker, never optional)
+  // and GM/AGM/employee aren't reassignable through this route at all
+  // from any caller today, so leaving them out here too avoids ever
+  // creating an orphan this app has no UI to reattach.
+  if (newParentId === null) {
+    if (!['am', 'tl'].includes(user.role)) {
+      return res.status(400).json({ error: `a ${user.role} can't be detached this way` });
+    }
+    if (user.parent_id === null) return res.status(400).json({ error: 'already has no manager' });
+    await db.prepare('UPDATE users SET parent_id = NULL WHERE id = ?').run(user.id);
+    return res.json({ ok: true, userId: user.id, newParentId: null, newParentName: null });
+  }
+  if (!newParentId) return res.status(400).json({ error: 'newParentId required' });
   if (Number(newParentId) === user.parent_id) return res.status(400).json({ error: 'already reports there' });
 
   const newParent = await db.prepare('SELECT * FROM users WHERE id = ?').get(newParentId);
