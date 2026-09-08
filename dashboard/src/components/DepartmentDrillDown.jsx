@@ -96,7 +96,7 @@ export default function DepartmentDrillDown({ endpoint, onSelectMember }) {
       <div className="panel">
         <button className="btn-small" onClick={() => setAmId(null)} style={{ marginBottom: 14 }}>&larr; {manager.name}'s assistant managers</button>
         <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Avatar name={am.name} size={26} />{am.name}</h2>
-        <DetailTable rows={[['Email', am.email], ['Mobile', am.mobile], ['Role', 'Assistant Manager']]} />
+        <DetailTable rows={[['Email', am.email], ['Mobile', am.mobile], ['Role', am.roleLabel ?? 'Assistant Manager']]} />
         <h2 style={{ marginTop: 20 }}>Team Leads ({am.tls.length})</h2>
         <CardGrid items={am.tls} onPick={setTlId} countLabel={(t) => `${t.employeeCount} employee${t.employeeCount === 1 ? '' : 's'}`} />
       </div>
@@ -110,7 +110,13 @@ export default function DepartmentDrillDown({ endpoint, onSelectMember }) {
       <div className="panel">
         <button className="btn-small" onClick={reset} style={{ marginBottom: 14 }}>&larr; All departments</button>
         <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Avatar name={manager.name} size={26} />{manager.department || manager.name}</h2>
-        <DetailTable rows={[['Manager', manager.name], ['Email', manager.email], ['Mobile', manager.mobile]]} />
+        {manager.unassigned ? (
+          <p className="card-subtitle" style={{ marginTop: 0 }}>
+            Nobody here reports to a real Manager yet — each card below is its own separate person, just sharing this department name.
+          </p>
+        ) : (
+          <DetailTable rows={[['Manager', manager.name], ['Email', manager.email], ['Mobile', manager.mobile]]} />
+        )}
         {manager.directEmployees.length > 0 && (
           <>
             <h2 style={{ marginTop: 20 }}>Direct employees ({manager.directEmployees.length})</h2>
@@ -118,7 +124,7 @@ export default function DepartmentDrillDown({ endpoint, onSelectMember }) {
             <CardGrid items={manager.directEmployees} onPick={setEmployeeId} countLabel={() => 'Employee'} />
           </>
         )}
-        <h2 style={{ marginTop: 20 }}>Assistant Managers ({manager.ams.length})</h2>
+        <h2 style={{ marginTop: 20 }}>{manager.unassigned ? 'People' : 'Assistant Managers'} ({manager.ams.length})</h2>
         <CardGrid items={manager.ams} onPick={setAmId} countLabel={(a) => `${a.employeeCount} employee${a.employeeCount === 1 ? '' : 's'}`} />
       </div>
     );
@@ -140,7 +146,7 @@ export default function DepartmentDrillDown({ endpoint, onSelectMember }) {
       <div className="panel">
         <h2>Departments</h2>
         <CardGrid
-          items={departments.map((d) => ({ ...d, name: d.department || d.name }))}
+          items={departments.map((d) => ({ ...d, name: (d.department || d.name) + (d.unassigned ? ' (no manager)' : '') }))}
           onPick={setManagerId}
           countLabel={(d) => `${d.employeeCount} employee${d.employeeCount === 1 ? '' : 's'}`}
         />

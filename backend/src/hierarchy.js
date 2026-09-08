@@ -123,17 +123,21 @@ export async function isManagerInScope(authUser, managerId) {
 // scoped /:id/departments, so the two can never drift apart.
 const EMPLOYEE_COLUMNS = "id, name, email, mobile, department, job_role AS \"jobRole\"";
 
+async function buildTlWithEmployees(tl) {
+  const employees = await db.prepare(`SELECT ${EMPLOYEE_COLUMNS} FROM users WHERE parent_id = ? AND role = 'employee' ORDER BY name`).all(tl.id);
+  return { ...tl, employees, employeeCount: employees.length };
+}
+
+async function buildAmWithTls(am) {
+  const tls = await db.prepare("SELECT id, name, email, mobile FROM users WHERE parent_id = ? AND role = 'tl' ORDER BY name").all(am.id);
+  const tlsWithEmployees = await Promise.all(tls.map(buildTlWithEmployees));
+  const employeeCount = tlsWithEmployees.reduce((sum, tl) => sum + tl.employeeCount, 0);
+  return { ...am, tls: tlsWithEmployees, employeeCount };
+}
+
 export async function buildDepartment(manager) {
   const ams = await db.prepare("SELECT id, name, email, mobile FROM users WHERE parent_id = ? AND role = 'am' ORDER BY name").all(manager.id);
-  const amsWithTls = await Promise.all(ams.map(async (am) => {
-    const tls = await db.prepare("SELECT id, name, email, mobile FROM users WHERE parent_id = ? AND role = 'tl' ORDER BY name").all(am.id);
-    const tlsWithEmployees = await Promise.all(tls.map(async (tl) => {
-      const employees = await db.prepare(`SELECT ${EMPLOYEE_COLUMNS} FROM users WHERE parent_id = ? AND role = 'employee' ORDER BY name`).all(tl.id);
-      return { ...tl, employees, employeeCount: employees.length };
-    }));
-    const employeeCount = tlsWithEmployees.reduce((sum, tl) => sum + tl.employeeCount, 0);
-    return { ...am, tls: tlsWithEmployees, employeeCount };
-  }));
+  const amsWithTls = await Promise.all(ams.map(buildAmWithTls));
   // Legacy employees still pointing straight at the manager, pre-dating
   // AM/TL — kept as their own small list rather than folded into a
   // synthetic AM/TL, same "shows as direct, not excluded" precedent as
@@ -145,4 +149,51 @@ export async function buildDepartment(manager) {
     department: manager.department, jobRole: manager.jobRole ?? null,
     ams: amsWithTls, directEmployees, employeeCount,
   };
+}
+
+// A department normally only exists as a Manager's own department field —
+// but registration allows creating an AM or TL with no manager at all (see
+// auth.js's register-admin), and someone can still set a department name
+// directly on that orphaned AM/TL afterward (see PATCH /admins/:id). That
+// name used to just vanish from Overview, since buildDepartment only ever
+// walks down from a real Manager row — this synthesizes one "department"
+// entry per distinct name found among orphaned AM/TL roots, in the same
+// Manager -> AM -> TL -> Employee shape DepartmentDrillDown already
+// renders, so no separate UI is needed. A root TL (no AM either) is
+// wrapped as a single-TL "AM" node purely to fit that shape; there's no
+// real AM behind it. Marked `unassigned: true` so the frontend can label
+// these distinctly from a real Manager-backed department of the same name,
+// since there's no actual hierarchy link between the two.
+export async function buildUnassignedDepartments() {
+  const orphanAms = await db.prepare("SELECT id, name, email, mobile, department FROM users WHERE parent_id IS NULL AND role = 'am' AND department IS NOT NULL ORDER BY name").all();
+  const orphanTls = await db.prepare("SELECT id, name, email, mobile, department FROM users WHERE parent_id IS NULL AND role = 'tl' AND department IS NOT NULL ORDER BY name").all();
+
+  const amNodes = await Promise.all(orphanAms.map(async (am) => ({ department: am.department, node: await buildAmWithTls(am) })));
+  const tlNodes = await Promise.all(orphanTls.map(async (tl) => {
+    const tlWithEmployees = await buildTlWithEmployees(tl);
+    return {
+      department: tl.department,
+      // roleLabel overrides DepartmentDrillDown's hardcoded "Assistant
+      // Manager" at this level — this node is really a Team Lead, just
+      // wrapped one level up to fit the shape.
+      node: {
+        id: tl.id, name: tl.name, email: tl.email, mobile: tl.mobile, roleLabel: 'Team Lead',
+        tls: [tlWithEmployees], employeeCount: tlWithEmployees.employeeCount,
+      },
+    };
+  }));
+
+  const groups = new Map();
+  for (const { department, node } of [...amNodes, ...tlNodes]) {
+    if (!groups.has(department)) groups.set(department, []);
+    groups.get(department).push(node);
+  }
+
+  return [...groups.entries()].map(([department, ams]) => ({
+    id: `unassigned:${department}`,
+    name: 'Unassigned', email: null, mobile: null, department, jobRole: null,
+    unassigned: true,
+    ams, directEmployees: [],
+    employeeCount: ams.reduce((sum, am) => sum + am.employeeCount, 0),
+  }));
 }

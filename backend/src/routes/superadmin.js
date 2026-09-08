@@ -6,7 +6,7 @@ import { buildOverrideMaps, computeProductivity } from '../productivity.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
 import { deleteEmployeeCascade, deleteManagerCascade } from '../deleteUser.js';
-import { getAncestorIdWithRole, getDescendantIds, roleAbove, buildDepartment } from '../hierarchy.js';
+import { getAncestorIdWithRole, getDescendantIds, roleAbove, buildDepartment, buildUnassignedDepartments } from '../hierarchy.js';
 
 export const superadminRouter = Router();
 
@@ -420,6 +420,7 @@ superadminRouter.get('/departments', requireSuperAdmin, ah(async (req, res) => {
     "SELECT id, name, email, mobile, department, job_role AS \"jobRole\" FROM users WHERE role = 'manager' ORDER BY name"
   ).all();
   const departments = await Promise.all(managers.map(buildDepartment));
+  departments.push(...(await buildUnassignedDepartments()));
   res.json(departments);
 }));
 

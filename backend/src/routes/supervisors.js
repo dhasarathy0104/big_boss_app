@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db, randomToken } from '../db.js';
 import { requireSupervisorSelf, hashPassword } from '../auth.js';
-import { getDescendantIds, getAncestorIdWithRole, roleBelow, buildDepartment } from '../hierarchy.js';
+import { getDescendantIds, getAncestorIdWithRole, roleBelow, buildDepartment, buildUnassignedDepartments } from '../hierarchy.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { deleteEmployeeCascade } from '../deleteUser.js';
 import { ah } from '../asyncHandler.js';
@@ -293,18 +293,24 @@ supervisorsRouter.post('/:id/team/:memberId/transfer', requireSupervisorSelf, ah
 supervisorsRouter.get('/:id/departments', requireSupervisorSelf, ah(async (req, res) => {
   const user = await db.prepare('SELECT id, role FROM users WHERE id = ?').get(req.params.id);
   let managers;
+  let orgWide = false;
   if (user.role === 'am' || user.role === 'tl') {
     const managerId = await getAncestorIdWithRole(user.id, 'manager');
     managers = managerId
       ? await db.prepare("SELECT id, name, email, mobile, department, job_role AS \"jobRole\" FROM users WHERE id = ?").all(managerId)
       : [];
   } else {
+    // GM/AGM see every department org-wide, same as super admin -- so
+    // unassigned (no-manager) departments belong here too, not in the
+    // am/tl branch above, which is only ever this one person's own chain.
+    orgWide = true;
     const descendantIds = await getDescendantIds(user.id);
     managers = descendantIds.length === 0 ? [] : await db.prepare(
       "SELECT id, name, email, mobile, department, job_role AS \"jobRole\" FROM users WHERE id = ANY(?) AND role = 'manager' ORDER BY name"
     ).all(descendantIds);
   }
   const departments = await Promise.all(managers.map(buildDepartment));
+  if (orgWide) departments.push(...(await buildUnassignedDepartments()));
   res.json(departments);
 }));
 
