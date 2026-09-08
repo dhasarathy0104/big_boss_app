@@ -142,25 +142,39 @@ function OverviewTab({ onSelectMember }) {
 // manager dashboard does — this bar fills that gap so the super admin can
 // jump straight to (or switch between) any employee's data org-wide,
 // instead of having to go through Live or Overview first.
-function EmployeePickerBar({ overview, selectedUserId, onSelect }) {
-  if (!overview) return null;
-  const allEmployees = overview.admins.flatMap((a) =>
-    a.employees.map((e) => ({ ...e, managerName: a.name })));
+//
+// Fetches its own list from /employees-full rather than taking one from the
+// overview prop (like it used to) — overview.admins[].employees only ever
+// includes an employee whose TL->AM->Manager chain fully resolves (see the
+// backend's own comment on GET /overview), so an employee whose TL or AM
+// has been detached from a manager — a real, supported state now — used to
+// vanish from this picker entirely despite existing and being visible
+// everywhere else (Employee Management, Live). /employees-full already
+// tolerates a broken chain and just reports managerName as null instead of
+// dropping the row.
+function EmployeePickerBar({ selectedUserId, onSelect }) {
+  const [employees, setEmployees] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/superadmin/employees-full').then((r) => r.json()).then(setEmployees);
+  }, []);
+
+  if (!employees) return null;
 
   return (
     <div className="panel">
       <h2>Choose an employee</h2>
-      {allEmployees.length === 0 ? (
+      {employees.length === 0 ? (
         <div className="empty">No employees anywhere yet.</div>
       ) : (
         <div className="chip-row">
-          {allEmployees.map((e) => (
+          {employees.map((e) => (
             <div
               key={e.id}
               className={`chip ${e.id === selectedUserId ? 'selected' : ''}`}
               onClick={() => onSelect(e.id)}
             >
-              {e.name} <span style={{ opacity: 0.75 }}>· {e.managerName}</span>
+              {e.name} <span style={{ opacity: 0.75 }}>· {e.managerName ?? 'No manager'}</span>
             </div>
           ))}
         </div>
@@ -1437,13 +1451,13 @@ export default function SuperAdminDashboard({ user, onLogout }) {
         )}
         {activeTab === 'timeline' && (
           <>
-            <EmployeePickerBar overview={overview} selectedUserId={selectedUserId} onSelect={setSelectedUserId} />
+            <EmployeePickerBar selectedUserId={selectedUserId} onSelect={setSelectedUserId} />
             <TimelineView selectedUserId={selectedUserId} date={date} setDate={setDate} />
           </>
         )}
         {activeTab === 'screenshots' && (
           <>
-            <EmployeePickerBar overview={overview} selectedUserId={selectedUserId} onSelect={setSelectedUserId} />
+            <EmployeePickerBar selectedUserId={selectedUserId} onSelect={setSelectedUserId} />
             <ScreenshotsView
               selectedUserId={selectedUserId}
               managerId={selectedEmployeeManagerId}
