@@ -61,9 +61,6 @@ function RegisterAdminForm({ onAuthed, onBack }) {
     if (!name.trim()) { setError('Name required.'); return; }
     if (!email.trim()) { setError('Email required.'); return; }
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
-    if (role === 'am' && !managerId) { setError('Select a Manager.'); return; }
-    if (role === 'tl' && !amId) { setError('Select an Assistant Manager.'); return; }
-    if (role === 'tl' && !tlManagerId) { setError('Select a Manager.'); return; }
 
     setSubmitting(true);
     const res = await fetch('/api/auth/register-admin', {
@@ -100,7 +97,7 @@ function RegisterAdminForm({ onAuthed, onBack }) {
           </select>
           {role === 'am' && (
             <select value={managerId} onChange={(e) => setManagerId(e.target.value)}>
-              <option value="">Select Manager…</option>
+              <option value="">Select Manager… (optional)</option>
               {managerOptions.map((m) => (
                 <option key={m.id} value={m.id}>{m.name}{m.department ? ` (${m.department})` : ''}</option>
               ))}
@@ -109,11 +106,11 @@ function RegisterAdminForm({ onAuthed, onBack }) {
           {role === 'tl' && (
             <>
               <select value={amId} onChange={(e) => setAmId(e.target.value)}>
-                <option value="">Select Assistant Manager…</option>
+                <option value="">Select Assistant Manager… (optional)</option>
                 {amOptions.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
               <select value={tlManagerId} onChange={(e) => setTlManagerId(e.target.value)}>
-                <option value="">Select Manager…</option>
+                <option value="">Select Manager… (optional)</option>
                 {tlManagerOptions.map((m) => (
                   <option key={m.id} value={m.id}>{m.name}{m.department ? ` (${m.department})` : ''}</option>
                 ))}

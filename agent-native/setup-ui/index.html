@@ -262,18 +262,18 @@
       </select>
 
       <div id="registerAmManagerField" style="display:none">
-        <label for="registerManagerPicker">Manager</label>
-        <select id="registerManagerPicker"><option value="">Select Manager…</option></select>
+        <label for="registerManagerPicker">Manager (optional)</label>
+        <select id="registerManagerPicker"><option value="">Select Manager… (optional)</option></select>
       </div>
 
       <div id="registerTlAmField" style="display:none">
-        <label for="registerAmPicker">Assistant Manager</label>
-        <select id="registerAmPicker"><option value="">Select Assistant Manager…</option></select>
+        <label for="registerAmPicker">Assistant Manager (optional)</label>
+        <select id="registerAmPicker"><option value="">Select Assistant Manager… (optional)</option></select>
       </div>
 
       <div id="registerTlManagerField" style="display:none">
-        <label for="registerTlManagerPicker">Manager</label>
-        <select id="registerTlManagerPicker"><option value="">Select Manager…</option></select>
+        <label for="registerTlManagerPicker">Manager (optional)</label>
+        <select id="registerTlManagerPicker"><option value="">Select Manager… (optional)</option></select>
       </div>
 
       <label for="registerName">Your name</label>
@@ -686,33 +686,26 @@
         statusRegisterAdminEl.className = 'status error';
         return;
       }
-      if (role === 'am' && !registerManagerPicker.value) {
-        statusRegisterAdminEl.textContent = 'Select a Manager.';
-        statusRegisterAdminEl.className = 'status error';
-        return;
-      }
-      if (role === 'tl' && !registerAmPicker.value) {
-        statusRegisterAdminEl.textContent = 'Select an Assistant Manager.';
-        statusRegisterAdminEl.className = 'status error';
-        return;
-      }
-      if (role === 'tl' && !registerTlManagerPicker.value) {
-        statusRegisterAdminEl.textContent = 'Select a Manager.';
-        statusRegisterAdminEl.className = 'status error';
-        return;
-      }
-
       submitRegisterAdminBtn.disabled = true;
       statusRegisterAdminEl.textContent = 'Creating account…';
 
+      // Manager/Assistant Manager pickers are optional — left blank, the
+      // account is created unattached and a super admin can transfer it to
+      // a real Manager/AM later (see the Admins panel's edit form). .value
+      // on an unselected <select> is '', and Number('') is 0, not a valid
+      // id, so each pick is only sent at all when something was chosen.
       try {
         await invoke('submit_register_admin', {
           backendUrl, name, email, password, role,
           mobile: registerMobileInput.value.trim() || null,
           department: registerDepartmentInput.value.trim() || null,
           jobRole: registerJobRoleInput.value.trim() || null,
-          managerId: role === 'am' ? Number(registerManagerPicker.value) : role === 'tl' ? Number(registerTlManagerPicker.value) : null,
-          amId: role === 'tl' ? Number(registerAmPicker.value) : null,
+          managerId: role === 'am'
+            ? (registerManagerPicker.value ? Number(registerManagerPicker.value) : null)
+            : role === 'tl'
+              ? (registerTlManagerPicker.value ? Number(registerTlManagerPicker.value) : null)
+              : null,
+          amId: role === 'tl' && registerAmPicker.value ? Number(registerAmPicker.value) : null,
         });
         statusRegisterAdminEl.textContent = 'Account created — opening your dashboard…';
         statusRegisterAdminEl.className = 'status ok';

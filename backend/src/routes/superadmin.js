@@ -458,16 +458,31 @@ superadminRouter.get('/overview', requireSuperAdmin, ah(async (req, res) => {
       (password_reset_requested_at IS NOT NULL) AS "passwordResetRequested"
     FROM users WHERE role = 'manager' ORDER BY name
   `).all();
-  const admins = await Promise.all(managers.map(async (m) => {
-    const employees = await db.prepare(`
-      SELECT id, name, email, mobile, department, job_role AS "jobRole"
-      FROM users WHERE role = 'employee' AND parent_id = ? ORDER BY name
-    `).all(m.id);
+  // A manager's employees are never direct children in the current
+  // hierarchy (every employee joins through a TL, which reports to an AM,
+  // which reports to the manager) — this used to filter on
+  // parent_id = manager.id directly, which no real employee has ever
+  // matched since Stage 2's TL-invite rework, silently making every
+  // consumer of admins[].employees (this Transfer section, the
+  // Timeline/Screenshots employee picker, project task-assignee names)
+  // show nothing. Walking the fixed TL->AM->manager chain instead is the
+  // same two-hop join already used by /employees-full.
+  const employeesByManager = await db.prepare(`
+    SELECT e.id, e.name, e.email, e.mobile, e.department, e.job_role AS "jobRole", mgr.id AS "managerId"
+    FROM users e
+    JOIN users tl ON tl.id = e.parent_id AND tl.role = 'tl'
+    JOIN users am ON am.id = tl.parent_id AND am.role = 'am'
+    JOIN users mgr ON mgr.id = am.parent_id AND mgr.role = 'manager'
+    WHERE e.role = 'employee'
+    ORDER BY e.name
+  `).all();
+  const admins = managers.map((m) => {
+    const employees = employeesByManager.filter((e) => e.managerId === m.id).map(({ managerId, ...rest }) => rest);
     return {
       id: m.id, name: m.name, email: m.email, mobile: m.mobile, department: m.department, jobRole: m.jobRole,
       passwordResetRequested: m.passwordResetRequested, createdAt: m.created_at, employeeCount: employees.length, employees,
     };
-  }));
+  });
   const totalEmployees = admins.reduce((sum, a) => sum + a.employeeCount, 0);
   res.json({ totalAdmins: admins.length, totalEmployees, admins });
 }));

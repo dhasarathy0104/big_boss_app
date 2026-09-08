@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   LayoutDashboard, Activity, Clock, Camera, KanbanSquare, LogOut, Zap, Coffee, MoonStar, Users, ShieldCheck,
   ChevronDown, ChevronRight, UserCog, Send, Building2, ListChecks, BarChart3, FolderOpen, Trash2, Users2,
@@ -727,7 +727,7 @@ function CreateAdminPanel({ onCreated }) {
 // dialog, their tracking hours and a way to transfer one of their employees
 // elsewhere. Replaces what used to be three separate always-visible panels
 // each with their own "select an admin" dropdown.
-function EditManagerModal({ manager, allManagers, onSaved, onClose }) {
+function EditManagerModal({ manager, onSaved, onClose }) {
   const [form, setForm] = useState({
     name: manager.name ?? '', email: manager.email ?? '', mobile: manager.mobile ?? '',
     department: manager.department ?? '', jobRole: manager.jobRole ?? '', password: '',
@@ -737,10 +737,36 @@ function EditManagerModal({ manager, allManagers, onSaved, onClose }) {
   const [saving, setSaving] = useState(false);
 
   const [employeeId, setEmployeeId] = useState('');
+  const [tlOptions, setTlOptions] = useState([]);
   const [targetManagerId, setTargetManagerId] = useState('');
+  const [targetAmId, setTargetAmId] = useState('');
+  const [targetTlId, setTargetTlId] = useState('');
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState('');
   const [transferSuccess, setTransferSuccess] = useState('');
+
+  useEffect(() => {
+    fetch('/api/superadmin/tls').then((r) => r.json()).then(setTlOptions);
+  }, []);
+
+  // Same Manager -> Assistant Manager -> Team Lead cascade as the employee
+  // edit form in EmployeeManagementTable — moving to a TL is what actually
+  // submits, so the Manager step is really just a filter, not a separate
+  // field that needs its own validation.
+  const targetManagerGroups = useMemo(() => {
+    const map = new Map();
+    tlOptions.forEach((tl) => {
+      const key = String(tl.managerId ?? 'none');
+      if (!map.has(key)) map.set(key, { managerId: tl.managerId, managerName: tl.managerName ?? 'No manager', amGroups: new Map() });
+      const mgr = map.get(key);
+      const amKey = String(tl.amId ?? 'none');
+      if (!mgr.amGroups.has(amKey)) mgr.amGroups.set(amKey, { amId: tl.amId, amName: tl.amName ?? 'No assistant manager', tls: [] });
+      mgr.amGroups.get(amKey).tls.push(tl);
+    });
+    return [...map.values()].map((mgr) => ({ ...mgr, amGroups: [...mgr.amGroups.values()] }));
+  }, [tlOptions]);
+  const targetAmGroups = targetManagerGroups.find((g) => String(g.managerId ?? 'none') === targetManagerId)?.amGroups ?? [];
+  const targetTlsForSelectedAm = targetAmGroups.find((g) => String(g.amId ?? 'none') === targetAmId)?.tls ?? [];
 
   async function save(e) {
     e.preventDefault();
@@ -763,19 +789,19 @@ function EditManagerModal({ manager, allManagers, onSaved, onClose }) {
   }
 
   async function doTransfer() {
-    if (!employeeId || !targetManagerId) return;
+    if (!employeeId || !targetTlId) return;
     setTransferError(''); setTransferSuccess('');
     setTransferring(true);
-    const res = await fetch(`/api/superadmin/employees/${employeeId}/transfer`, {
+    const res = await fetch(`/api/superadmin/users/${employeeId}/reassign`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ targetManagerId }),
+      body: JSON.stringify({ newParentId: targetTlId }),
     });
     setTransferring(false);
     if (!res.ok) { setTransferError((await res.json()).error); return; }
     const data = await res.json();
-    setTransferSuccess(`Moved to ${data.newManagerName}'s team.`);
-    setEmployeeId(''); setTargetManagerId('');
+    setTransferSuccess(`Moved to report to ${data.newParentName}.`);
+    setEmployeeId(''); setTargetManagerId(''); setTargetAmId(''); setTargetTlId('');
     onSaved?.();
   }
 
@@ -861,14 +887,28 @@ function EditManagerModal({ manager, allManagers, onSaved, onClose }) {
                 {manager.employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
             </div>
-            <div className="input-icon-wrap" style={{ minWidth: 180 }}>
-              <ArrowRightLeft size={15} />
-              <select value={targetManagerId} onChange={(e) => setTargetManagerId(e.target.value)}>
-                <option value="">Move to admin…</option>
-                {allManagers.filter((m) => m.id !== manager.id).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            <div className="input-icon-wrap" style={{ minWidth: 160 }}>
+              <Building2 size={15} />
+              <select value={targetManagerId} onChange={(e) => { setTargetManagerId(e.target.value); setTargetAmId(''); setTargetTlId(''); }}>
+                <option value="">Select manager…</option>
+                {targetManagerGroups.map((g) => <option key={g.managerId ?? 'none'} value={String(g.managerId ?? 'none')}>{g.managerName}</option>)}
               </select>
             </div>
-            <button type="button" className="btn-outline-danger" disabled={!employeeId || !targetManagerId || transferring} onClick={doTransfer}>
+            <div className="input-icon-wrap" style={{ minWidth: 180 }}>
+              <Users size={15} />
+              <select value={targetAmId} onChange={(e) => { setTargetAmId(e.target.value); setTargetTlId(''); }} disabled={!targetManagerId}>
+                <option value="">Select assistant manager…</option>
+                {targetAmGroups.map((g) => <option key={g.amId ?? 'none'} value={String(g.amId ?? 'none')}>{g.amName}</option>)}
+              </select>
+            </div>
+            <div className="input-icon-wrap" style={{ minWidth: 180 }}>
+              <ArrowRightLeft size={15} />
+              <select value={targetTlId} onChange={(e) => setTargetTlId(e.target.value)} disabled={!targetAmId}>
+                <option value="">Select team lead…</option>
+                {targetTlsForSelectedAm.map((tl) => <option key={tl.id} value={tl.id}>{tl.name}</option>)}
+              </select>
+            </div>
+            <button type="button" className="btn-outline-danger" disabled={!employeeId || !targetTlId || transferring} onClick={doTransfer}>
               {transferring ? 'Transferring…' : 'Transfer'}
             </button>
           </div>
@@ -1145,7 +1185,6 @@ function AdminsListPanel({ overview, onChanged }) {
       {editing && editing.role === 'manager' && (
         <EditManagerModal
           manager={overview.admins.find((m) => m.id === editing.id) ?? editing}
-          allManagers={overview.admins}
           onSaved={reload}
           onClose={() => setEditing(null)}
         />

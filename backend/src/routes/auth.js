@@ -157,20 +157,29 @@ authRouter.post('/register-admin', ah(async (req, res) => {
     const agm = await db.prepare("SELECT id FROM users WHERE role = 'agm'").get();
     if (!agm) return res.status(400).json({ error: 'no Assistant General Manager exists yet for a Manager to report to' });
     parentId = agm.id;
-  } else if (role === 'am') {
+  } else if (role === 'am' && req.body.managerId) {
+    // Manager is optional at registration — an AM created without one stays
+    // unattached (parentId null) until a super admin transfers them to a
+    // real Manager later (see PATCH /api/superadmin/admins/:id's transfer
+    // section). Still never trusted blindly when it IS given.
     const manager = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'manager'").get(req.body.managerId);
     if (!manager) return res.status(400).json({ error: 'select a valid Manager' });
     parentId = manager.id;
-  } else if (role === 'tl') {
-    // TL declares both — unlike am/manager above, there's a real ambiguity
-    // to resolve (which AM, under which Manager), so both are asked for and
-    // cross-checked, rather than deriving one from the other silently.
+  } else if (role === 'tl' && req.body.amId) {
+    // Both are optional; when Assistant Manager is given, it alone is
+    // enough to place a TL (their one real parent field) — Manager is only
+    // cross-checked if it was *also* given, same reasoning as before, just
+    // no longer forcing either one to be filled in. A Manager given without
+    // an Assistant Manager can't place a TL on its own (the fixed hierarchy
+    // has no "skip a level" concept), so it's ignored rather than guessed at.
     const am = await db.prepare("SELECT id, parent_id FROM users WHERE id = ? AND role = 'am'").get(req.body.amId);
     if (!am) return res.status(400).json({ error: 'select a valid Assistant Manager' });
-    const manager = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'manager'").get(req.body.managerId);
-    if (!manager) return res.status(400).json({ error: 'select a valid Manager' });
-    if (am.parent_id !== manager.id) {
-      return res.status(400).json({ error: 'that Assistant Manager does not report to the selected Manager' });
+    if (req.body.managerId) {
+      const manager = await db.prepare("SELECT id FROM users WHERE id = ? AND role = 'manager'").get(req.body.managerId);
+      if (!manager) return res.status(400).json({ error: 'select a valid Manager' });
+      if (am.parent_id !== manager.id) {
+        return res.status(400).json({ error: 'that Assistant Manager does not report to the selected Manager' });
+      }
     }
     parentId = am.id;
   }
