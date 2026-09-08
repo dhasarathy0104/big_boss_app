@@ -938,7 +938,10 @@ function EditManagerModal({ manager, onSaved, onClose }) {
 // nothing to cross-validate: the AM offered is already guaranteed to belong
 // to the Manager picked.
 function EditAdminModal({ admin, onSaved, onClose }) {
-  const [form, setForm] = useState({ name: admin.name ?? '', email: admin.email ?? '', mobile: admin.mobile ?? '', password: '' });
+  const [form, setForm] = useState({
+    name: admin.name ?? '', email: admin.email ?? '', mobile: admin.mobile ?? '',
+    department: admin.department ?? '', jobRole: admin.jobRole ?? '', password: '',
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -972,7 +975,7 @@ function EditAdminModal({ admin, onSaved, onClose }) {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        name: form.name, email: form.email, mobile: form.mobile,
+        name: form.name, email: form.email, mobile: form.mobile, department: form.department, jobRole: form.jobRole,
         ...(form.password ? { password: form.password } : {}),
       }),
     });
@@ -1009,8 +1012,16 @@ function EditAdminModal({ admin, onSaved, onClose }) {
             <div className="input-icon-wrap"><User size={15} /><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
           </div>
           <div className="field">
+            <label>Department</label>
+            <div className="input-icon-wrap"><Building2 size={15} /><input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>
+          </div>
+          <div className="field">
             <label>Email address</label>
             <div className="input-icon-wrap"><Mail size={15} /><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+          </div>
+          <div className="field">
+            <label>Role</label>
+            <div className="input-icon-wrap"><Users size={15} /><input value={form.jobRole} onChange={(e) => setForm({ ...form, jobRole: e.target.value })} /></div>
           </div>
           <div className="field">
             <label>Mobile number</label>

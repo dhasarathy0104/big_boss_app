@@ -80,7 +80,7 @@ superadminRouter.patch('/admins/:id', requireSuperAdmin, ah(async (req, res) => 
   const admin = await db.prepare("SELECT * FROM users WHERE id = ? AND role IN ('gm', 'agm', 'am', 'tl')").get(req.params.id);
   if (!admin) return res.status(404).json({ error: 'account not found' });
 
-  const { name, mobile, jobRole, password } = req.body;
+  const { name, mobile, department, jobRole, password } = req.body;
   const email = req.body.email !== undefined ? normalizeEmail(req.body.email) : undefined;
   if (name !== undefined && !name.trim()) return res.status(400).json({ error: 'name cannot be blank' });
   if (password !== undefined && password !== '' && password.length < 8) {
@@ -96,6 +96,7 @@ superadminRouter.patch('/admins/:id', requireSuperAdmin, ah(async (req, res) => 
   if (name !== undefined) { updates.push('name = ?'); values.push(name.trim()); }
   if (email !== undefined) { updates.push('email = ?'); values.push(email || null); }
   if (mobile !== undefined) { updates.push('mobile = ?'); values.push(mobile.trim() || null); }
+  if (department !== undefined) { updates.push('department = ?'); values.push(department.trim() || null); }
   if (jobRole !== undefined) { updates.push('job_role = ?'); values.push(jobRole.trim() || null); }
   if (password) { updates.push('password_hash = ?', 'password_reset_requested_at = NULL'); values.push(hashPassword(password)); }
   if (updates.length === 0) return res.status(400).json({ error: 'nothing to update' });
@@ -103,7 +104,7 @@ superadminRouter.patch('/admins/:id', requireSuperAdmin, ah(async (req, res) => 
   values.push(admin.id);
   await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
   const updated = await db.prepare(`
-    SELECT id, name, email, mobile, role, job_role AS "jobRole" FROM users WHERE id = ?
+    SELECT id, name, email, mobile, role, department, job_role AS "jobRole" FROM users WHERE id = ?
   `).get(admin.id);
   res.json(updated);
 }));
