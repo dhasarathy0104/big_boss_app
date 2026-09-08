@@ -89,7 +89,7 @@ authRouter.get('/accounts', ah(async (req, res) => {
   }
   if (role === 'am') {
     const rows = await db.prepare(`
-      SELECT am.id, am.name, mgr.name AS "managerName", mgr.department AS "department"
+      SELECT am.id, am.name, mgr.id AS "managerId", mgr.name AS "managerName", mgr.department AS "department"
       FROM users am
       LEFT JOIN users mgr ON mgr.id = am.parent_id AND mgr.role = 'manager'
       WHERE am.role = 'am' ORDER BY am.name

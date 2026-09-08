@@ -65,7 +65,7 @@ superadminRouter.post('/managers/:id/change-password', requireSuperAdmin, ah(asy
 // Admins list — previously that list only ever showed Manager rows.
 superadminRouter.get('/admins', requireSuperAdmin, ah(async (req, res) => {
   const rows = await db.prepare(`
-    SELECT id, name, email, mobile, role, department, job_role AS "jobRole"
+    SELECT id, name, email, mobile, role, department, job_role AS "jobRole", parent_id AS "parentId"
     FROM users WHERE role IN ('gm', 'agm', 'manager', 'am', 'tl')
     ORDER BY CASE role WHEN 'gm' THEN 1 WHEN 'agm' THEN 2 WHEN 'manager' THEN 3 WHEN 'am' THEN 4 ELSE 5 END, name
   `).all();
@@ -158,6 +158,30 @@ superadminRouter.delete('/managers/:id', requireSuperAdmin, ah(async (req, res) 
   }
 
   await deleteManagerCascade(manager.id);
+  res.json({ ok: true });
+}));
+
+// Removes an Assistant Manager or Team Lead — the same "no one left under
+// them" guard as the manager delete above, just checking the one role
+// directly below instead of always 'employee'. deleteManagerCascade is
+// generic enough for these two roles too (see its own comment): an AM/TL has
+// no projects/category_rules of their own, so those deletes just no-op, but
+// they can have invite_links (a TL's own employee-invite link) and a
+// session, both of which it does clean up. GM/AGM are deliberately not
+// offered here — capped-at-one roles, removed only by direct DB access if
+// ever truly needed, not a casual row-delete.
+superadminRouter.delete('/admins/:id', requireSuperAdmin, ah(async (req, res) => {
+  const admin = await db.prepare("SELECT * FROM users WHERE id = ? AND role IN ('am', 'tl')").get(req.params.id);
+  if (!admin) return res.status(404).json({ error: 'account not found' });
+
+  const childRole = admin.role === 'am' ? 'tl' : 'employee';
+  const childLabel = admin.role === 'am' ? 'team lead' : 'employee';
+  const { count } = await db.prepare('SELECT COUNT(*)::int AS count FROM users WHERE parent_id = ? AND role = ?').get(admin.id, childRole);
+  if (count > 0) {
+    return res.status(400).json({ error: `This admin still has ${count} ${childLabel}${count === 1 ? '' : 's'} — transfer or remove them first.` });
+  }
+
+  await deleteManagerCascade(admin.id);
   res.json({ ok: true });
 }));
 
@@ -317,9 +341,10 @@ superadminRouter.get('/employees-full', requireSuperAdmin, ah(async (req, res) =
 // fixed-level chain and cycle safety for any role, not just employees.
 superadminRouter.get('/tls', requireSuperAdmin, ah(async (req, res) => {
   const tls = await db.prepare(`
-    SELECT tl.id, tl.name, am.id AS "amId", am.name AS "amName"
+    SELECT tl.id, tl.name, am.id AS "amId", am.name AS "amName", mgr.id AS "managerId", mgr.name AS "managerName"
     FROM users tl
     LEFT JOIN users am ON am.id = tl.parent_id AND am.role = 'am'
+    LEFT JOIN users mgr ON mgr.id = am.parent_id AND mgr.role = 'manager'
     WHERE tl.role = 'tl' ORDER BY tl.name
   `).all();
   res.json(tls);

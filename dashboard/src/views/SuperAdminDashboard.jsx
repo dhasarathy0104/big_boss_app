@@ -195,7 +195,6 @@ function SuperAdminEmployeesTab({ overview, onChanged }) {
       </div>
       <EmployeeManagementTable
         employees={employees}
-        otherManagers={overview.admins}
         tlOptions={tlOptions}
         onReassignTl={async (employeeId, newTlId) => {
           const res = await fetch(`/api/superadmin/users/${employeeId}/reassign`, {
@@ -222,17 +221,6 @@ function SuperAdminEmployeesTab({ overview, onChanged }) {
         onDelete={async (employeeId) => {
           const res = await fetch(`/api/superadmin/employees/${employeeId}`, { method: 'DELETE' });
           if (res.ok) { onChanged?.(); load(); }
-        }}
-        onTransfer={async (employeeId, targetManagerId) => {
-          const res = await fetch(`/api/superadmin/employees/${employeeId}/transfer`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ targetManagerId }),
-          });
-          if (!res.ok) return (await res.json()).error;
-          onChanged?.();
-          load();
-          return null;
         }}
       />
     </div>
@@ -896,11 +884,43 @@ function EditManagerModal({ manager, allManagers, onSaved, onClose }) {
 // rows in AdminsListPanel below. Manager keeps the richer EditManagerModal
 // (Department, screenshot/tracking settings, employee transfer), since those
 // don't apply to the other four roles.
+//
+// AM and TL additionally get a "transfer" section here, reusing the same
+// generic POST /api/superadmin/users/:id/reassign endpoint the employee
+// picker in EmployeeManagementTable already relies on (it just checks the
+// new parent's role is exactly one level up — am->manager, tl->am — so no
+// new backend action was needed). A TL still only has one parent field in
+// the database (their AM), but per the same reasoning as TL registration's
+// own dual Assistant Manager + Manager pickers, an independently-chosen
+// Manager here is a real, dedicated field (not just a label next to the AM
+// dropdown) that narrows which AMs are offered — picking a Manager first
+// then one of *their* AMs is what actually gets submitted, so there's
+// nothing to cross-validate: the AM offered is already guaranteed to belong
+// to the Manager picked.
 function EditAdminModal({ admin, onSaved, onClose }) {
   const [form, setForm] = useState({ name: admin.name ?? '', email: admin.email ?? '', mobile: admin.mobile ?? '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const [managers, setManagers] = useState([]);
+  const [ams, setAms] = useState([]);
+  const [transferManagerId, setTransferManagerId] = useState('');
+  const [transferAmId, setTransferAmId] = useState('');
+  const [transferring, setTransferring] = useState(false);
+  const [transferError, setTransferError] = useState('');
+  const [transferSuccess, setTransferSuccess] = useState('');
+
+  useEffect(() => {
+    if (admin.role === 'am' || admin.role === 'tl') {
+      fetch('/api/auth/accounts?role=manager').then((r) => r.json()).then(setManagers);
+    }
+    if (admin.role === 'tl') {
+      fetch('/api/auth/accounts?role=am').then((r) => r.json()).then(setAms);
+    }
+  }, [admin.id, admin.role]);
+
+  const amsForSelectedManager = ams.filter((a) => String(a.managerId ?? '') === transferManagerId);
 
   async function save(e) {
     e.preventDefault();
@@ -920,6 +940,24 @@ function EditAdminModal({ admin, onSaved, onClose }) {
     if (!res.ok) { setError((await res.json()).error); return; }
     onSaved?.();
     onClose();
+  }
+
+  async function doTransfer() {
+    const newParentId = admin.role === 'am' ? transferManagerId : transferAmId;
+    if (!newParentId) return;
+    setTransferError(''); setTransferSuccess('');
+    setTransferring(true);
+    const res = await fetch(`/api/superadmin/users/${admin.id}/reassign`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ newParentId }),
+    });
+    setTransferring(false);
+    if (!res.ok) { setTransferError((await res.json()).error); return; }
+    const data = await res.json();
+    setTransferSuccess(`Moved to report to ${data.newParentName}.`);
+    setTransferManagerId(''); setTransferAmId('');
+    onSaved?.();
   }
 
   return (
@@ -960,6 +998,55 @@ function EditAdminModal({ admin, onSaved, onClose }) {
           <button type="button" className="btn-outline" onClick={onClose}>Cancel</button>
         </div>
       </form>
+
+      {admin.role === 'am' && (
+        <>
+          <hr className="modal-divider" />
+          <p className="modal-section-title">Transfer to a different Manager</p>
+          <div className="inline-form">
+            <div className="input-icon-wrap" style={{ minWidth: 200 }}>
+              <ArrowRightLeft size={15} />
+              <select value={transferManagerId} onChange={(e) => setTransferManagerId(e.target.value)}>
+                <option value="">Select manager…</option>
+                {managers.filter((m) => String(m.id) !== String(admin.parentId)).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+            <button type="button" className="btn-outline-danger" disabled={!transferManagerId || transferring} onClick={doTransfer}>
+              {transferring ? 'Transferring…' : 'Transfer'}
+            </button>
+          </div>
+          {transferError && <div style={{ color: '#e07070', fontSize: 12, marginTop: 8 }}>{transferError}</div>}
+          {transferSuccess && <div style={{ color: 'var(--status-good)', fontSize: 12, marginTop: 8 }}>{transferSuccess}</div>}
+        </>
+      )}
+
+      {admin.role === 'tl' && (
+        <>
+          <hr className="modal-divider" />
+          <p className="modal-section-title">Transfer to a different Manager / Assistant Manager</p>
+          <div className="inline-form">
+            <div className="input-icon-wrap" style={{ minWidth: 180 }}>
+              <Building2 size={15} />
+              <select value={transferManagerId} onChange={(e) => { setTransferManagerId(e.target.value); setTransferAmId(''); }}>
+                <option value="">Select manager…</option>
+                {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+            <div className="input-icon-wrap" style={{ minWidth: 180 }}>
+              <Users size={15} />
+              <select value={transferAmId} onChange={(e) => setTransferAmId(e.target.value)} disabled={!transferManagerId}>
+                <option value="">Select assistant manager…</option>
+                {amsForSelectedManager.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+            <button type="button" className="btn-outline-danger" disabled={!transferAmId || transferring} onClick={doTransfer}>
+              {transferring ? 'Transferring…' : 'Transfer'}
+            </button>
+          </div>
+          {transferError && <div style={{ color: '#e07070', fontSize: 12, marginTop: 8 }}>{transferError}</div>}
+          {transferSuccess && <div style={{ color: 'var(--status-good)', fontSize: 12, marginTop: 8 }}>{transferSuccess}</div>}
+        </>
+      )}
     </Modal>
   );
 }
@@ -979,10 +1066,11 @@ function AdminsListPanel({ overview, onChanged }) {
 
   function reload() { load(); onChanged?.(); }
 
-  async function handleDelete(id) {
+  async function handleDelete(id, role) {
     setDeleteError('');
     setDeletingId(id);
-    const res = await fetch(`/api/superadmin/managers/${id}`, { method: 'DELETE' });
+    const path = role === 'manager' ? `managers/${id}` : `admins/${id}`;
+    const res = await fetch(`/api/superadmin/${path}`, { method: 'DELETE' });
     setDeletingId(null);
     if (!res.ok) { setDeleteError((await res.json()).error); return; }
     setConfirmingId(null);
@@ -999,8 +1087,9 @@ function AdminsListPanel({ overview, onChanged }) {
           <h2 className="card-title">Admins</h2>
           <p className="card-subtitle">
             Every General Manager, Assistant General Manager, Manager, Assistant Manager, and Team Lead, org-wide.
-            Click the pencil to edit their details or set a new password. Managers can also have their tracking
-            settings adjusted and employees transferred here; the trash icon removes a Manager with no employees left.
+            Click the pencil to edit their details, set a new password, or (for an Assistant Manager or Team Lead)
+            transfer them to a different Manager/Assistant Manager. The trash icon removes a Manager, Assistant
+            Manager, or Team Lead as long as no one still reports to them.
           </p>
         </div>
       </div>
@@ -1029,7 +1118,7 @@ function AdminsListPanel({ overview, onChanged }) {
                   <td>
                     {confirmingId === a.id ? (
                       <div className="inline-form" style={{ gap: 6, flexWrap: 'nowrap' }}>
-                        <button className="btn-small btn-danger" disabled={deletingId === a.id} onClick={() => handleDelete(a.id)}>
+                        <button className="btn-small btn-danger" disabled={deletingId === a.id} onClick={() => handleDelete(a.id, a.role)}>
                           {deletingId === a.id ? 'Removing…' : 'Yes, remove'}
                         </button>
                         <button className="btn-small" onClick={() => setConfirmingId(null)}>Cancel</button>
@@ -1039,7 +1128,7 @@ function AdminsListPanel({ overview, onChanged }) {
                         <button className="row-icon-btn" title="Edit" onClick={() => setEditing(a)}>
                           <Pencil size={14} />
                         </button>
-                        {a.role === 'manager' && (
+                        {(a.role === 'manager' || a.role === 'am' || a.role === 'tl') && (
                           <button className="row-icon-btn row-icon-btn-danger" title="Remove" onClick={() => { setDeleteError(''); setConfirmingId(a.id); }}>
                             <Trash2 size={14} />
                           </button>

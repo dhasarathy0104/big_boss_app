@@ -17,19 +17,36 @@ function EditEmployeeModal({ employee, managerName, otherManagers, tlOptions, on
   const [tlId, setTlId] = useState('');
   const [reassigning, setReassigning] = useState(false);
 
-  // Groups the flat tlOptions list (each TL tagged with its own AM) into
-  // "pick an AM, then pick one of their TLs" — a friendlier two-step picker
-  // than one long flat list of team lead names once an org has more than a
-  // handful.
-  const amGroups = useMemo(() => {
+  // Groups the flat tlOptions list into "pick a Manager, then one of their
+  // Assistant Managers, then one of that AM's Team Leads" — moving an
+  // employee to a new TL is what actually determines their whole chain
+  // (AM and Manager both come along for free, since each TL belongs to
+  // exactly one AM which belongs to exactly one Manager), so this cascade
+  // covers "transfer manager" too without a separate, easy-to-get-wrong
+  // manager-only picker. Falls back to a single unlabeled "No manager"
+  // group when tlOptions doesn't carry manager info (older callers).
+  const [managerId, setManagerId] = useState('');
+  const managerGroups = useMemo(() => {
     const map = new Map();
     (tlOptions ?? []).forEach((tl) => {
-      const key = String(tl.amId ?? 'none');
-      if (!map.has(key)) map.set(key, { amId: tl.amId, amName: tl.amName ?? 'No assistant manager', tls: [] });
-      map.get(key).tls.push(tl);
+      const key = String(tl.managerId ?? 'none');
+      if (!map.has(key)) map.set(key, { managerId: tl.managerId, managerName: tl.managerName ?? 'No manager', amGroups: new Map() });
+      const mgr = map.get(key);
+      const amKey = String(tl.amId ?? 'none');
+      if (!mgr.amGroups.has(amKey)) mgr.amGroups.set(amKey, { amId: tl.amId, amName: tl.amName ?? 'No assistant manager', tls: [] });
+      mgr.amGroups.get(amKey).tls.push(tl);
     });
-    return [...map.values()];
+    return [...map.values()].map((mgr) => ({ ...mgr, amGroups: [...mgr.amGroups.values()] }));
   }, [tlOptions]);
+  // Only worth showing the Manager step at all when tlOptions actually
+  // carries manager info (the super admin's org-wide view) — a caller
+  // scoped to one manager already (a manager's own team, or a GM/AGM's own
+  // subtree view) has nothing to pick there, so skip straight to AM/TL,
+  // unchanged from before this cascade grew a third level.
+  const hasManagerInfo = managerGroups.some((g) => g.managerId != null);
+  const amGroups = hasManagerInfo
+    ? managerGroups.find((g) => String(g.managerId ?? 'none') === managerId)?.amGroups ?? []
+    : managerGroups[0]?.amGroups ?? [];
   const tlsForSelectedAm = amGroups.find((g) => String(g.amId ?? 'none') === amId)?.tls ?? [];
 
   async function save(e) {
@@ -141,11 +158,22 @@ function EditEmployeeModal({ employee, managerName, otherManagers, tlOptions, on
       {tlOptions && tlOptions.length > 0 && (
         <>
           <hr className="modal-divider" />
-          <p className="modal-section-title">Move to a different Assistant Manager / Team Lead</p>
+          <p className="modal-section-title">
+            {hasManagerInfo ? 'Transfer to a different Manager / Assistant Manager / Team Lead' : 'Move to a different Assistant Manager / Team Lead'}
+          </p>
           <div className="inline-form">
+            {hasManagerInfo && (
+              <div className="input-icon-wrap" style={{ minWidth: 180 }}>
+                <Building2 size={15} />
+                <select value={managerId} onChange={(e) => { setManagerId(e.target.value); setAmId(''); setTlId(''); }}>
+                  <option value="">Select manager…</option>
+                  {managerGroups.map((g) => <option key={g.managerId ?? 'none'} value={String(g.managerId ?? 'none')}>{g.managerName}</option>)}
+                </select>
+              </div>
+            )}
             <div className="input-icon-wrap" style={{ minWidth: 180 }}>
               <Users size={15} />
-              <select value={amId} onChange={(e) => { setAmId(e.target.value); setTlId(''); }}>
+              <select value={amId} onChange={(e) => { setAmId(e.target.value); setTlId(''); }} disabled={hasManagerInfo && !managerId}>
                 <option value="">Select assistant manager…</option>
                 {amGroups.map((g) => <option key={g.amId ?? 'none'} value={String(g.amId ?? 'none')}>{g.amName}</option>)}
               </select>
