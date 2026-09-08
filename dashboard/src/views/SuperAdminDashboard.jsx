@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronRight, UserCog, Send, Building2, ListChecks, BarChart3, FolderOpen, Trash2, Users2,
   UserPlus, Lock, Eye, EyeOff, Mail, Phone, ArrowRightLeft, AlertCircle, User, Pencil, Video,
 } from 'lucide-react';
-import { todayStr } from '../format.js';
+import { todayStr, fmtDateTime } from '../format.js';
 import Avatar from '../components/Avatar.jsx';
 import DeskIllustration from '../components/DeskIllustration.jsx';
 import FolderIllustration from '../components/FolderIllustration.jsx';
@@ -1329,7 +1329,7 @@ function RecentRegistrationsPanel() {
                 <td><span className="badge-role">{ROLE_LABEL[r.role] ?? r.role}</span></td>
                 <td>{r.reportsTo || '—'}</td>
                 <td>{r.department || '—'}</td>
-                <td>{r.created_at}</td>
+                <td>{fmtDateTime(r.created_at)}</td>
               </tr>
             ))}
           </tbody>

@@ -34,6 +34,19 @@ export function fmtTime(iso) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+// Backend timestamps like created_at are stored as "YYYY-MM-DD HH:MM:SS" in
+// UTC but with no 'T' or 'Z' (see db.js's created_at columns) — new Date()
+// on a bare string like that gets parsed as *local* time by the browser,
+// not UTC, so it silently shows the raw UTC wall-clock value with no
+// conversion at all. Marking it explicitly UTC first is what makes
+// toLocaleString actually convert to the viewer's own timezone.
+export function fmtDateTime(utcStr) {
+  if (!utcStr) return '—';
+  return new Date(utcStr.replace(' ', 'T') + 'Z').toLocaleString([], {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
 export function fmtMinutes(rawMins) {
   const mins = rawMins > 0 ? Math.max(1, Math.round(rawMins)) : 0;
   if (mins < 60) return `${mins}m`;
