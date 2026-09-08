@@ -201,47 +201,69 @@ managersRouter.post('/:id/team/:employeeId/claim-link', requireManagerSelf, ah(a
   res.json({ claimToken });
 }));
 
-// Other manager accounts, to pick a transfer destination from.
+// Other manager accounts — used by TeamView's own read-only "Other
+// managers" list, unrelated to the transfer cascade below.
 managersRouter.get('/:id/other-managers', requireManagerSelf, ah(async (req, res) => {
   const others = await db.prepare("SELECT id, name FROM users WHERE role = 'manager' AND id != ? ORDER BY name")
     .all(req.params.id);
   res.json(others);
 }));
 
-// Moves an employee to a different manager. Their whole record (history,
-// screenshots, attendance, leave) moves with them — parent_id is the one
-// source of truth for "whose team is this employee on", there's no
-// before/after split. The old manager loses access immediately; the new
-// manager gains full access immediately, including past data.
+// Every TL org-wide, with their AM and Manager resolved — feeds the
+// Manager -> Assistant Manager -> Team Lead cascade in the "transfer to a
+// different manager" section below. Same shape as the super-admin
+// equivalent (GET /api/superadmin/tls); a manager already sees other
+// managers' plain names via /other-managers above, so exposing their
+// AM/TL names too for this one purpose isn't a new category of
+// visibility, just one level deeper.
+managersRouter.get('/:id/tls-org-wide', requireManagerSelf, ah(async (req, res) => {
+  const tls = await db.prepare(`
+    SELECT tl.id, tl.name, am.id AS "amId", am.name AS "amName", mgr.id AS "managerId", mgr.name AS "managerName"
+    FROM users tl
+    LEFT JOIN users am ON am.id = tl.parent_id AND am.role = 'am'
+    LEFT JOIN users mgr ON mgr.id = am.parent_id AND mgr.role = 'manager'
+    WHERE tl.role = 'tl' ORDER BY tl.name
+  `).all();
+  res.json(tls);
+}));
+
+// Moves an employee — anywhere in this manager's own subtree, at any depth
+// below an AM/TL — to a Team Lead under a *different* manager. Their whole
+// record (history, screenshots, attendance, leave) moves with them —
+// parent_id is the one source of truth for "whose team is this employee
+// on", there's no before/after split. The old manager loses access
+// immediately; the new manager gains full access immediately, including
+// past data.
 //
-// Only ever valid for a legacy employee whose parent_id still points
-// straight at a manager (pre-dating AM/TL) — pointing a properly-nested
-// employee's parent_id at a manager directly would skip AM/TL entirely and
-// break the fixed-level hierarchy (see hierarchy.js's ROLE_ORDER). Moving
-// one of those is what the TL's own peer-transfer (SupervisorTeamView) or
-// the Assistant Manager/Team Lead picker in the employee's own Employee
-// Management edit form (EmployeeManagementTable) are for instead.
+// This used to require the employee's parent_id to point straight at this
+// manager (pre-dating AM/TL), which stopped being true for any real
+// employee once Stage 2 made every employee join through a TL — silently
+// making this button fail for literally everyone. Fixed the same way as
+// the super-admin equivalents: land on a real TL id instead of a manager
+// id, since the fixed hierarchy has no "skip a level" concept. Unlike the
+// in-scope Assistant Manager/Team Lead picker (POST
+// /api/supervisors/:id/employees/:employeeId/reassign, which deliberately
+// keeps AM/TL/GM/AGM restricted to their own subtree), the destination TL
+// here is intentionally unrestricted — this endpoint's whole purpose is
+// crossing into a different manager's structure, mirroring how a TL's own
+// peer-transfer (supervisors.js) already lets them pick any peer TL
+// org-wide.
 managersRouter.post('/:id/team/:employeeId/transfer', requireManagerSelf, ah(async (req, res) => {
-  const { targetManagerId } = req.body;
-  if (!targetManagerId) return res.status(400).json({ error: 'targetManagerId required' });
-  if (Number(targetManagerId) === Number(req.params.id)) {
-    return res.status(400).json({ error: 'employee is already on your team' });
-  }
+  const { newTlId } = req.body;
+  if (!newTlId) return res.status(400).json({ error: 'newTlId required' });
 
   const descendantIds = await getDescendantIds(Number(req.params.id));
   const employee = descendantIds.includes(Number(req.params.employeeId))
     ? await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'employee'").get(req.params.employeeId)
     : null;
   if (!employee) return res.status(404).json({ error: 'employee not found on your team' });
-  if (employee.parent_id !== Number(req.params.id)) {
-    return res.status(400).json({
-      error: "this employee reports through an AM/TL — use their TL's Team & Invite tab, or the Assistant Manager/Team Lead picker in their Employee Management edit form, to move them instead",
-    });
+  if (Number(newTlId) === employee.parent_id) {
+    return res.status(400).json({ error: 'employee already reports to that team lead' });
   }
 
-  const targetManager = await db.prepare("SELECT * FROM users WHERE id = ? AND role = 'manager'").get(targetManagerId);
-  if (!targetManager) return res.status(404).json({ error: 'target manager not found' });
+  const newTl = await db.prepare("SELECT id, name FROM users WHERE id = ? AND role = 'tl'").get(newTlId);
+  if (!newTl) return res.status(404).json({ error: 'select a valid Team Lead' });
 
-  await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(targetManager.id, employee.id);
-  res.json({ ok: true, employeeId: employee.id, newManagerId: targetManager.id, newManagerName: targetManager.name });
+  await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(newTl.id, employee.id);
+  res.json({ ok: true, employeeId: employee.id, newTlId: newTl.id, newTlName: newTl.name });
 }));

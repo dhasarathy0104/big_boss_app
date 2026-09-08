@@ -5,17 +5,25 @@ import EmployeeManagementTable from '../components/EmployeeManagementTable.jsx';
 // Profile details, password resets, and transfers now all live inside the
 // per-row edit form (pencil icon) — see EmployeeManagementTable.
 export default function EmployeeManagementView({ managerId, managerName, team, onTeamChanged }) {
-  const [otherManagers, setOtherManagers] = useState([]);
+  const [crossTlOptions, setCrossTlOptions] = useState([]);
   const [tlOptions, setTlOptions] = useState([]);
   const requested = team.filter((e) => e.passwordResetRequested);
 
   useEffect(() => {
     if (managerId) {
-      fetch(`/api/managers/${managerId}/other-managers`).then((r) => r.json()).then(setOtherManagers);
       // A manager qualifies as a supervisor too (see hierarchy.js's
       // isSupervisorRole), so this reuses the same generalized endpoint
       // SupervisorEmployeeManagementView uses — no manager-only duplicate needed.
-      fetch(`/api/supervisors/${managerId}/tls-in-scope`).then((r) => r.json()).then(setTlOptions);
+      fetch(`/api/supervisors/${managerId}/tls-in-scope`).then((r) => r.json()).then((inScope) => {
+        setTlOptions(inScope);
+        // Org-wide TL list for "transfer to another manager", filtered down
+        // to just the ones NOT already in-scope so this section stays
+        // complementary to the picker above rather than overlapping it.
+        fetch(`/api/managers/${managerId}/tls-org-wide`).then((r) => r.json()).then((all) => {
+          const inScopeIds = new Set(inScope.map((tl) => tl.id));
+          setCrossTlOptions(all.filter((tl) => !inScopeIds.has(tl.id)));
+        });
+      });
     }
   }, [managerId]);
 
@@ -35,11 +43,11 @@ export default function EmployeeManagementView({ managerId, managerName, team, o
     if (res.ok) onTeamChanged?.();
   }
 
-  async function transferEmployee(employeeId, targetManagerId) {
+  async function transferEmployee(employeeId, newTlId) {
     const res = await fetch(`/api/managers/${managerId}/team/${employeeId}/transfer`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ targetManagerId }),
+      body: JSON.stringify({ newTlId }),
     });
     if (!res.ok) return (await res.json()).error;
     onTeamChanged?.();
@@ -90,7 +98,7 @@ export default function EmployeeManagementView({ managerId, managerName, team, o
         <EmployeeManagementTable
           employees={team}
           managerName={managerName}
-          otherManagers={otherManagers}
+          crossTlOptions={crossTlOptions}
           tlOptions={tlOptions}
           onSave={saveEmployee}
           onDelete={deleteEmployee}

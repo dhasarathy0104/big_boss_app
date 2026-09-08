@@ -3,19 +3,41 @@ import { Pencil, Trash2, User, Mail, Phone, Building2, Users, Lock, Eye, EyeOff,
 import Avatar from './Avatar.jsx';
 import Modal from './Modal.jsx';
 
-function EditEmployeeModal({ employee, managerName, otherManagers, tlOptions, onSave, onTransfer, onReassignTl, onClose }) {
+function EditEmployeeModal({ employee, managerName, crossTlOptions, tlOptions, onSave, onTransfer, onReassignTl, onClose }) {
   const [form, setForm] = useState({
     name: employee.name ?? '', email: employee.email ?? '', mobile: employee.mobile ?? '',
     department: employee.department ?? '', jobRole: employee.jobRole ?? '', password: '',
   });
   const [showPassword, setShowPassword] = useState(false);
-  const [targetManagerId, setTargetManagerId] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [transferring, setTransferring] = useState(false);
   const [amId, setAmId] = useState('');
   const [tlId, setTlId] = useState('');
   const [reassigning, setReassigning] = useState(false);
+
+  // Same idea as the in-scope cascade below, but for crossTlOptions (a
+  // caller-supplied, org-wide-or-wider TL list distinct from tlOptions'
+  // in-scope one) — separate state since a caller like the manager's own
+  // Employee Management tab shows both sections at once, each moving to a
+  // different pool of destinations.
+  const [crossManagerId, setCrossManagerId] = useState('');
+  const [crossAmId, setCrossAmId] = useState('');
+  const [crossTlId, setCrossTlId] = useState('');
+  const [transferring, setTransferring] = useState(false);
+  const crossManagerGroups = useMemo(() => {
+    const map = new Map();
+    (crossTlOptions ?? []).forEach((tl) => {
+      const key = String(tl.managerId ?? 'none');
+      if (!map.has(key)) map.set(key, { managerId: tl.managerId, managerName: tl.managerName ?? 'No manager', amGroups: new Map() });
+      const mgr = map.get(key);
+      const amKey = String(tl.amId ?? 'none');
+      if (!mgr.amGroups.has(amKey)) mgr.amGroups.set(amKey, { amId: tl.amId, amName: tl.amName ?? 'No assistant manager', tls: [] });
+      mgr.amGroups.get(amKey).tls.push(tl);
+    });
+    return [...map.values()].map((mgr) => ({ ...mgr, amGroups: [...mgr.amGroups.values()] }));
+  }, [crossTlOptions]);
+  const crossAmGroups = crossManagerGroups.find((g) => String(g.managerId ?? 'none') === crossManagerId)?.amGroups ?? [];
+  const crossTlsForSelectedAm = crossAmGroups.find((g) => String(g.amId ?? 'none') === crossAmId)?.tls ?? [];
 
   // Groups the flat tlOptions list into "pick a Manager, then one of their
   // Assistant Managers, then one of that AM's Team Leads" — moving an
@@ -66,9 +88,9 @@ function EditEmployeeModal({ employee, managerName, otherManagers, tlOptions, on
   }
 
   async function doTransfer() {
-    if (!targetManagerId) return;
+    if (!crossTlId) return;
     setTransferring(true);
-    const err = await onTransfer(employee.id, targetManagerId);
+    const err = await onTransfer(employee.id, crossTlId);
     setTransferring(false);
     if (err) { setError(err); return; }
     onClose();
@@ -192,19 +214,33 @@ function EditEmployeeModal({ employee, managerName, otherManagers, tlOptions, on
         </>
       )}
 
-      {otherManagers && otherManagers.filter((m) => m.id !== employee.managerId).length > 0 && (
+      {crossTlOptions && crossTlOptions.length > 0 && (
         <>
           <hr className="modal-divider" />
           <p className="modal-section-title">Transfer to another manager</p>
           <div className="inline-form">
-            <div className="input-icon-wrap" style={{ minWidth: 200 }}>
-              <ArrowRightLeft size={15} />
-              <select value={targetManagerId} onChange={(e) => setTargetManagerId(e.target.value)}>
+            <div className="input-icon-wrap" style={{ minWidth: 180 }}>
+              <Building2 size={15} />
+              <select value={crossManagerId} onChange={(e) => { setCrossManagerId(e.target.value); setCrossAmId(''); setCrossTlId(''); }}>
                 <option value="">Select manager…</option>
-                {otherManagers.filter((m) => m.id !== employee.managerId).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                {crossManagerGroups.map((g) => <option key={g.managerId ?? 'none'} value={String(g.managerId ?? 'none')}>{g.managerName}</option>)}
               </select>
             </div>
-            <button type="button" className="btn-outline-danger" disabled={!targetManagerId || transferring} onClick={doTransfer}>
+            <div className="input-icon-wrap" style={{ minWidth: 180 }}>
+              <Users size={15} />
+              <select value={crossAmId} onChange={(e) => { setCrossAmId(e.target.value); setCrossTlId(''); }} disabled={!crossManagerId}>
+                <option value="">Select assistant manager…</option>
+                {crossAmGroups.map((g) => <option key={g.amId ?? 'none'} value={String(g.amId ?? 'none')}>{g.amName}</option>)}
+              </select>
+            </div>
+            <div className="input-icon-wrap" style={{ minWidth: 180 }}>
+              <ArrowRightLeft size={15} />
+              <select value={crossTlId} onChange={(e) => setCrossTlId(e.target.value)} disabled={!crossAmId}>
+                <option value="">Select team lead…</option>
+                {crossTlsForSelectedAm.map((tl) => <option key={tl.id} value={tl.id}>{tl.name}</option>)}
+              </select>
+            </div>
+            <button type="button" className="btn-outline-danger" disabled={!crossTlId || transferring} onClick={doTransfer}>
               {transferring ? 'Transferring…' : 'Transfer'}
             </button>
           </div>
@@ -218,7 +254,7 @@ function EditEmployeeModal({ employee, managerName, otherManagers, tlOptions, on
 // tab and the super admin's org-wide employee view — same columns, same
 // pencil-opens-edit-form / trash-deletes-row pattern, different API scope
 // wired in by the caller via onSave/onDelete/onTransfer.
-export default function EmployeeManagementTable({ employees, managerName, otherManagers, tlOptions, onSave, onDelete, onTransfer, onReassignTl, onRowClick }) {
+export default function EmployeeManagementTable({ employees, managerName, crossTlOptions, tlOptions, onSave, onDelete, onTransfer, onReassignTl, onRowClick }) {
   const [editing, setEditing] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -291,7 +327,7 @@ export default function EmployeeManagementTable({ employees, managerName, otherM
         <EditEmployeeModal
           employee={editing}
           managerName={editing.managerName ?? managerName}
-          otherManagers={otherManagers}
+          crossTlOptions={crossTlOptions}
           tlOptions={tlOptions}
           onSave={onSave}
           onTransfer={onTransfer}
