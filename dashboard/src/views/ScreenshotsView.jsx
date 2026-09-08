@@ -193,6 +193,14 @@ export default function ScreenshotsView({ selectedUserId, managerId, settingsUrl
 
   return (
     <>
+      {selectedUserId && !managerId && (
+        <div className="panel">
+          <div className="empty">
+            This employee doesn't report to a Manager yet, so there's no team-wide screenshot frequency
+            or tracking-hours setting to show — connect them to a Manager from the Admins panel to set one.
+          </div>
+        </div>
+      )}
       <IntervalControl managerId={managerId} settingsUrl={settingsUrl} />
       {managerId && <TrackingHoursControl managerId={managerId} settingsUrl={settingsUrl ?? `/api/managers/${managerId}/settings`} />}
 

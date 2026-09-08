@@ -1384,11 +1384,19 @@ function ManageTab({ overview, onChanged }) {
 export default function SuperAdminDashboard({ user, onLogout }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [overview, setOverview] = useState(null);
+  const [employeesFull, setEmployeesFull] = useState(null);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [date, setDate] = useState(todayStr());
 
   function reloadOverview() {
     fetch('/api/superadmin/overview').then((r) => r.json()).then(setOverview);
+    // Separate from overview.admins[].employees on purpose — that list only
+    // ever includes an employee whose whole TL->AM->Manager chain resolves
+    // (see GET /overview's own comment), so it silently excludes anyone
+    // with a detached TL/AM. employees-full already resolves managerId
+    // leniently and reports it as null instead of dropping the row, which
+    // is what selectedEmployeeManagerId below actually needs.
+    fetch('/api/superadmin/employees-full').then((r) => r.json()).then(setEmployeesFull);
   }
 
   useEffect(reloadOverview, [activeTab]);
@@ -1396,10 +1404,10 @@ export default function SuperAdminDashboard({ user, onLogout }) {
   // The screenshot interval / tracking-hours settings are per-manager (they
   // apply to that manager's whole team), so viewing one employee's
   // screenshots as super admin needs that employee's own manager's id, not
-  // the employee's own id.
-  const selectedEmployeeManagerId = overview?.admins
-    ?.flatMap((a) => a.employees.map((e) => ({ id: e.id, managerId: a.id })))
-    .find((e) => e.id === selectedUserId)?.managerId ?? null;
+  // the employee's own id. null here is a real, valid answer (this
+  // employee's chain doesn't currently reach a real Manager), not just "not
+  // loaded yet" — see the explanatory panel in ScreenshotsView's own render.
+  const selectedEmployeeManagerId = employeesFull?.find((e) => e.id === selectedUserId)?.managerId ?? null;
 
   return (
     <div className="app">
