@@ -125,8 +125,17 @@ app.post('/api/ingest/activity', authUser, ah(async (req, res) => {
   const { events } = req.body;
   if (!Array.isArray(events)) return res.status(400).json({ error: 'events array required' });
 
-  const manager = req.user.parent_id
-    ? await db.prepare('SELECT tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(req.user.parent_id)
+  // Same bug family as GET /api/agent-settings above: req.user.parent_id is
+  // an employee's TL, not their Manager, since the TL-invite rework. Since
+  // NULL tracking hours means "unrestricted" and a TL row never has these
+  // columns set, this was silently *not enforcing* any tracking-hours
+  // window a real Manager configured, for every employee going through a
+  // TL -- the opposite failure direction from the agent-settings bug (that
+  // one under-delivered a setting; this one silently skips enforcing one),
+  // but the same root cause. getAncestorIdWithRole finds the real Manager.
+  const managerId = await getAncestorIdWithRole(req.user.id, 'manager');
+  const manager = managerId
+    ? await db.prepare('SELECT tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(managerId)
     : null;
   const inWindow = (startedAt) => isWithinTrackingWindow(startedAt, manager?.tracking_start_time, manager?.tracking_end_time);
   const acceptedEvents = events.filter((e) => inWindow(e.startedAt));
@@ -164,8 +173,11 @@ app.post('/api/ingest/screenshot', authUser, ah(async (req, res) => {
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
 
   const effectiveCapturedAt = capturedAt ?? new Date().toISOString();
-  const manager = req.user.parent_id
-    ? await db.prepare('SELECT tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(req.user.parent_id)
+  // Same fix as /api/ingest/activity above -- resolve the real Manager
+  // instead of reading the employee's direct parent (a TL) directly.
+  const managerId = await getAncestorIdWithRole(req.user.id, 'manager');
+  const manager = managerId
+    ? await db.prepare('SELECT tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(managerId)
     : null;
   if (!isWithinTrackingWindow(effectiveCapturedAt, manager?.tracking_start_time, manager?.tracking_end_time)) {
     return res.json({ ok: true, stored: false });
