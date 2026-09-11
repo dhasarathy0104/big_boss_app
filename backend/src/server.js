@@ -24,7 +24,7 @@ import { billingRouter } from './routes/billing.js';
 import { authRouter } from './routes/auth.js';
 import { superadminRouter } from './routes/superadmin.js';
 import { requireAuth, isSelfOrOwnEmployee, hashPassword } from './auth.js';
-import { getAncestorIdWithRole, roleBelow } from './hierarchy.js';
+import { getAncestorIdWithRole, getEffectiveAgentSettings, roleBelow } from './hierarchy.js';
 import { isWithinTrackingWindow } from './trackingWindow.js';
 
 function normalizeEmail(raw) {
@@ -132,12 +132,12 @@ app.post('/api/ingest/activity', authUser, ah(async (req, res) => {
   // window a real Manager configured, for every employee going through a
   // TL -- the opposite failure direction from the agent-settings bug (that
   // one under-delivered a setting; this one silently skips enforcing one),
-  // but the same root cause. getAncestorIdWithRole finds the real Manager.
-  const managerId = await getAncestorIdWithRole(req.user.id, 'manager');
-  const manager = managerId
-    ? await db.prepare('SELECT tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(managerId)
-    : null;
-  const inWindow = (startedAt) => isWithinTrackingWindow(startedAt, manager?.tracking_start_time, manager?.tracking_end_time);
+  // but the same root cause. getEffectiveAgentSettings finds the real
+  // Manager (or falls back to the org default for an orphaned chain, the
+  // same fallback GET /api/agent-settings already used) instead of just
+  // going null with no restriction the moment there's no Manager at all.
+  const settings = await getEffectiveAgentSettings(req.user.id);
+  const inWindow = (startedAt) => isWithinTrackingWindow(startedAt, settings.trackingStartTime, settings.trackingEndTime);
   const acceptedEvents = events.filter((e) => inWindow(e.startedAt));
 
   await withTransaction(async (tx) => {
@@ -173,13 +173,11 @@ app.post('/api/ingest/screenshot', authUser, ah(async (req, res) => {
   if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
 
   const effectiveCapturedAt = capturedAt ?? new Date().toISOString();
-  // Same fix as /api/ingest/activity above -- resolve the real Manager
-  // instead of reading the employee's direct parent (a TL) directly.
-  const managerId = await getAncestorIdWithRole(req.user.id, 'manager');
-  const manager = managerId
-    ? await db.prepare('SELECT tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(managerId)
-    : null;
-  if (!isWithinTrackingWindow(effectiveCapturedAt, manager?.tracking_start_time, manager?.tracking_end_time)) {
+  // Same fix as /api/ingest/activity above -- resolve the real Manager, or
+  // the org-default fallback for an orphaned chain, instead of going
+  // unrestricted the moment there's no Manager at all.
+  const settings = await getEffectiveAgentSettings(req.user.id);
+  if (!isWithinTrackingWindow(effectiveCapturedAt, settings.trackingStartTime, settings.trackingEndTime)) {
     return res.json({ ok: true, stored: false });
   }
 
@@ -214,19 +212,12 @@ app.post('/api/ingest/screenshot', authUser, ah(async (req, res) => {
 // (GET/PATCH /api/superadmin/org-defaults) controlling what such an
 // employee's agent actually does, not just a silent constant.
 app.get('/api/agent-settings', authUser, ah(async (req, res) => {
-  const managerId = await getAncestorIdWithRole(req.user.id, 'manager');
-  const source = managerId
-    ? await db.prepare('SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(managerId)
-    : await db.prepare("SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE role = 'superadmin'").get();
-  res.json({
-    screenshotIntervalMinutes: source?.screenshot_interval_minutes ?? 5,
-    // Not enforced by the currently-installed agent — enforcement lives
-    // server-side (see /api/ingest/*) so this works without an agent
-    // update. Exposed here anyway so a future agent version can save a
-    // battery/CPU cost by not polling outside the window at all.
-    trackingStartTime: source?.tracking_start_time ?? null,
-    trackingEndTime: source?.tracking_end_time ?? null,
-  });
+  const settings = await getEffectiveAgentSettings(req.user.id);
+  // trackingStartTime/trackingEndTime not enforced by the currently-installed
+  // agent — enforcement lives server-side (see /api/ingest/*). Exposed here
+  // anyway so a future agent version can save a battery/CPU cost by not
+  // polling outside the window at all.
+  res.json(settings);
 }));
 
 // --- Live-view signaling, agent side ---

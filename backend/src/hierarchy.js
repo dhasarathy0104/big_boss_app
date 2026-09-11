@@ -68,6 +68,29 @@ export async function getAncestorIdWithRole(userId, role) {
   return null;
 }
 
+// The screenshot interval + tracking-hours window that actually govern a
+// given employee's agent: their real Manager's row, walking through any
+// number of TL/AM hops, or the org-wide default (the super admin row) when
+// no Manager exists anywhere in their chain (a fully orphaned TL/AM, or no
+// Manager in the org yet). Single source of truth for this resolution --
+// GET /api/agent-settings and both /api/ingest/* routes must all agree on
+// what "the employee's settings" means, so they share this instead of each
+// re-implementing the manager-or-fallback lookup (one previously skipped
+// the fallback entirely, silently leaving tracking-hours unenforced for
+// every orphaned-chain employee despite the org-default UI showing a
+// window as active).
+export async function getEffectiveAgentSettings(userId) {
+  const managerId = await getAncestorIdWithRole(userId, 'manager');
+  const source = managerId
+    ? await db.prepare('SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE id = ?').get(managerId)
+    : await db.prepare("SELECT screenshot_interval_minutes, tracking_start_time, tracking_end_time FROM users WHERE role = 'superadmin'").get();
+  return {
+    screenshotIntervalMinutes: source?.screenshot_interval_minutes ?? 5,
+    trackingStartTime: source?.tracking_start_time ?? null,
+    trackingEndTime: source?.tracking_end_time ?? null,
+  };
+}
+
 // True if `authUser` is allowed to view/act on `targetUserId`'s data: it's
 // their own, they're a super admin (sees everyone), or the target is
 // anywhere in their reporting chain below them.
