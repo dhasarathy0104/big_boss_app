@@ -1008,6 +1008,12 @@ function EditAdminModal({ admin, onSaved, onClose }) {
       // reach the backend as an actual null, not the literal string "none",
       // since select values are always strings.
       newParentId = transferManagerId === 'none' ? null : transferManagerId;
+    } else if (transferManagerId === 'none') {
+      // "No manager" in the Manager dropdown is a direct, standalone detach
+      // -- same as the Assistant Manager dropdown's own "none" option, just
+      // one level up -- and takes priority over the AM dropdown, which is
+      // disabled in this state anyway (see the select below).
+      newParentId = null;
     } else {
       if (!transferAmId) return;
       // "none" here means one of two things depending on whether a Manager
@@ -1109,6 +1115,7 @@ function EditAdminModal({ admin, onSaved, onClose }) {
               <Building2 size={15} />
               <select value={transferManagerId} onChange={(e) => { setTransferManagerId(e.target.value); setTransferAmId(''); }}>
                 <option value="">Select manager…</option>
+                {admin.parentId != null && <option value="none">No manager</option>}
                 {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
             </div>
@@ -1120,16 +1127,24 @@ function EditAdminModal({ admin, onSaved, onClose }) {
                   of transferManagerId. What it actually does depends on
                   that filter though: with a Manager selected, it attaches
                   the TL straight to that Manager (no AM in between); with
-                  none selected, it's a full detach. */}
-              <select value={transferAmId} onChange={(e) => setTransferAmId(e.target.value)}>
+                  none selected, it's a full detach. Disabled entirely once
+                  "No manager" is picked above -- there's no Manager left to
+                  have an Assistant Manager under, and that top-level choice
+                  already fully determines the outcome on its own. */}
+              <select value={transferAmId} onChange={(e) => setTransferAmId(e.target.value)} disabled={transferManagerId === 'none'}>
                 <option value="">Select assistant manager…</option>
                 <option value="none">
-                  {transferManagerId ? 'No assistant manager (reports directly to Manager)' : 'No assistant manager (detach)'}
+                  {transferManagerId && transferManagerId !== 'none' ? 'No assistant manager (reports directly to Manager)' : 'No assistant manager (detach)'}
                 </option>
                 {amsForSelectedManager.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
-            <button type="button" className="btn-outline-danger" disabled={!transferAmId || transferring} onClick={doTransfer}>
+            <button
+              type="button"
+              className="btn-outline-danger"
+              disabled={(transferManagerId !== 'none' && !transferAmId) || transferring}
+              onClick={doTransfer}
+            >
               {transferring ? 'Transferring…' : 'Transfer'}
             </button>
           </div>
