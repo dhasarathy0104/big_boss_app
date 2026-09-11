@@ -166,12 +166,67 @@ export async function buildDepartment(manager) {
   // synthetic AM/TL, same "shows as direct, not excluded" precedent as
   // employees-full elsewhere.
   const directEmployees = await db.prepare(`SELECT ${EMPLOYEE_COLUMNS} FROM users WHERE parent_id = ? AND role = 'employee' ORDER BY name`).all(manager.id);
-  const employeeCount = amsWithTls.reduce((sum, am) => sum + am.employeeCount, 0) + directEmployees.length;
+  // A Team Lead can now also report straight to the Manager with no
+  // Assistant Manager in between (see the tl/manager exception in
+  // POST /users/:id/reassign and adoptOrphansIntoDepartment below) — same
+  // "shows as direct, not excluded" precedent as directEmployees above,
+  // just one level up.
+  const directTlRows = await db.prepare("SELECT id, name, email, mobile FROM users WHERE parent_id = ? AND role = 'tl' ORDER BY name").all(manager.id);
+  const directTls = await Promise.all(directTlRows.map(buildTlWithEmployees));
+  const employeeCount = amsWithTls.reduce((sum, am) => sum + am.employeeCount, 0)
+    + directEmployees.length
+    + directTls.reduce((sum, tl) => sum + tl.employeeCount, 0);
   return {
     id: manager.id, name: manager.name, email: manager.email, mobile: manager.mobile,
     department: manager.department, jobRole: manager.jobRole ?? null,
-    ams: amsWithTls, directEmployees, employeeCount,
+    ams: amsWithTls, directEmployees, directTls, employeeCount,
   };
+}
+
+// When a new Manager registers with a department name, silently adopt any
+// pre-existing orphaned AM/TL (parent_id IS NULL) that declared the exact
+// same department name (matched case/whitespace-insensitively, since a
+// typo'd/differently-cased retype of the same real department is far more
+// likely than two genuinely distinct departments sharing a name) --
+// otherwise they'd sit in Overview as a *separate* "Unassigned" group
+// forever, even though the whole point of typing a matching name was "this
+// is the same team." An orphaned TL is attached directly to the Manager
+// (no AM in between), same allowance as the manual admin-panel transfer.
+export async function adoptOrphansIntoDepartment(managerId, department) {
+  const normalized = (department ?? '').trim().toLowerCase();
+  if (!normalized) return;
+
+  const orphanAms = await db.prepare(
+    "SELECT id FROM users WHERE parent_id IS NULL AND role = 'am' AND department IS NOT NULL AND LOWER(TRIM(department)) = ?"
+  ).all(normalized);
+  const orphanTls = await db.prepare(
+    "SELECT id FROM users WHERE parent_id IS NULL AND role = 'tl' AND department IS NOT NULL AND LOWER(TRIM(department)) = ?"
+  ).all(normalized);
+  for (const row of [...orphanAms, ...orphanTls]) {
+    await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(managerId, row.id);
+  }
+}
+
+// Every Team Lead org-wide, with their Assistant Manager (direct parent, if
+// any) and real Manager -- walked tolerantly via getAncestorIdWithRole so a
+// TL parented straight to a Manager (no AM in between) still resolves
+// correctly, instead of a fixed two-hop LEFT JOIN showing "no manager" for
+// exactly the shape adoptOrphansIntoDepartment/the reassign route now
+// create. Shared by GET /api/superadmin/tls and
+// GET /api/managers/:id/tls-org-wide so the two org-wide TL pickers can't
+// drift apart the way agent-settings and its ingest siblings once did.
+export async function listTlsWithManagerInfo() {
+  const tls = await db.prepare(`
+    SELECT tl.id, tl.name, am.id AS "amId", am.name AS "amName"
+    FROM users tl
+    LEFT JOIN users am ON am.id = tl.parent_id AND am.role = 'am'
+    WHERE tl.role = 'tl' ORDER BY tl.name
+  `).all();
+  return Promise.all(tls.map(async (tl) => {
+    const managerId = await getAncestorIdWithRole(tl.id, 'manager');
+    const manager = managerId ? await db.prepare('SELECT name FROM users WHERE id = ?').get(managerId) : null;
+    return { ...tl, managerId, managerName: manager?.name ?? null };
+  }));
 }
 
 // A department normally only exists as a Manager's own department field —
@@ -216,7 +271,7 @@ export async function buildUnassignedDepartments() {
     id: `unassigned:${department}`,
     name: 'Unassigned', email: null, mobile: null, department, jobRole: null,
     unassigned: true,
-    ams, directEmployees: [],
+    ams, directEmployees: [], directTls: [],
     employeeCount: ams.reduce((sum, am) => sum + am.employeeCount, 0),
   }));
 }

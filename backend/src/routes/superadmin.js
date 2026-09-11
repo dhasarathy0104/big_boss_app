@@ -6,7 +6,7 @@ import { buildOverrideMaps, computeProductivity } from '../productivity.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
 import { deleteEmployeeCascade, deleteManagerCascade } from '../deleteUser.js';
-import { getAncestorIdWithRole, getDescendantIds, roleAbove, buildDepartment, buildUnassignedDepartments } from '../hierarchy.js';
+import { getAncestorIdWithRole, getDescendantIds, roleAbove, buildDepartment, buildUnassignedDepartments, listTlsWithManagerInfo } from '../hierarchy.js';
 
 export const superadminRouter = Router();
 
@@ -409,14 +409,7 @@ superadminRouter.get('/employees-full', requireSuperAdmin, ah(async (req, res) =
 // below (newParentId = the chosen TL's id), which already enforces the
 // fixed-level chain and cycle safety for any role, not just employees.
 superadminRouter.get('/tls', requireSuperAdmin, ah(async (req, res) => {
-  const tls = await db.prepare(`
-    SELECT tl.id, tl.name, am.id AS "amId", am.name AS "amName", mgr.id AS "managerId", mgr.name AS "managerName"
-    FROM users tl
-    LEFT JOIN users am ON am.id = tl.parent_id AND am.role = 'am'
-    LEFT JOIN users mgr ON mgr.id = am.parent_id AND mgr.role = 'manager'
-    WHERE tl.role = 'tl' ORDER BY tl.name
-  `).all();
-  res.json(tls);
+  res.json(await listTlsWithManagerInfo());
 }));
 
 // Reassigns any one person (and their whole subtree, which moves with them —
@@ -424,7 +417,12 @@ superadminRouter.get('/tls', requireSuperAdmin, ah(async (req, res) => {
 // new parent anywhere else in the org, as long as the new parent's role is
 // exactly the one role above this person's — the fixed-level invariant the
 // whole hierarchy depends on (see hierarchy.js's ROLE_ORDER) still has to
-// hold after an arbitrary-level move, not just at invite time.
+// hold after an arbitrary-level move, not just at invite time. One
+// deliberate exception: a Team Lead's "one role above" is normally an
+// Assistant Manager, but a TL can also be moved straight under a Manager
+// with no AM in between — the same shape adoptOrphansIntoDepartment creates
+// automatically, needed because a real department can exist with TLs/
+// employees but no AM at all (see the Admins-panel TL transfer form).
 superadminRouter.post('/users/:id/reassign', requireSuperAdmin, ah(async (req, res) => {
   if (!('newParentId' in req.body)) return res.status(400).json({ error: 'newParentId required' });
   const { newParentId } = req.body;
@@ -455,8 +453,12 @@ superadminRouter.post('/users/:id/reassign', requireSuperAdmin, ah(async (req, r
 
   const newParent = await db.prepare('SELECT * FROM users WHERE id = ?').get(newParentId);
   if (!newParent) return res.status(404).json({ error: 'new parent not found' });
-  if (newParent.role !== roleAbove(user.role)) {
-    return res.status(400).json({ error: `new parent must be a ${roleAbove(user.role)}` });
+  const parentRoleOk = user.role === 'tl'
+    ? ['am', 'manager'].includes(newParent.role)
+    : newParent.role === roleAbove(user.role);
+  if (!parentRoleOk) {
+    const expected = user.role === 'tl' ? 'am or manager' : roleAbove(user.role);
+    return res.status(400).json({ error: `new parent must be a ${expected}` });
   }
   const descendantIds = await getDescendantIds(user.id);
   if (newParent.id === user.id || descendantIds.includes(newParent.id)) {

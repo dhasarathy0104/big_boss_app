@@ -93,7 +93,7 @@ export default function EmployeeManagementView({ managerId, managerName, team, o
         </div>
       </div>
       {team.length === 0 ? (
-        <div className="empty">Nobody has joined yet — see the Team &amp; Invite tab.</div>
+        <div className="empty">Nobody has joined yet — employees join via a Team Lead's invite link.</div>
       ) : (
         <EmployeeManagementTable
           employees={team}

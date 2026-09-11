@@ -4,8 +4,8 @@ import { db, randomToken } from '../db.js';
 import { requireManager, requireManagerSelf, hashPassword } from '../auth.js';
 import { isValidHHMMOrEmpty } from '../trackingWindow.js';
 import { ah } from '../asyncHandler.js';
-import { deleteEmployeeCascade } from '../deleteUser.js';
-import { getDescendantIds } from '../hierarchy.js';
+import { deleteEmployeeCascade, deleteManagerCascade } from '../deleteUser.js';
+import { getDescendantIds, listTlsWithManagerInfo } from '../hierarchy.js';
 
 export const managersRouter = Router();
 
@@ -217,14 +217,7 @@ managersRouter.get('/:id/other-managers', requireManagerSelf, ah(async (req, res
 // AM/TL names too for this one purpose isn't a new category of
 // visibility, just one level deeper.
 managersRouter.get('/:id/tls-org-wide', requireManagerSelf, ah(async (req, res) => {
-  const tls = await db.prepare(`
-    SELECT tl.id, tl.name, am.id AS "amId", am.name AS "amName", mgr.id AS "managerId", mgr.name AS "managerName"
-    FROM users tl
-    LEFT JOIN users am ON am.id = tl.parent_id AND am.role = 'am'
-    LEFT JOIN users mgr ON mgr.id = am.parent_id AND mgr.role = 'manager'
-    WHERE tl.role = 'tl' ORDER BY tl.name
-  `).all();
-  res.json(tls);
+  res.json(await listTlsWithManagerInfo());
 }));
 
 // Moves an employee — anywhere in this manager's own subtree, at any depth
@@ -240,7 +233,7 @@ managersRouter.get('/:id/tls-org-wide', requireManagerSelf, ah(async (req, res) 
 // employee once Stage 2 made every employee join through a TL — silently
 // making this button fail for literally everyone. Fixed the same way as
 // the super-admin equivalents: land on a real TL id instead of a manager
-// id, since the fixed hierarchy has no "skip a level" concept. Unlike the
+// id, since an employee's own parent must be a TL either way. Unlike the
 // in-scope Assistant Manager/Team Lead picker (POST
 // /api/supervisors/:id/employees/:employeeId/reassign, which deliberately
 // keeps AM/TL/GM/AGM restricted to their own subtree), the destination TL
@@ -266,4 +259,81 @@ managersRouter.post('/:id/team/:employeeId/transfer', requireManagerSelf, ah(asy
 
   await db.prepare('UPDATE users SET parent_id = ? WHERE id = ?').run(newTl.id, employee.id);
   res.json({ ok: true, employeeId: employee.id, newTlId: newTl.id, newTlName: newTl.name });
+}));
+
+// Every Assistant Manager and Team Lead in this manager's own subtree —
+// including a TL parented straight to this manager with no AM in between
+// (see the tl/manager exception in superadmin.js's reassign route) — feeds
+// the manager's own "Manage Admins" tab (renamed from "Team & Invite"),
+// the scoped equivalent of the super admin's org-wide Admins panel. No
+// transfer section here on purpose: a plain Manager can edit/delete their
+// own AM/TL, same as super admin's form looks, but handing staff off to a
+// *different* manager's chain stays a super-admin-only power.
+managersRouter.get('/:id/admins', requireManagerSelf, ah(async (req, res) => {
+  const descendantIds = await getDescendantIds(Number(req.params.id));
+  if (descendantIds.length === 0) return res.json([]);
+  const rows = await db.prepare(`
+    SELECT id, name, email, mobile, role, department, job_role AS "jobRole", parent_id AS "parentId"
+    FROM users WHERE id = ANY(?) AND role IN ('am', 'tl')
+    ORDER BY CASE role WHEN 'am' THEN 1 ELSE 2 END, name
+  `).all(descendantIds);
+  res.json(rows);
+}));
+
+// Same field set as super admin's PATCH /admins/:id, scoped to this
+// manager's own AM/TL only.
+managersRouter.patch('/:id/admins/:adminId', requireManagerSelf, ah(async (req, res) => {
+  const managerId = Number(req.params.id);
+  const admin = await db.prepare("SELECT * FROM users WHERE id = ? AND role IN ('am', 'tl')").get(req.params.adminId);
+  if (!admin) return res.status(404).json({ error: 'account not found' });
+  const descendantIds = await getDescendantIds(managerId);
+  if (!descendantIds.includes(admin.id)) return res.status(404).json({ error: 'account not found' });
+
+  const { name, mobile, department, jobRole, password } = req.body;
+  const email = req.body.email !== undefined ? (req.body.email ?? '').trim().toLowerCase() : undefined;
+  if (name !== undefined && !name.trim()) return res.status(400).json({ error: 'name cannot be blank' });
+  if (password !== undefined && password !== '' && password.length < 8) {
+    return res.status(400).json({ error: 'password must be at least 8 characters' });
+  }
+  if (email) {
+    const emailTaken = await db.prepare('SELECT 1 FROM users WHERE email = ? AND id != ?').get(email, admin.id);
+    if (emailTaken) return res.status(409).json({ error: 'that email is already registered' });
+  }
+
+  const updates = [];
+  const values = [];
+  if (name !== undefined) { updates.push('name = ?'); values.push(name.trim()); }
+  if (email !== undefined) { updates.push('email = ?'); values.push(email || null); }
+  if (mobile !== undefined) { updates.push('mobile = ?'); values.push(mobile.trim() || null); }
+  if (department !== undefined) { updates.push('department = ?'); values.push(department.trim() || null); }
+  if (jobRole !== undefined) { updates.push('job_role = ?'); values.push(jobRole.trim() || null); }
+  if (password) { updates.push('password_hash = ?', 'password_reset_requested_at = NULL'); values.push(hashPassword(password)); }
+  if (updates.length === 0) return res.status(400).json({ error: 'nothing to update' });
+
+  values.push(admin.id);
+  await db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  const updated = await db.prepare(
+    'SELECT id, name, email, mobile, role, department, job_role AS "jobRole" FROM users WHERE id = ?'
+  ).get(admin.id);
+  res.json(updated);
+}));
+
+// Same "no one left under them" guard as super admin's DELETE /admins/:id,
+// scoped to this manager's own AM/TL only.
+managersRouter.delete('/:id/admins/:adminId', requireManagerSelf, ah(async (req, res) => {
+  const managerId = Number(req.params.id);
+  const admin = await db.prepare("SELECT * FROM users WHERE id = ? AND role IN ('am', 'tl')").get(req.params.adminId);
+  if (!admin) return res.status(404).json({ error: 'account not found' });
+  const descendantIds = await getDescendantIds(managerId);
+  if (!descendantIds.includes(admin.id)) return res.status(404).json({ error: 'account not found' });
+
+  const childRole = admin.role === 'am' ? 'tl' : 'employee';
+  const childLabel = admin.role === 'am' ? 'team lead' : 'employee';
+  const { count } = await db.prepare('SELECT COUNT(*)::int AS count FROM users WHERE parent_id = ? AND role = ?').get(admin.id, childRole);
+  if (count > 0) {
+    return res.status(400).json({ error: `This admin still has ${count} ${childLabel}${count === 1 ? '' : 's'} — transfer or remove them first.` });
+  }
+
+  await deleteManagerCascade(admin.id);
+  res.json({ ok: true });
 }));

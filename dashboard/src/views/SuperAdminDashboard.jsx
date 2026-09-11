@@ -210,6 +210,7 @@ function SuperAdminEmployeesTab({ overview, onChanged }) {
       <EmployeeManagementTable
         employees={employees}
         tlOptions={tlOptions}
+        alwaysShowManagerStep
         onReassignTl={async (employeeId, newTlId) => {
           const res = await fetch(`/api/superadmin/users/${employeeId}/reassign`, {
             method: 'POST',
@@ -1000,12 +1001,21 @@ function EditAdminModal({ admin, onSaved, onClose }) {
   }
 
   async function doTransfer() {
-    const rawValue = admin.role === 'am' ? transferManagerId : transferAmId;
-    if (!rawValue) return;
-    // "none" is the detach option (see the dropdowns below) -- it needs to
-    // reach the backend as an actual null, not the literal string "none",
-    // since select values are always strings.
-    const newParentId = rawValue === 'none' ? null : rawValue;
+    let newParentId;
+    if (admin.role === 'am') {
+      if (!transferManagerId) return;
+      // "none" is the detach option (see the dropdown below) -- it needs to
+      // reach the backend as an actual null, not the literal string "none",
+      // since select values are always strings.
+      newParentId = transferManagerId === 'none' ? null : transferManagerId;
+    } else {
+      if (!transferAmId) return;
+      // "none" here means one of two things depending on whether a Manager
+      // is also picked: attach straight to that Manager (no AM in between
+      // -- see the tl/manager exception in the reassign route), or fully
+      // detach if no Manager was picked either.
+      newParentId = transferAmId === 'none' ? (transferManagerId || null) : transferAmId;
+    }
     setTransferError(''); setTransferSuccess('');
     setTransferring(true);
     const res = await fetch(`/api/superadmin/users/${admin.id}/reassign`, {
@@ -1104,13 +1114,18 @@ function EditAdminModal({ admin, onSaved, onClose }) {
             </div>
             <div className="input-icon-wrap" style={{ minWidth: 180 }}>
               <Users size={15} />
-              {/* "No assistant manager" (detach) never needs a Manager
-                  picked first -- it's the one option here that doesn't
-                  depend on the filter above, so it stays enabled and
-                  visible regardless of transferManagerId. */}
+              {/* "No assistant manager" never needs a Manager picked first
+                  -- it's the one option here that doesn't depend on the
+                  filter above, so it stays enabled and visible regardless
+                  of transferManagerId. What it actually does depends on
+                  that filter though: with a Manager selected, it attaches
+                  the TL straight to that Manager (no AM in between); with
+                  none selected, it's a full detach. */}
               <select value={transferAmId} onChange={(e) => setTransferAmId(e.target.value)}>
                 <option value="">Select assistant manager…</option>
-                {admin.parentId != null && <option value="none">No assistant manager</option>}
+                <option value="none">
+                  {transferManagerId ? 'No assistant manager (reports directly to Manager)' : 'No assistant manager (detach)'}
+                </option>
                 {amsForSelectedManager.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>

@@ -23,7 +23,7 @@ const TABS = [
   { key: 'employees', label: 'Employee Management', icon: Users },
   { key: 'attendance', label: 'Attendance', icon: CalendarCheck },
   { key: 'categories', label: 'Categories', icon: Tags },
-  { key: 'team', label: 'Team & Invite', icon: UserPlus },
+  { key: 'team', label: 'Manage Admins', icon: UserPlus },
 ];
 
 export default function ManagerDashboard({ manager, onLogout }) {
@@ -71,7 +71,7 @@ export default function ManagerDashboard({ manager, onLogout }) {
 
         <div className="sidebar-section">
           <h1>Team ({team.length})</h1>
-          {team.length === 0 && <div className="empty">Nobody has joined yet — see the Team &amp; Invite tab.</div>}
+          {team.length === 0 && <div className="empty">Nobody has joined yet — employees join via a Team Lead's invite link.</div>}
           {team.map((u) => (
             <div
               key={u.id}

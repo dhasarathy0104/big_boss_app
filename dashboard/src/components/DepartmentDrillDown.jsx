@@ -25,7 +25,7 @@ export default function DepartmentDrillDown({ endpoint, onSelectMember }) {
 
   const manager = departments.find((d) => d.id === managerId) ?? null;
   const am = manager?.ams.find((a) => a.id === amId) ?? null;
-  const tl = am?.tls.find((t) => t.id === tlId) ?? null;
+  const tl = (am ? am.tls : manager?.directTls ?? []).find((t) => t.id === tlId) ?? null;
   const employeePool = tl ? tl.employees : manager?.directEmployees ?? [];
   const employee = employeePool.find((e) => e.id === employeeId) ?? null;
 
@@ -81,7 +81,9 @@ export default function DepartmentDrillDown({ endpoint, onSelectMember }) {
   if (tl) {
     return (
       <div className="panel">
-        <button className="btn-small" onClick={() => setTlId(null)} style={{ marginBottom: 14 }}>&larr; {am.name}'s team leads</button>
+        <button className="btn-small" onClick={() => setTlId(null)} style={{ marginBottom: 14 }}>
+          &larr; {am ? `${am.name}'s team leads` : `${manager.name}'s team leads`}
+        </button>
         <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Avatar name={tl.name} size={26} />{tl.name}</h2>
         <DetailTable rows={[['Email', tl.email], ['Mobile', tl.mobile], ['Role', 'Team Lead']]} />
         <h2 style={{ marginTop: 20 }}>Employees ({tl.employees.length})</h2>
@@ -122,6 +124,13 @@ export default function DepartmentDrillDown({ endpoint, onSelectMember }) {
             <h2 style={{ marginTop: 20 }}>Direct employees ({manager.directEmployees.length})</h2>
             <p className="card-subtitle" style={{ marginTop: 0 }}>Pre-dating Assistant Manager/Team Lead — reports straight to the Manager.</p>
             <CardGrid items={manager.directEmployees} onPick={setEmployeeId} countLabel={() => 'Employee'} />
+          </>
+        )}
+        {manager.directTls?.length > 0 && (
+          <>
+            <h2 style={{ marginTop: 20 }}>Direct Team Leads ({manager.directTls.length})</h2>
+            <p className="card-subtitle" style={{ marginTop: 0 }}>No Assistant Manager in between — reports straight to the Manager.</p>
+            <CardGrid items={manager.directTls} onPick={setTlId} countLabel={(t) => `${t.employeeCount} employee${t.employeeCount === 1 ? '' : 's'}`} />
           </>
         )}
         <h2 style={{ marginTop: 20 }}>{manager.unassigned ? 'People' : 'Assistant Managers'} ({manager.ams.length})</h2>

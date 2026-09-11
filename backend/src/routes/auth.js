@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { hashPassword, verifyPassword, createSession, requireAuth } from '../auth.js';
-import { roleBelow } from '../hierarchy.js';
+import { roleBelow, adoptOrphansIntoDepartment } from '../hierarchy.js';
 import { ah } from '../asyncHandler.js';
 
 export const authRouter = Router();
@@ -170,8 +170,13 @@ authRouter.post('/register-admin', ah(async (req, res) => {
     // enough to place a TL (their one real parent field) — Manager is only
     // cross-checked if it was *also* given, same reasoning as before, just
     // no longer forcing either one to be filled in. A Manager given without
-    // an Assistant Manager can't place a TL on its own (the fixed hierarchy
-    // has no "skip a level" concept), so it's ignored rather than guessed at.
+    // an Assistant Manager is ignored here rather than guessed at — a TL
+    // *can* report straight to a Manager with no AM in between (see the
+    // tl/manager exception in POST /users/:id/reassign and
+    // adoptOrphansIntoDepartment), but that shape is only ever reached via
+    // the admin-panel transfer form or automatic department-matching after
+    // the fact, deliberately not exposed as a third registration path here
+    // to keep this form's two pickers simple.
     const am = await db.prepare("SELECT id, parent_id FROM users WHERE id = ? AND role = 'am'").get(req.body.amId);
     if (!am) return res.status(400).json({ error: 'select a valid Assistant Manager' });
     if (req.body.managerId) {
@@ -195,6 +200,14 @@ authRouter.post('/register-admin', ah(async (req, res) => {
     INSERT INTO users (name, email, agent_key, role, parent_id, password_hash, mobile, department, job_role)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
   `).run(name.trim(), email, agentKey, role, parentId, hashPassword(password), mobile, department, jobRole);
+  // A Manager typing the same department name an already-registered
+  // orphaned AM/TL (and their employees) declared shouldn't create a
+  // second, disconnected "department" — silently fold those existing
+  // orphans in under the new Manager instead of leaving them stuck showing
+  // as a separate "Unassigned" group in Overview forever.
+  if (role === 'manager') {
+    await adoptOrphansIntoDepartment(info.lastInsertRowid, department);
+  }
   const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
   res.json({ token: await createSession(user.id), user: await publicUser(user) });
 }));

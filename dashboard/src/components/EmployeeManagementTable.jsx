@@ -3,7 +3,7 @@ import { Pencil, Trash2, User, Mail, Phone, Building2, Users, Lock, Eye, EyeOff,
 import Avatar from './Avatar.jsx';
 import Modal from './Modal.jsx';
 
-function EditEmployeeModal({ employee, managerName, crossTlOptions, tlOptions, onSave, onTransfer, onReassignTl, onClose }) {
+function EditEmployeeModal({ employee, managerName, crossTlOptions, tlOptions, alwaysShowManagerStep, onSave, onTransfer, onReassignTl, onClose }) {
   const [form, setForm] = useState({
     name: employee.name ?? '', email: employee.email ?? '', mobile: employee.mobile ?? '',
     department: employee.department ?? '', jobRole: employee.jobRole ?? '', password: '',
@@ -64,8 +64,13 @@ function EditEmployeeModal({ employee, managerName, crossTlOptions, tlOptions, o
   // carries manager info (the super admin's org-wide view) — a caller
   // scoped to one manager already (a manager's own team, or a GM/AGM's own
   // subtree view) has nothing to pick there, so skip straight to AM/TL,
-  // unchanged from before this cascade grew a third level.
-  const hasManagerInfo = managerGroups.some((g) => g.managerId != null);
+  // unchanged from before this cascade grew a third level. Inferring this
+  // from the data shape alone used to misfire whenever no TL *currently*
+  // had a resolvable manager (e.g. every real TL still sitting under an
+  // AM-less department) — alwaysShowManagerStep lets the super admin's own
+  // org-wide caller force the step on regardless of what today's data
+  // happens to look like.
+  const hasManagerInfo = alwaysShowManagerStep || managerGroups.some((g) => g.managerId != null);
   const amGroups = hasManagerInfo
     ? managerGroups.find((g) => String(g.managerId ?? 'none') === managerId)?.amGroups ?? []
     : managerGroups[0]?.amGroups ?? [];
@@ -254,7 +259,7 @@ function EditEmployeeModal({ employee, managerName, crossTlOptions, tlOptions, o
 // tab and the super admin's org-wide employee view — same columns, same
 // pencil-opens-edit-form / trash-deletes-row pattern, different API scope
 // wired in by the caller via onSave/onDelete/onTransfer.
-export default function EmployeeManagementTable({ employees, managerName, crossTlOptions, tlOptions, onSave, onDelete, onTransfer, onReassignTl, onRowClick }) {
+export default function EmployeeManagementTable({ employees, managerName, crossTlOptions, tlOptions, alwaysShowManagerStep, onSave, onDelete, onTransfer, onReassignTl, onRowClick }) {
   const [editing, setEditing] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -329,6 +334,7 @@ export default function EmployeeManagementTable({ employees, managerName, crossT
           managerName={editing.managerName ?? managerName}
           crossTlOptions={crossTlOptions}
           tlOptions={tlOptions}
+          alwaysShowManagerStep={alwaysShowManagerStep}
           onSave={onSave}
           onTransfer={onTransfer}
           onReassignTl={onReassignTl}
